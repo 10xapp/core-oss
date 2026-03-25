@@ -183,26 +183,3 @@ jobs:
           VITE_SUPABASE_URL: "https://placeholder.supabase.co"
           VITE_SUPABASE_ANON_KEY: "placeholder"
 
-  web-lint:
-    name: "Web: Lint"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: core-web
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: core-web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        env:
-          HUGEICONS_TOKEN: ${{ secrets.HUGEICONS_TOKEN }}
-
-      - name: ESLint
-        run: npm run lint

@@ -172,9 +172,7 @@ Every PR runs these checks automatically via GitHub Actions:
 | **API: Tests** | Pytest suite |
 | **API: OpenAPI Schema** | Validates the generated OpenAPI spec |
 | **Web: Build** | TypeScript check + Vite production build |
-| **Web: Lint** | ESLint |
 | **Secret Scanning** | Gitleaks scans for leaked credentials |
-| **Migration Check** | Detects new SQL migrations and adds a checklist |
 
 ## Contributing
 
