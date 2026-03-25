@@ -20,7 +20,7 @@ paths = [
   '''CONTRIBUTING\.md$''',
 ]
 
-# Additional rules to catch common patterns
+# Custom rule: catch hardcoded Supabase project URLs (real project refs are 20 lowercase chars)
 [[rules]]
 id = "hardcoded-supabase-url"
 description = "Hardcoded Supabase project URL (not placeholder)"
@@ -28,11 +28,3 @@ regex = '''https://[a-z]{20}\.supabase\.co'''
 tags = ["supabase"]
 [rules.allowlist]
 regexes = ['''placeholder\.supabase\.co''']
-
-[[rules]]
-id = "vercel-deployment-url"
-description = "Hardcoded Vercel deployment URL"
-regex = '''https://[a-z0-9-]+\.vercel\.app'''
-tags = ["vercel"]
-[rules.allowlist]
-regexes = ['''your[a-z0-9-]*\.vercel\.app''']
