@@ -1,0 +1,37 @@
+# Gitleaks configuration for Core OSS
+# https://github.com/gitleaks/gitleaks
+
+title = "Core OSS Secret Scanner"
+
+# Allow test fixtures with placeholder values
+[[allowlist]]
+description = "Test placeholder JWTs and tokens"
+regexTarget = "match"
+regexes = [
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3Qi''',
+  '''test-jwt-token''',
+  '''placeholder-sig''',
+]
+
+[[allowlist]]
+description = "Example/placeholder values in documentation and config"
+paths = [
+  '''\.env\.example$''',
+  '''README\.md$''',
+  '''CONTRIBUTING\.md$''',
+]
+
+# Additional rules to catch common patterns
+[[rules]]
+id = "hardcoded-supabase-url"
+description = "Hardcoded Supabase project URL (not placeholder)"
+regex = '''https://[a-z]{20}\.supabase\.co'''
+tags = ["supabase"]
+
+[[rules]]
+id = "vercel-deployment-url"
+description = "Hardcoded Vercel deployment URL"
+regex = '''https://[a-z0-9-]+\.vercel\.app'''
+tags = ["vercel"]
+[rules.allowlist]
+regexes = ['''your-[a-z]+\.vercel\.app''']
