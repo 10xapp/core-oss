@@ -262,57 +262,6 @@ export default function EditEventModal({
                   )}
                 </div>
               </div>
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-white border border-border-gray rounded-lg">
-                    <a
-                      href={meetingLink.trim()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 text-xs text-blue-600 hover:text-blue-700 truncate"
-                    >
-                      {meetingLink.trim()}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingLink(true)}
-                      className="shrink-0 text-text-tertiary hover:text-text-secondary transition-colors"
-                    >
-                      <HugeiconsIcon icon={PencilEdit01Icon} size={14} strokeWidth={2} />
-                    </button>
-                  </div>
-                ) : (
-                  <input
-                    type="url"
-                    value={meetingLink}
-                    onChange={(e) => setMeetingLink(e.target.value)}
-                    onBlur={() => { if (meetingLink.trim()) setIsEditingLink(false); }}
-                    className={inputStyles}
-                    placeholder="Add link"
-                    autoFocus={isEditingLink && !!event.meeting_link}
-                  />
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs text-text-secondary mb-1.5">Start</label>
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className={inputStyles}
-                    required
-                  />
-                  {!isAllDay && (
-                    <div className="w-32 shrink-0">
-                      <TimePickerInput
-                        value={startTime}
-                        onChange={setStartTime}
-                        className={inputStyles}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
 
             <div className="space-y-4">
