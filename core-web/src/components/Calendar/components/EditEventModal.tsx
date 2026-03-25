@@ -29,30 +29,32 @@ const parseToLocal = (isoString: string) => {
   };
 };
 
-// Ensure that only safe URL schemes are used for meeting links.
-// Returns a trimmed URL string if it is considered safe, otherwise null.
+// Validate a meeting link URL and return it only if it uses a safe scheme.
+// Returns the sanitized absolute URL string if safe, otherwise null.
 const getSafeMeetingLink = (rawLink: string): string | null => {
   const trimmed = rawLink.trim();
   if (!trimmed) {
     return null;
   }
 
-  // Disallow obvious javascript: URLs even if they are relative-like
-  const lower = trimmed.toLowerCase();
-  if (lower.startsWith('javascript:')) {
-    return null;
-  }
-
   try {
     const url = new URL(trimmed, window.location.origin);
-    // Allow only http and https protocols
+    // Only allow http and https — this rejects javascript:, data:, vbscript:, etc.
     if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return trimmed;
+      return url.href;
     }
     return null;
   } catch {
-    // If it cannot be parsed as a URL, treat it as an unsafe link
     return null;
+  }
+};
+
+// Check if a validated URL points to Google Meet by hostname.
+const isGoogleMeetUrl = (safeUrl: string): boolean => {
+  try {
+    return new URL(safeUrl).hostname === 'meet.google.com';
+  } catch {
+    return false;
   }
 };
 
@@ -201,7 +203,7 @@ export default function EditEventModal({
                 <label className="block text-xs text-text-secondary mb-1.5">Meeting Link</label>
                 {(() => {
                   const safeMeetingLink = getSafeMeetingLink(meetingLink);
-                  if (safeMeetingLink && meetingLink.trim().includes('meet.google.com')) {
+                  if (safeMeetingLink && isGoogleMeetUrl(safeMeetingLink)) {
                     return (
                       <a
                         href={safeMeetingLink}
