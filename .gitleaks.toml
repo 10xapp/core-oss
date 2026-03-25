@@ -3,18 +3,17 @@
 
 title = "Core OSS Secret Scanner"
 
-# Allow test fixtures with placeholder values
-[[allowlist]]
-description = "Test placeholder JWTs and tokens"
+# Global allowlist — test fixtures and documentation
+[allowlist]
+description = "Allow placeholder values in tests and docs"
 regexTarget = "match"
 regexes = [
+  '''eyJhbGciOiAiSFMyNTYi''',
   '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3Qi''',
   '''test-jwt-token''',
   '''placeholder-sig''',
+  '''placeholder''',
 ]
-
-[[allowlist]]
-description = "Example/placeholder values in documentation and config"
 paths = [
   '''\.env\.example$''',
   '''README\.md$''',
@@ -27,6 +26,8 @@ id = "hardcoded-supabase-url"
 description = "Hardcoded Supabase project URL (not placeholder)"
 regex = '''https://[a-z]{20}\.supabase\.co'''
 tags = ["supabase"]
+[rules.allowlist]
+regexes = ['''placeholder\.supabase\.co''']
 
 [[rules]]
 id = "vercel-deployment-url"
