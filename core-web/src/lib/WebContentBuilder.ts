@@ -140,28 +140,6 @@ export class WebContentBuilder {
     }
   }
 
-  /** Add a nutrition display part from a 'nutrition' stream event. */
-  addNutrition(event: StreamEvent): void {
-    this.flushText();
-    this.parts.push({
-      id: event.id || nextPartId(),
-      type: 'display',
-      data: {
-        display_type: 'nutrition',
-        items: event.nutrition_items || [{
-          food_name: event.food_name,
-          calories: event.calories,
-          protein_g: event.protein_g,
-          carbs_g: event.carbs_g,
-          fat_g: event.fat_g,
-          fiber_g: event.fiber_g,
-          serving_size: event.serving_size,
-        }],
-        total_count: event.nutrition_items?.length || 1,
-      },
-    });
-  }
-
   /**
    * Get a snapshot of current parts + any buffered text (for live rendering).
    * Does NOT consume the buffer — safe to call repeatedly during streaming.

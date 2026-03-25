@@ -326,7 +326,6 @@ export default function ChatView() {
     if ((!hasText && !hasAttachments) || loading) return;
 
     let attachmentIds: string[] | undefined;
-    let foodHints: Record<string, boolean> | undefined;
     let attachmentParts: ContentPart[] | undefined;
 
     if (hasAttachments) {
@@ -344,7 +343,6 @@ export default function ChatView() {
 
       const result = await uploadAll(convId);
       attachmentIds = result.attachmentIds;
-      foodHints = result.foodHints;
       attachmentParts = buildAttachmentParts(result.uploadedAttachments);
       if (result.hadErrors) {
         return;
@@ -378,7 +376,7 @@ export default function ChatView() {
       setActiveConversationId(convId);
     }
 
-    await sendMessage(userMessage, convId, attachmentIds, foodHints, attachmentParts);
+    await sendMessage(userMessage, convId, attachmentIds, attachmentParts);
   };
 
   // Treat as non-empty while loading or when we know a redirect to active conversation is pending

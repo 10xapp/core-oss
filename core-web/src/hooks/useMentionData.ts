@@ -1,22 +1,19 @@
 import { useCallback, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFilesStore } from '../stores/filesStore';
 import { useMessagesStore } from '../stores/messagesStore';
 import { useProjectMembers, useProjectBoards } from './queries/useProjects';
-import { todoKeys } from './queries/keys';
 import type { MentionMenuItem, MentionMenuLevel } from '../types/mention';
-import type { Document, Channel, Todo } from '../api/client';
+import type { Document, Channel } from '../api/client';
 
 const APP_EMOJIS: Record<string, string> = {
   files: '📁',
   projects: '📋',
   messages: '💬',
-  tasks: '✓',
 };
 
 // App types that support @ mention drill-down
-const MENTIONABLE_APP_TYPES = ['files', 'projects', 'messages', 'tasks'];
+const MENTIONABLE_APP_TYPES = ['files', 'projects', 'messages'];
 
 export function useMentionData(workspaceId: string | null) {
   const workspace = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId));
@@ -28,7 +25,6 @@ export function useMentionData(workspaceId: string | null) {
   const cachedDocs = filesApp ? workspaceDocCache[filesApp.id]?.documentsByFolder : null;
   const documentsByFolder = Object.keys(activeDocsByFolder).length > 0 ? activeDocsByFolder : (cachedDocs || {});
   const channels = useMessagesStore((s) => s.channels);
-  const queryClient = useQueryClient();
   const { data: members } = useProjectMembers(workspaceId);
 
   // Reactively subscribe to project boards so they're fetched if not cached
@@ -122,28 +118,11 @@ export function useMentionData(workspaceId: string | null) {
           };
         }
 
-        case 'tasks': {
-          const todos =
-            queryClient.getQueryData<Todo[]>(todoKeys.list(appId, 'all')) || [];
-          return {
-            title: item.displayName,
-            items: todos
-              .filter((t) => !t.is_completed)
-              .slice(0, 30)
-              .map((todo) => ({
-                id: todo.id,
-                entityType: 'todo' as const,
-                displayName: todo.title,
-                icon: '✓',
-              })),
-          };
-        }
-
         default:
           return null;
       }
     },
-    [documentsByFolder, channels, boards, queryClient],
+    [documentsByFolder, channels, boards],
   );
 
   const getDrillDownForFolder = useCallback(
