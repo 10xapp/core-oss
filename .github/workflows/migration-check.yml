@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - 'supabase/migrations/**/*.sql'
+      - "core-api/supabase/migrations/**/*.sql"
 
 jobs:
   check-migrations:
@@ -25,7 +25,7 @@ jobs:
         uses: tj-actions/changed-files@v45
         with:
           files: |
-            supabase/migrations/**/*.sql
+            core-api/supabase/migrations/**/*.sql
 
       - name: Add migrations-pending label
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -34,7 +34,6 @@ jobs:
           script: |
             const labelName = 'migrations-pending';
 
-            // Check if label exists on repo, create if not
             try {
               await github.rest.issues.getLabel({
                 owner: context.repo.owner,
@@ -53,7 +52,6 @@ jobs:
               }
             }
 
-            // Add label to PR
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -68,9 +66,7 @@ jobs:
           script: |
             const changedFiles = '${{ steps.changed-files.outputs.all_changed_files }}'.split(' ').filter(f => f);
             const addedFiles = '${{ steps.changed-files.outputs.added_files }}'.split(' ').filter(f => f);
-            const modifiedFiles = '${{ steps.changed-files.outputs.modified_files }}'.split(' ').filter(f => f);
 
-            // Build file list with status indicators
             let fileList = '';
             for (const file of changedFiles) {
               const fileName = file.split('/').pop();
@@ -94,20 +90,15 @@ jobs:
 
             ### Commands
             \`\`\`bash
-            # Check migration status
+            cd core-api
             supabase migration list
-
-            # Dry run against remote
             supabase db push --dry-run
-
-            # Apply migrations
             supabase db push
             \`\`\`
 
-            > ⚠️ **Remember**: Merge this PR only after migrations are applied to production, or coordinate deployment timing to avoid schema mismatches.
+            > ⚠️ **Remember**: Merge this PR only after migrations are applied, or coordinate deployment timing to avoid schema mismatches.
             `.split('\n').map(line => line.trim()).join('\n');
 
-            // Check for existing comment to avoid duplicates
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -120,7 +111,6 @@ jobs:
             );
 
             if (botComment) {
-              // Update existing comment
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -128,7 +118,6 @@ jobs:
                 body: body
               });
             } else {
-              // Create new comment
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,

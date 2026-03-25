@@ -1,0 +1,204 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend ────────────────────────────────────────────────
+  api-lint:
+    name: "API: Lint"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            core-api/.venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('core-api/requirements-dev.txt') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: |
+          uv venv --clear
+          uv pip install -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: uv run ruff check api/ lib/
+
+  api-typecheck:
+    name: "API: Type Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            core-api/.venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('core-api/requirements-dev.txt') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: |
+          uv venv --clear
+          uv pip install -r requirements-dev.txt
+
+      - name: Mypy type check
+        run: uv run mypy api/
+
+  api-test:
+    name: "API: Tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            core-api/.venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('core-api/requirements-dev.txt') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: |
+          uv venv --clear
+          uv pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: uv run pytest
+        env:
+          SUPABASE_URL: "https://placeholder.supabase.co"
+          SUPABASE_ANON_KEY: "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIn0.placeholder-sig"
+
+  api-openapi:
+    name: "API: OpenAPI Schema"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            core-api/.venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('core-api/requirements-dev.txt') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: |
+          uv venv --clear
+          uv pip install -r requirements-dev.txt
+
+      - name: Validate OpenAPI schema
+        run: uv run pytest tests/test_openapi_schema.py -v
+        env:
+          SUPABASE_URL: "https://placeholder.supabase.co"
+          SUPABASE_ANON_KEY: "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogImFub24iLCAiaXNzIjogInN1cGFiYXNlIn0.placeholder-sig"
+
+  # ── Frontend ───────────────────────────────────────────────
+  web-build:
+    name: "Web: Build & Type Check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: core-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check + build
+        run: npm run build
+        env:
+          VITE_API_URL: "http://localhost:8000/api"
+          VITE_SUPABASE_URL: "https://placeholder.supabase.co"
+          VITE_SUPABASE_ANON_KEY: "placeholder"
+
+  web-lint:
+    name: "Web: Lint"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core-web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: core-web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint

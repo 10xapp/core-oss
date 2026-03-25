@@ -92,7 +92,7 @@ core-oss/
 │   │   ├── routers/         # HTTP endpoints
 │   │   └── services/        # Business logic
 │   ├── lib/                 # Shared clients (Supabase, R2, etc.)
-│   ├── supabase/migrations/ # 21 domain-organized SQL migrations
+│   ├── supabase/migrations/ # 23 domain-organized SQL migrations
 │   └── tests/
 ├── core-web/                # React SPA
 │   ├── src/
@@ -130,6 +130,51 @@ Core is designed to run with **just Supabase** for local development. Additional
 > **Note:** The AI chat agent uses tool calling (function calling) with 8+ tools. If self-hosting an LLM, use vLLM — Ollama's OpenAI-compatible endpoint drops tool calls during streaming. [LiteLLM](https://github.com/BerriAI/litellm) can act as a proxy to normalize any LLM backend into an OpenAI-compatible API.
 
 See [`core-api/.env.example`](./core-api/.env.example) for the full list with setup instructions.
+
+## Development
+
+### Running checks locally
+
+```bash
+# Backend — lint + type check
+cd core-api
+make check        # runs both lint and typecheck
+make test         # run tests
+make lint         # ruff linter only
+make typecheck    # mypy only
+
+# Frontend — build + lint
+cd core-web
+npm run build     # TypeScript check + Vite build
+npm run lint      # ESLint
+```
+
+### Pre-commit hooks (secret scanning)
+
+We use [gitleaks](https://github.com/gitleaks/gitleaks) to prevent accidental secret commits:
+
+```bash
+pip install pre-commit
+cd core-oss
+pre-commit install
+```
+
+After this, every `git commit` will automatically scan for secrets before allowing the commit.
+
+### CI/CD
+
+Every PR runs these checks automatically via GitHub Actions:
+
+| Check | What it does |
+|-------|-------------|
+| **API: Lint** | Ruff linter on `api/` and `lib/` |
+| **API: Type Check** | Mypy static type analysis |
+| **API: Tests** | Pytest suite |
+| **API: OpenAPI Schema** | Validates the generated OpenAPI spec |
+| **Web: Build** | TypeScript check + Vite production build |
+| **Web: Lint** | ESLint |
+| **Secret Scanning** | Gitleaks scans for leaked credentials |
+| **Migration Check** | Detects new SQL migrations and adds a checklist |
 
 ## Contributing
 
