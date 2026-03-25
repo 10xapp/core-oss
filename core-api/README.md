@@ -159,7 +159,7 @@ Messages contain a `content_parts` array with typed parts:
 
 1. **Emit display event** from your tool handler:
    ```python
-   yield display_event(display_type="workouts", items=[...], total_count=10)
+   yield display_event(display_type="my_type", items=[...], total_count=10)
    ```
 
 2. **Add iOS renderer case** in `ContentPartsRenderer.swift`

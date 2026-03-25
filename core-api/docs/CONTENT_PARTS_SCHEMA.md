@@ -198,107 +198,31 @@ CREATE INDEX idx_messages_content_parts ON public.messages USING GIN (content_pa
 -- 3. Quick preview without parsing
 ```
 
-## Adding New Tool Types
+## Adding New Display Types
 
-### Step 1: Define the Display Type
+### Step 1: Emit Display Event from Agent
 
-In `api/services/chat/content_builder.py`, no changes needed - the display part schema is generic.
-
-### Step 2: Emit Display Event from Agent
-
-In your tool handler (e.g., `api/services/chat/tools/workouts.py`):
+In your tool handler, use `display_event` to emit a generic display part:
 
 ```python
 from api.services.chat.events import display_event
 
-async def search_workouts(user_id: str, ...):
-    workouts = await fetch_workouts(...)
+async def search_items(user_id: str, ...):
+    results = await fetch_results(...)
 
-    # Emit display event
+    # Emit display event — display_type can be any string
     yield display_event(
-        display_type="workouts",
-        items=[w.to_dict() for w in workouts[:3]],
-        total_count=len(workouts)
+        display_type="my_custom_type",
+        items=[r.to_dict() for r in results[:3]],
+        total_count=len(results)
     )
 ```
 
-### Step 3: Add iOS Renderer Case
+No changes needed in `content_builder.py` — the display part schema is generic.
 
-In `Core/Features/Chat/ContentPartsRenderer.swift`:
+### Step 2: Add Frontend Renderer
 
-```swift
-case .display(let data):
-    if let displayContent = data.data.toDisplayContent() {
-        EmbeddedDisplayContainer(...)
-    }
-```
-
-In `Core/ChatModels.swift`, update `DisplayPartDataPayload.toDisplayContent()`:
-
-```swift
-func toDisplayContent() -> DisplayContent? {
-    switch displayType {
-    case "calendar_events":
-        // existing...
-    case "emails":
-        // existing...
-    case "todos":
-        // existing...
-    case "workouts":  // NEW
-        let workouts = items.map { EmbeddedWorkout(from: $0) }
-        return .workouts(workouts, totalCount: totalCount)
-    default:
-        return nil
-    }
-}
-```
-
-### Step 4: Add Display Content Enum Case
-
-In `Core/ChatModels.swift`:
-
-```swift
-enum DisplayContent {
-    case calendarEvents([EmbeddedCalendarEvent], totalCount: Int)
-    case emails([EmbeddedEmail], totalCount: Int)
-    case todos([EmbeddedTodo], totalCount: Int)
-    case workouts([EmbeddedWorkout], totalCount: Int)  // NEW
-}
-```
-
-### Step 5: Add Embedded Model
-
-```swift
-struct EmbeddedWorkout: Identifiable {
-    let id: String
-    let type: String
-    let duration: Int
-    let calories: Int
-    // ...
-
-    init(from dict: [String: AnyCodableValue]) {
-        self.id = dict["id"]?.stringValue ?? UUID().uuidString
-        // ...
-    }
-
-    func toDictionary() -> [String: AnyCodableValue] {
-        // For IOSContentBuilder
-    }
-}
-```
-
-### Step 6: Add Card View
-
-In `Core/Features/Chat/EmbeddedCards.swift`:
-
-```swift
-struct EmbeddedWorkoutCard: View {
-    let workout: EmbeddedWorkout
-    // ...
-}
-```
-
-Update `EmbeddedDisplayContainer` to handle the new case.
+In `ContentPartsRenderer.tsx`, add a case for your new `display_type` to render the embedded items as cards.
 
 ## File Structure
 

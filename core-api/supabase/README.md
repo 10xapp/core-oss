@@ -22,7 +22,6 @@ supabase/
 │   ├── 00014_sharing_permissions.sql     # permissions, access_requests + RLS updates
 │   ├── 00015_search_and_embeddings.sql   # entities, memory_*, semantic_search RPCs
 │   ├── 00016_sites_and_builder.sql       # builder_projects/conversations/versions/messages
-│   ├── 00017_workouts.sql                # workouts + RPCs
 │   ├── 00018_signup_trigger.sql          # auth.users trigger -> create_default_workspace
 │   ├── 00019_realtime_config.sql         # ALTER PUBLICATION for realtime-enabled tables
 │   ├── 00020_seed_data.sql               # Brand influencer agent template
