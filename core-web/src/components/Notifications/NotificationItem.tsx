@@ -36,12 +36,29 @@ function getRelativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function formatCalendarInviteTime(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function getTypeIcon(type: string): string {
   switch (type) {
     case 'task_assigned': return 'assign';
     case 'task_completed': return 'check';
     case 'comment_added': return 'comment';
     case 'mentioned': return 'mention';
+    case 'file_shared': return 'file';
+    case 'file_edited': return 'file';
+    case 'calendar_invite': return 'calendar';
     case 'workspace_invite': return 'invite';
     case 'permission_granted':
     case 'permission_revoked':
@@ -106,6 +123,9 @@ export default function NotificationItem({
   const inviteRole = typeof notification.data?.role === 'string'
     ? notification.data.role
     : null;
+  const calendarInviteStartsAt = notification.type === 'calendar_invite'
+    ? formatCalendarInviteTime(notification.data?.starts_at)
+    : null;
 
   const handleInviteAction = async (action: InviteAction) => {
     if (!invitationId || inviteActionLoading) return;
@@ -164,30 +184,29 @@ export default function NotificationItem({
         if (!notification.read) onRead(notification.id);
         onClick(notification);
       }}
-      className={`group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-bg-gray ${
+      className={`group flex items-start gap-2.5 px-4 py-2.5 cursor-pointer transition-colors hover:bg-bg-gray ${
         !notification.read ? 'bg-blue-50/50' : ''
       }`}
     >
-      {/* Unread indicator */}
-      <div className="flex items-center pt-1.5">
-        <div className={`w-2 h-2 rounded-full shrink-0 ${!notification.read ? 'bg-blue-500' : 'bg-transparent'}`} />
-      </div>
-
-      {/* Avatar */}
+      {/* Avatar with unread indicator */}
       <div className="shrink-0 relative">
         {actorAvatar ? (
           <img
             src={actorAvatar}
             alt={actorName}
-            className="w-9 h-9 rounded-full object-cover"
+            className="w-8 h-8 rounded-full object-cover"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-brand-primary flex items-center justify-center text-white text-xs font-medium">
+          <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center text-white text-[11px] font-medium">
             {initials}
           </div>
         )}
+        {/* Unread indicator */}
+        {!notification.read && (
+          <div className="absolute -top-0.5 -left-0.5 w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-white" />
+        )}
         {/* Type badge */}
-        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-bg-main flex items-center justify-center text-[9px]">
+        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-white flex items-center justify-center text-[8px]">
           {typeIcon === 'check' ? (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           ) : typeIcon === 'comment' ? (
@@ -198,6 +217,10 @@ export default function NotificationItem({
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 2h7v6h-7z" stroke="#4f46e5" strokeWidth="1"/><path d="M1.8 2.3L5 5l3.2-2.7" stroke="#4f46e5" strokeWidth="1"/></svg>
           ) : typeIcon === 'share' ? (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M7.5 3.5L5 1.5 2.5 3.5" stroke="#10b981" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 1.5v5" stroke="#10b981" strokeWidth="1" strokeLinecap="round"/><path d="M2.5 8.5h5" stroke="#10b981" strokeWidth="1" strokeLinecap="round"/></svg>
+          ) : typeIcon === 'file' ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5h2.8L7.5 3.2V8.5h-5z" stroke="#2563eb" strokeWidth="1" strokeLinejoin="round"/><path d="M5.8 1.5v1.7h1.7" stroke="#2563eb" strokeWidth="1" strokeLinejoin="round"/></svg>
+          ) : typeIcon === 'calendar' ? (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1.5" y="2" width="7" height="6.5" rx="1" stroke="#dc2626" strokeWidth="1"/><path d="M3 1.5v1.5M7 1.5v1.5M1.5 4h7" stroke="#dc2626" strokeWidth="1" strokeLinecap="round"/></svg>
           ) : (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1.5l.5 3h3L6 6.5l.5 3L5 8l-1.5 1.5.5-3L1.5 4.5h3z" stroke="#f59e0b" strokeWidth="1"/></svg>
           )}
@@ -212,6 +235,12 @@ export default function NotificationItem({
         {notification.body && (
           <p className="text-xs text-text-tertiary mt-0.5 line-clamp-1">
             {notification.body}
+          </p>
+        )}
+
+        {notification.type === 'calendar_invite' && calendarInviteStartsAt && (
+          <p className="text-xs text-text-secondary mt-1">
+            Starts {calendarInviteStartsAt}
           </p>
         )}
 

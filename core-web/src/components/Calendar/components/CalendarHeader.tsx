@@ -57,6 +57,11 @@ export default function CalendarHeader({
 
   const getHeaderText = useCallback((d: Date, mode: ViewMode) => {
     if (mode === 'year') return { month: '', year: d.getFullYear().toString() };
+    if (mode === 'day') {
+      const dayOfWeek = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const monthDay = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      return { month: `${dayOfWeek} ${monthDay},`, year: d.getFullYear().toString() };
+    }
     const monthName = d.toLocaleDateString('en-US', { month: 'long' });
     const year = d.getFullYear().toString();
     return { month: monthName, year };
@@ -102,8 +107,32 @@ export default function CalendarHeader({
   }, [date, viewMode, items, getHeaderText]);
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="relative h-10 min-w-[240px] overflow-hidden">
+    <div className="flex items-center gap-2">
+      <button
+        onClick={onToday}
+        className="px-1.5 py-0.5 text-xs text-text-tertiary hover:text-text-body hover:bg-black/5 rounded-md transition-colors"
+      >
+        Today
+      </button>
+      {viewMode !== 'year' && (
+        <div className="flex items-center">
+          <button
+            onClick={onPrevious}
+            className="p-1 text-text-tertiary hover:text-text-body hover:bg-black/5 rounded-md transition-colors"
+            aria-label="Previous"
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={14} strokeWidth={2} />
+          </button>
+          <button
+            onClick={onNext}
+            className="p-1 text-text-tertiary hover:text-text-body hover:bg-black/5 rounded-md transition-colors"
+            aria-label="Next"
+          >
+            <HugeiconsIcon icon={ArrowRight01Icon} size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+      <div className="relative h-6 min-w-[280px] overflow-hidden">
         {items.map((item, index) => {
           const isLatest = index === items.length - 1;
           const isAnimating = items.length > 1;
@@ -111,12 +140,10 @@ export default function CalendarHeader({
           let animation = 'none';
           if (isAnimating) {
             if (isLatest) {
-              // Entering text
               animation = direction === 'down'
                 ? 'calendarSlideInFromBelow 200ms ease-out forwards'
                 : 'calendarSlideInFromAbove 200ms ease-out forwards';
             } else {
-              // Exiting text
               animation = direction === 'down'
                 ? 'calendarSlideOutToAbove 200ms ease-out forwards'
                 : 'calendarSlideOutToBelow 200ms ease-out forwards';
@@ -125,42 +152,18 @@ export default function CalendarHeader({
 
           const headerText = item.text as HeaderText;
           return (
-            <h1
+            <h2
               key={item.id}
-              className="absolute inset-0 text-3xl font-semibold text-gray-900 whitespace-nowrap"
+              className="absolute inset-0 text-base font-semibold text-text-body whitespace-nowrap"
               style={{ animation }}
             >
               {headerText.month}
               {headerText.month && headerText.year && ' '}
-              <span className="font-normal">{headerText.year}</span>
-            </h1>
+              <span className="font-normal text-text-secondary">{headerText.year}</span>
+            </h2>
           );
         })}
       </div>
-      <button
-        onClick={onToday}
-        className="px-2 py-0.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-      >
-        Today
-      </button>
-      {viewMode !== 'year' && (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onPrevious}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-            aria-label="Previous"
-          >
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={16} strokeWidth={2} />
-          </button>
-          <button
-            onClick={onNext}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
-            aria-label="Next"
-          >
-            <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={2} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

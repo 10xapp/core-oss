@@ -42,7 +42,7 @@ def get_microsoft_calendar_service_for_account(
 
         # Get specific connection by ID
         connection_result = auth_supabase.table('ext_connections')\
-            .select('id, access_token, refresh_token, token_expires_at, metadata')\
+            .select('id, access_token, refresh_token, token_expires_at, metadata, provider_email')\
             .eq('id', account_id)\
             .eq('user_id', user_id)\
             .eq('provider', 'microsoft')\
@@ -103,7 +103,7 @@ def get_microsoft_calendar_service(
 
         # Get user's Microsoft OAuth connection (primary first, fallback to most recent)
         connection_result = auth_supabase.table('ext_connections')\
-            .select('id, access_token, refresh_token, token_expires_at, metadata')\
+            .select('id, access_token, refresh_token, token_expires_at, metadata, provider_email')\
             .eq('user_id', user_id)\
             .eq('provider', 'microsoft')\
             .eq('is_active', True)\

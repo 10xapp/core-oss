@@ -299,6 +299,93 @@ async def remove_workspace_member(
         raise
 
 
+async def leave_workspace(
+    workspace_id: str,
+    user_id: str,
+    user_jwt: str
+) -> bool:
+    """
+    Allow a user to leave a workspace voluntarily.
+    Owners cannot leave — they must transfer ownership or delete the workspace.
+
+    Args:
+        workspace_id: Workspace ID
+        user_id: ID of the user leaving
+        user_jwt: User's Supabase JWT
+
+    Returns:
+        True if left successfully
+
+    Raises:
+        ValueError: If user is the owner or not a member
+    """
+    try:
+        supabase = await get_authenticated_async_client(user_jwt)
+
+        # Check membership and role
+        existing = await supabase.table("workspace_members")\
+            .select("role")\
+            .eq("workspace_id", workspace_id)\
+            .eq("user_id", user_id)\
+            .limit(1)\
+            .execute()
+
+        if not existing.data or len(existing.data) == 0:
+            raise ValueError("You are not a member of this workspace")
+
+        if existing.data[0].get("role") == "owner":
+            raise ValueError("Workspace owners cannot leave. Transfer ownership or delete the workspace instead.")
+
+        # Remove self from workspace
+        result = await supabase.table("workspace_members")\
+            .delete()\
+            .eq("workspace_id", workspace_id)\
+            .eq("user_id", user_id)\
+            .execute()
+
+        if not result.data:
+            raise ValueError("Failed to leave workspace")
+
+        logger.info(f"User {user_id} left workspace {workspace_id}")
+
+        # Clean up empty DM channels with the leaving user
+        try:
+            apps = await supabase.table("workspace_apps")\
+                .select("id")\
+                .eq("workspace_id", workspace_id)\
+                .execute()
+
+            for app in (apps.data or []):
+                dms = await supabase.table("channels")\
+                    .select("id")\
+                    .eq("workspace_app_id", app["id"])\
+                    .eq("is_dm", True)\
+                    .contains("dm_participants", [user_id])\
+                    .execute()
+
+                for dm in (dms.data or []):
+                    msgs = await supabase.table("channel_messages")\
+                        .select("id")\
+                        .eq("channel_id", dm["id"])\
+                        .limit(1)\
+                        .execute()
+
+                    if not msgs.data:
+                        await supabase.table("channels")\
+                            .delete()\
+                            .eq("id", dm["id"])\
+                            .execute()
+                        logger.info(f"Deleted empty DM channel {dm['id']} for departing user {user_id}")
+        except Exception as cleanup_err:
+            logger.warning(f"Failed to clean up DMs for departing user {user_id}: {cleanup_err}")
+
+        return True
+
+    except Exception as e:
+        logger.exception(f"Error leaving workspace {workspace_id}: {e}")
+        raise
+
+
 async def get_user_workspace_role(
     workspace_id: str,
     user_id: str,

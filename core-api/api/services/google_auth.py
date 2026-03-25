@@ -92,8 +92,18 @@ def get_valid_credentials(
         logger.info("🔄 Token expired or expiring soon, refreshing...")
         return _refresh_and_save_token(connection_data, supabase_client)
 
-    # Token is still valid, return credentials
-    return Credentials(token=access_token)
+    # Token is still valid, return full credentials with refresh capability
+    metadata = connection_data.get('metadata') or {}
+    client_id = metadata.get('client_id') or settings.google_client_id
+    client_secret = metadata.get('client_secret') or settings.google_client_secret
+
+    return Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=client_id,
+        client_secret=client_secret,
+    )
 
 
 def get_credentials_for_connection(
@@ -369,7 +379,7 @@ def _refresh_and_save_token(
             logger.error(f"❌ Cannot save refreshed token: no connection_id provided for user {user_id}")
             raise TokenRefreshError("Cannot save refreshed token without connection_id")
 
-        return Credentials(token=credentials.token)
+        return credentials
 
     except RefreshError as e:
         logger.error(f"❌ Google token refresh failed: {str(e)}")

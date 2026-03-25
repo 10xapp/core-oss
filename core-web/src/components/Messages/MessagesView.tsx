@@ -1,3 +1,4 @@
+import { avatarGradient } from "../../utils/avatarGradient";
 import {
   useState,
   useEffect,
@@ -18,7 +19,6 @@ import {
   LockClosedIcon,
   PencilIcon,
   TrashIcon,
-  ArrowUpIcon,
   ChatBubbleOvalLeftIcon,
   FaceSmileIcon,
   DocumentIcon,
@@ -59,7 +59,6 @@ import { isHeicFile, convertHeicToJpeg } from "../../lib/heicConverter";
 import { MENTION_ICONS } from "../../types/mention";
 import type { MentionEntityType } from "../../types/mention";
 import { useMentionNavigation } from "../../hooks/useMentionNavigation";
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import { HeaderButtons } from "../MiniAppHeader";
 import MessagesSettingsDropdown from "./MessagesSettingsDropdown";
 import { resolveUploadMimeType } from "../../utils/uploadMime";
@@ -230,7 +229,7 @@ function renderTextWithLinks(text: string | undefined | null): React.ReactNode {
 // Helper to render text content from blocks (text, mention, code)
 function renderTextContent(
   blocks: ContentBlock[],
-  options?: { onSharedMessageClick?: (channelId: string) => void },
+  _options?: { onSharedMessageClick?: (channelId: string) => void },
 ): React.ReactNode {
   const textBlocks = blocks.filter((b) => b.type !== "file");
   if (textBlocks.length === 0) return null;
@@ -275,61 +274,9 @@ function renderTextContent(
             {block.data.content as string}
           </code>
         );
-      case "shared_message": {
-        const d = block.data as {
-          original_user_name: string;
-          original_user_avatar?: string;
-          original_channel_id: string;
-          original_channel_name: string;
-          original_content: string;
-          original_blocks: ContentBlock[];
-          original_created_at: string;
-        };
-        const dateStr = new Date(d.original_created_at).toLocaleDateString(
-          "en-US",
-          { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" },
-        );
-        const originalPreview = d.original_blocks && d.original_blocks.length > 0
-          ? renderTextContent(d.original_blocks, options)
-          : d.original_content;
-        return (
-          <div
-            key={index}
-            className="border-l-[3px] border-border-gray rounded-r-md bg-bg-gray/40 p-3 my-1 cursor-pointer hover:bg-bg-gray/70 transition-colors"
-            onClick={() => options?.onSharedMessageClick?.(d.original_channel_id)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                options?.onSharedMessageClick?.(d.original_channel_id);
-              }
-            }}
-            role="button"
-            tabIndex={0}
-            title={`Go to #${d.original_channel_name}`}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              {d.original_user_avatar ? (
-                <img
-                  src={d.original_user_avatar}
-                  className="w-5 h-5 rounded object-cover"
-                  alt=""
-                />
-              ) : (
-                <div className="w-5 h-5 rounded bg-gray-200" />
-              )}
-              <span className="font-semibold text-sm">
-                {d.original_user_name}
-              </span>
-            </div>
-            <div className="text-sm text-text-body line-clamp-3">
-              {originalPreview || d.original_content || "[attachment]"}
-            </div>
-            <div className="text-xs text-text-tertiary mt-2">
-              Posted in #{d.original_channel_name} &middot; {dateStr}
-            </div>
-          </div>
-        );
-      }
+      case "shared_message":
+        // Handled at Message component level (rendered above the message)
+        return null;
       default:
         return <span key={index}>{JSON.stringify(block.data)}</span>;
     }
@@ -677,19 +624,104 @@ function Message({
     }
   };
 
+  // Separate shared_message (reply preview) blocks from content blocks
+  const replyBlock = message.blocks.find((b) => b.type === "shared_message");
+  const contentBlocks = message.blocks.filter((b) => b.type !== "shared_message");
+
   const textContent =
-    message.blocks.length > 0
-      ? renderTextContent(message.blocks, { onSharedMessageClick: onNavigateToChannel })
+    contentBlocks.length > 0
+      ? renderTextContent(contentBlocks, { onSharedMessageClick: onNavigateToChannel })
       : message.content;
   const fileContent =
-    message.blocks.length > 0 ? renderFileContent(message.blocks, onImageClick) : null;
+    contentBlocks.length > 0 ? renderFileContent(contentBlocks, onImageClick) : null;
+
+  // Build reply preview data
+  const replyData = replyBlock ? (replyBlock.data as {
+    original_message_id?: string;
+    original_user_name: string;
+    original_user_avatar?: string;
+    original_channel_id: string;
+    original_channel_name: string;
+    original_content: string;
+    original_blocks: ContentBlock[];
+    original_created_at: string;
+  }) : null;
+
+  const replySnippet = replyData
+    ? (replyData.original_blocks && replyData.original_blocks.length > 0
+        ? replyData.original_blocks
+            .map((b) => {
+              if (b.type === "text") return (b.data.content ?? b.data.text) as string || "";
+              if (b.type === "mention") return `@${b.data.display_name as string}`;
+              if (b.type === "file") return `[${b.data.filename as string || "file"}]`;
+              return "";
+            })
+            .filter(Boolean)
+            .join(" ")
+        : replyData.original_content || "")
+    : "";
 
   return (
     <div
-      className={`group relative flex items-start gap-2.5 px-4 py-2 ${isEditing ? "bg-blue-50/50" : "hover:bg-bg-gray/50"}`}
+      id={`msg-${message.id}`}
+      className={`group relative px-4 py-2 transition-colors duration-500 ${isEditing ? "bg-blue-50/50" : "hover:bg-bg-gray/50"}`}
       onMouseEnter={() => !isEditing && setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
+      {/* Reply preview — Discord-style, above the message */}
+      {replyData && (
+        <div className="relative mb-2.5">
+          {/* Connector line: starts at current message's avatar center, goes up then right to reply content */}
+          <div
+            className="absolute border-l-2 border-t-2 border-text-tertiary/30 rounded-tl-lg pointer-events-none"
+            style={{ left: 20, bottom: -10, width: 22, top: 8 }}
+          />
+          <div
+            className="flex items-center gap-1.5 cursor-pointer group/reply"
+            style={{ marginLeft: 47 }}
+            onClick={() => {
+              // Scroll to the original message if it's in the current view
+              if (replyData.original_message_id) {
+                const el = document.getElementById(`msg-${replyData.original_message_id}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  el.classList.add("bg-brand-primary/5");
+                  setTimeout(() => el.classList.remove("bg-brand-primary/5"), 1500);
+                  return;
+                }
+              }
+              // Fallback: navigate to the channel
+              onNavigateToChannel?.(replyData.original_channel_id);
+            }}
+            role="button"
+            tabIndex={0}
+            title="Go to original message"
+          >
+            {replyData.original_user_avatar ? (
+              <img
+                src={replyData.original_user_avatar}
+                className="w-4 h-4 rounded-full object-cover shrink-0"
+                alt=""
+              />
+            ) : (
+              <div
+                className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-white text-[8px] font-semibold"
+                style={{ background: avatarGradient(replyData.original_user_name || "?") }}
+              >
+                {(replyData.original_user_name || "?").charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="text-[13px] font-semibold text-text-secondary group-hover/reply:underline">
+              {replyData.original_user_name}
+            </span>
+            <span className="text-[13px] text-text-tertiary truncate">
+              {replySnippet}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-start gap-2.5">
       {/* Avatar */}
       {message.agent_id ? (
         <div
@@ -709,11 +741,13 @@ function Message({
         />
       ) : (
         <div
-          className="w-10 h-10 rounded-lg flex-shrink-0 mt-[4px]"
+          className="w-10 h-10 rounded-lg flex-shrink-0 mt-[4px] flex items-center justify-center text-white font-semibold text-sm"
           style={{
-            background: "linear-gradient(135deg, #5A7864 0%, #607E98 100%)",
+            background: avatarGradient(message.user?.name || message.user?.email || message.user_id || "?"),
           }}
-        />
+        >
+          {(message.user?.name || message.user?.email || "?").charAt(0).toUpperCase()}
+        </div>
       )}
       {/* Message content */}
       <div className="flex-1 min-w-0">
@@ -845,6 +879,7 @@ function Message({
           </button>
         )}
       </div>
+      </div>{/* end flex wrapper for avatar + content */}
 
       {/* Message actions - hide while editing */}
       {showActions && !isEditing && (
@@ -1046,22 +1081,31 @@ function ForwardPreviewBar({
     .join(" ") || "";
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-bg-gray/60 border border-b-0 border-border-gray rounded-t-lg">
-      <ArrowUturnLeftIcon className="w-4 h-4 text-text-tertiary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <span className="text-xs font-medium text-text-secondary">
-          Replying to{" "}
-          <span className="font-semibold text-text-body">
-            {message.user?.name || message.user?.email || "Unknown"}
-          </span>
-        </span>
-        {previewText && (
-          <p className="text-xs text-text-tertiary truncate">{previewText}</p>
-        )}
-      </div>
+    <div className="flex items-center gap-1.5 px-4 py-2 bg-bg-gray/60 border border-b-0 border-border-gray rounded-t-lg">
+      <div className="w-3 h-3 border-l-2 border-t-2 border-text-tertiary/30 rounded-tl-md shrink-0 self-center" />
+      {message.user?.avatar_url ? (
+        <img
+          src={message.user.avatar_url}
+          className="w-4 h-4 rounded-full object-cover shrink-0"
+          alt=""
+        />
+      ) : (
+        <div
+          className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center text-white text-[8px] font-semibold"
+          style={{ background: avatarGradient(message.user?.name || message.user?.email || "?") }}
+        >
+          {(message.user?.name || message.user?.email || "?").charAt(0).toUpperCase()}
+        </div>
+      )}
+      <span className="text-xs font-semibold text-text-secondary shrink-0">
+        {message.user?.name || message.user?.email || "Unknown"}
+      </span>
+      <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
+        {previewText}
+      </span>
       <button
         onClick={onCancel}
-        className="p-1 text-text-tertiary hover:text-text-body rounded transition-colors"
+        className="p-1 text-text-tertiary hover:text-text-body rounded transition-colors shrink-0"
         title="Cancel"
       >
         <XMarkIcon className="w-4 h-4" />
@@ -1113,6 +1157,9 @@ export default function MessagesView() {
     removeReaction,
     preloadAllChannels,
     markAsRead,
+    fetchOlderMessages,
+    hasMoreMessages,
+    isLoadingOlderMessages,
   } = useMessagesStore();
 
   // Presence & typing (hook runs in App.tsx; broadcast functions are module-level)
@@ -1150,6 +1197,7 @@ export default function MessagesView() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [addMemberUserId, setAddMemberUserId] = useState("");
   const scrollableContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFiles, setPendingFiles] = useState<
@@ -1160,8 +1208,11 @@ export default function MessagesView() {
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
   const [forwardingMessage, setForwardingMessage] = useState<ChannelMessage | null>(null);
-  const [threadInput, setThreadInput] = useState("");
-  const threadTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [threadPendingFiles, setThreadPendingFiles] = useState<
+    { file: File; preview?: string }[]
+  >([]);
+  const [isThreadUploading, setIsThreadUploading] = useState(false);
+  const threadFileInputRef = useRef<HTMLInputElement>(null);
   const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(
     new Set(),
   );
@@ -1306,6 +1357,8 @@ export default function MessagesView() {
     }
   }, [activeChannelId, workspaceId]);
 
+  const latestVisibleMessageId = messages[messages.length - 1]?.id;
+
   const navigateToChannel = useCallback((channelId: string) => {
     navigate(`/workspace/${workspaceId}/messages/${channelId}`);
   }, [navigate, workspaceId]);
@@ -1320,12 +1373,14 @@ export default function MessagesView() {
     }
   }, [workspace?.id]);
 
-  // Mark active channel as read when viewing it (on mount or when channel changes)
+  // Keep the viewed conversation read. This is the single owner for
+  // mark-as-read side effects: initial entry, direct URL loads, and
+  // newly arrived messages in the open conversation.
   useEffect(() => {
     if (activeConversationId) {
       markAsRead(activeConversationId);
     }
-  }, [activeConversationId, markAsRead]);
+  }, [activeConversationId, latestVisibleMessageId, markAsRead]);
 
   // Preload all channel messages in background once channels/DMs are loaded
   useEffect(() => {
@@ -1411,9 +1466,19 @@ export default function MessagesView() {
   }, [messages, isLoadingMessages]);
 
   // Smooth scroll to bottom for new messages after initial load
+  // Track the last message ID to distinguish new messages from older messages being prepended
+  const lastMessageIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (messages.length === 0 || isLoadingMessages) return;
     if (!hasScrolledRef.current) return;
+
+    const newLastId = messages[messages.length - 1]?.id;
+    const prevLastId = lastMessageIdRef.current;
+    lastMessageIdRef.current = newLastId;
+
+    // Only auto-scroll if the newest message changed (new message arrived)
+    // Don't scroll when older messages are prepended (last message stays the same)
+    if (prevLastId && newLastId === prevLastId) return;
 
     const container = scrollableContainerRef.current;
     if (!container) return;
@@ -1421,6 +1486,26 @@ export default function MessagesView() {
     // column-reverse: scrollTop=0 is the bottom
     container.scrollTo({ top: 0, behavior: "smooth" });
   }, [messages.length]);
+
+  // Infinite scroll: load older messages when sentinel becomes visible
+  const channelHasMore = safeActiveChannelId ? hasMoreMessages[safeActiveChannelId] : undefined;
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    const container = scrollableContainerRef.current;
+    if (!sentinel || !container || channelHasMore !== true) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && safeActiveChannelId) {
+          fetchOlderMessages(safeActiveChannelId);
+        }
+      },
+      { root: container, rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [safeActiveChannelId, fetchOlderMessages, channelHasMore]);
 
   const currentChannel = safeChannels.find((c) => c.id === safeActiveChannelId);
   const modalChannel = safeChannels.find((c) => c.id === modalChannelId);
@@ -1589,6 +1674,59 @@ export default function MessagesView() {
     } else {
       fileInputRef.current?.click();
     }
+  };
+
+  // Thread file handling
+  const addThreadFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+
+    const processedFiles: { file: File; preview?: string }[] = [];
+
+    for (const rawFile of files) {
+      let file = rawFile;
+
+      if (isHeicFile(rawFile)) {
+        try {
+          file = await convertHeicToJpeg(rawFile);
+        } catch (err) {
+          console.error("HEIC conversion failed:", rawFile.name, err);
+        }
+      }
+
+      const mimeType = resolveUploadMimeType(file);
+      processedFiles.push({
+        file,
+        preview:
+          mimeType.startsWith("image/") || mimeType.startsWith("video/")
+            ? URL.createObjectURL(file)
+            : undefined,
+      });
+    }
+
+    setThreadPendingFiles((prev) => [...prev, ...processedFiles]);
+  };
+
+  const handleThreadFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    await addThreadFiles(Array.from(files));
+    e.target.value = "";
+  };
+
+  const handleThreadFileSelect = (files?: File[]) => {
+    if (files && files.length > 0) {
+      addThreadFiles(files);
+    } else {
+      threadFileInputRef.current?.click();
+    }
+  };
+
+  const removeThreadPendingFile = (index: number) => {
+    setThreadPendingFiles((prev) => {
+      const removed = prev[index];
+      if (removed.preview) URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   // Remove pending file
@@ -1923,57 +2061,72 @@ export default function MessagesView() {
   };
 
   // Send thread reply
-  const handleSendThreadReply = () => {
-    if ((!threadInput.trim() && !forwardingMessage) || !activeThreadId) return;
+  const handleSendThreadReply = async (textBlocks?: ContentBlock[]) => {
+    if (isThreadUploading || !activeThreadId) return;
 
-    const blocks: ContentBlock[] = [];
-    if (threadInput.trim()) {
-      blocks.push({ type: "text", data: { content: threadInput.trim() } });
-    }
+    const filesToUpload = [...threadPendingFiles];
+    const hasFiles = filesToUpload.length > 0;
+    const hasText = textBlocks && textBlocks.length > 0;
+    const hasForward = !!forwardingMessage;
 
-    if (forwardingMessage) {
-      blocks.push({
-        type: 'shared_message',
-        data: {
-          original_message_id: forwardingMessage.id,
-          original_channel_id: forwardingMessage.channel_id,
-          original_channel_name:
-            safeChannels.find((c) => c.id === forwardingMessage.channel_id)?.name
-            || (() => {
-              const dm = safeDms.find((d) => d.id === forwardingMessage.channel_id);
-              if (!dm) return "unknown";
-              const other = dm.participants?.find((p) => p.id !== user?.id);
-              return other?.name || other?.email?.split("@")[0] || "DM";
-            })(),
-          original_user_name: forwardingMessage.user?.name || forwardingMessage.user?.email || 'Unknown',
-          original_user_avatar: forwardingMessage.user?.avatar_url,
-          original_content: forwardingMessage.content,
-          original_blocks: forwardingMessage.blocks,
-          original_created_at: forwardingMessage.created_at,
-        },
-      });
+    if (!hasFiles && !hasText && !hasForward) return;
+
+    // Build shared_message block for forwarding
+    const forwardBlock: ContentBlock | null = hasForward ? {
+      type: 'shared_message',
+      data: {
+        original_message_id: forwardingMessage.id,
+        original_channel_id: forwardingMessage.channel_id,
+        original_channel_name:
+          safeChannels.find((c) => c.id === forwardingMessage.channel_id)?.name
+          || (() => {
+            const dm = safeDms.find((d) => d.id === forwardingMessage.channel_id);
+            if (!dm) return "unknown";
+            const other = dm.participants?.find((p) => p.id !== user?.id);
+            return other?.name || other?.email?.split("@")[0] || "DM";
+          })(),
+        original_user_name: forwardingMessage.user?.name || forwardingMessage.user?.email || 'Unknown',
+        original_user_avatar: forwardingMessage.user?.avatar_url,
+        original_content: forwardingMessage.content,
+        original_blocks: forwardingMessage.blocks,
+        original_created_at: forwardingMessage.created_at,
+      },
+    } : null;
+
+    // If no files, use the regular optimistic send
+    if (!hasFiles) {
+      const blocks: ContentBlock[] = [...(textBlocks || [])];
+      if (forwardBlock) blocks.push(forwardBlock);
       setForwardingMessage(null);
+      sendMessage(blocks, activeThreadId);
+      return;
     }
 
-    setThreadInput("");
-    sendMessage(blocks, activeThreadId); // Fire and forget — optimistic update handles UI
-  };
+    // Clear pending files immediately for optimistic UI
+    setThreadPendingFiles([]);
+    setIsThreadUploading(true);
 
-  const handleThreadKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendThreadReply();
+    try {
+      const { blocks: fileBlocks, failedFiles } = await uploadFiles(filesToUpload);
+
+      if (failedFiles.length > 0) {
+        setUploadError(`Failed to upload: ${failedFiles.join(", ")}`);
+      }
+
+      const blocks: ContentBlock[] = [...(textBlocks || []), ...fileBlocks];
+      if (forwardBlock) blocks.push(forwardBlock);
+      setForwardingMessage(null);
+
+      if (blocks.length > 0) {
+        sendMessage(blocks, activeThreadId);
+      }
+    } catch (err) {
+      console.error("Thread upload error:", err);
+      setUploadError("Failed to upload files");
+    } finally {
+      setIsThreadUploading(false);
     }
   };
-
-  // Auto-resize thread textarea
-  useEffect(() => {
-    const textarea = threadTextareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    const newHeight = Math.min(textarea.scrollHeight, 200);
-    textarea.style.height = `${newHeight}px`;
-  }, [threadInput]);
 
   // Get the parent message for thread view
   const threadParentMessage = activeThreadId
@@ -2146,7 +2299,7 @@ export default function MessagesView() {
           {/* Channels Section */}
         <div className="flex-1 overflow-y-auto">
           <div className="px-2">
-            {/* Channels Header - styled like folder row */}
+            {/* Channels Header */}
             <div className="space-y-0.5">
               <div
                 role="button"
@@ -2159,14 +2312,11 @@ export default function MessagesView() {
                   }
                 }}
                 aria-expanded={showChannelsExpanded}
-                className={`w-full flex items-center gap-2 px-2 h-[32px] rounded-md text-sm transition-colors group cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${SIDEBAR.item} hover:bg-black/5`}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-text-tertiary cursor-pointer group"
               >
-                {showChannelsExpanded ? (
-                  <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                ) : (
-                  <ChevronRightIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                )}
-                <span className="flex-1 text-left">Channels</span>
+                <span>Channels</span>
+                <ChevronRightIcon className={`w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all ${showChannelsExpanded ? 'rotate-90' : ''}`} aria-hidden="true" />
+                <div className="flex-1" />
                 <div className="relative">
                   <button
                     ref={channelsSectionMenuRef}
@@ -2266,7 +2416,7 @@ export default function MessagesView() {
               </div>
             )}
 
-            {/* Direct Messages Section - styled like folder row */}
+            {/* Direct Messages Section */}
             <div className="mt-2">
               <div className="space-y-0.5">
                 <div
@@ -2280,14 +2430,11 @@ export default function MessagesView() {
                     }
                   }}
                   aria-expanded={showDMsExpanded}
-                  className={`w-full flex items-center gap-2 px-2 h-[32px] rounded-md text-sm transition-colors group cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${SIDEBAR.item} hover:bg-black/5`}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-text-tertiary cursor-pointer group"
                 >
-                  {showDMsExpanded ? (
-                    <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  ) : (
-                    <ChevronRightIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="flex-1 text-left">Direct Messages</span>
+                  <span>Direct Messages</span>
+                  <ChevronRightIcon className={`w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all ${showDMsExpanded ? 'rotate-90' : ''}`} aria-hidden="true" />
+                  <div className="flex-1" />
                   <div className="relative">
                     <button
                       ref={dmsSectionMenuRef}
@@ -2376,12 +2523,13 @@ export default function MessagesView() {
                             />
                           ) : (
                             <div
-                              className="w-5 h-5 rounded-full"
+                              className="w-5 h-5 rounded-full flex items-center justify-center text-white font-semibold text-[8px]"
                               style={{
-                                background:
-                                  "linear-gradient(135deg, #5A7864 0%, #607E98 100%)",
+                                background: avatarGradient(firstParticipant?.name || firstParticipant?.email || "?"),
                               }}
-                            />
+                            >
+                              {(firstParticipant?.name || firstParticipant?.email || "?").charAt(0).toUpperCase()}
+                            </div>
                           )}
                           {firstParticipant &&
                             onlineUserIds.has(firstParticipant.id) && (
@@ -2434,11 +2582,13 @@ export default function MessagesView() {
                               />
                             ) : (
                               <div
-                                className="w-5 h-5 rounded-full"
+                                className="w-5 h-5 rounded-full flex items-center justify-center text-white font-semibold text-[8px]"
                                 style={{
-                                  background: "linear-gradient(135deg, #5A7864 0%, #607E98 100%)",
+                                  background: avatarGradient(member.name || member.email || member.user_id),
                                 }}
-                              />
+                              >
+                                {(member.name || member.email || "?").charAt(0).toUpperCase()}
+                              </div>
                             )}
                             {onlineUserIds.has(member.user_id) && (
                               <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />
@@ -2495,15 +2645,16 @@ export default function MessagesView() {
                         />
                       ) : (
                         <div
-                          className="w-7 h-7 rounded-full"
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-semibold text-xs"
                           style={{
-                            background:
-                              "linear-gradient(135deg, #5A7864 0%, #607E98 100%)",
+                            background: avatarGradient(otherParticipant?.name || otherParticipant?.email || getDMDisplayName(currentDM!)),
                           }}
-                        />
+                        >
+                          {(otherParticipant?.name || otherParticipant?.email || getDMDisplayName(currentDM!)).charAt(0).toUpperCase()}
+                        </div>
                       );
                     })()}
-                    <h2 className="text-base font-medium text-text-body">
+                    <h2 className="text-base font-semibold text-text-body">
                       {getDMDisplayName(currentDM!)}
                     </h2>
                   </>
@@ -2518,7 +2669,7 @@ export default function MessagesView() {
                       ) : (
                         <HashtagIcon className="w-4.5 h-4.5 text-text-body" />
                       )}
-                      <h2 className="text-base font-medium text-text-body">
+                      <h2 className="text-base font-semibold text-text-body">
                         {currentChannel!.name}
                       </h2>
                     </button>
@@ -2531,22 +2682,6 @@ export default function MessagesView() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {!isInDM && (
-                  <button
-                    onClick={() => handleOpenChannelDetails("channel")}
-                    className="flex items-center gap-1 h-7 px-1 rounded-md text-black hover:bg-gray-50 transition-all outline-none focus:outline-none"
-                    title={isLoadingChannelMembers ? "Channel members" : `Channel members (${safeChannelMembers.length})`}
-                  >
-                    {!isLoadingChannelMembers && safeChannelMembers.length > 0 && (
-                      <span className="text-sm font-regular text-black">
-                        {safeChannelMembers.length > 99
-                          ? "99+"
-                          : safeChannelMembers.length}
-                      </span>
-                    )}
-                    <HugeiconsIcon icon={UserGroup03Icon} size={20} />
-                  </button>
-                )}
                 <HeaderButtons
                   onSettingsClick={() => setShowSettingsDropdown(prev => !prev)}
                   settingsButtonRef={settingsButtonRef}
@@ -2582,8 +2717,20 @@ export default function MessagesView() {
                   </div>
                 )}
 
-                {/* Channel creation banner */}
-                {!isLoadingMessages && currentChannel && !isInDM && (
+                {/* Sentinel for infinite scroll - loads older messages */}
+                {!isLoadingMessages && safeActiveChannelId && channelHasMore === true && (
+                  <div ref={loadMoreSentinelRef} className="flex justify-center py-4">
+                    {isLoadingOlderMessages && (
+                      <div className="flex items-center gap-2 text-text-tertiary text-sm">
+                        <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        Loading older messages...
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Channel creation banner - only show when all messages are loaded */}
+                {!isLoadingMessages && currentChannel && !isInDM && channelHasMore === false && (
                   <div className="px-6 pt-6 pb-2">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 rounded-lg bg-bg-gray flex items-center justify-center">
@@ -2753,7 +2900,6 @@ export default function MessagesView() {
                 }
               />
             </div>
-            <NotificationsPanel />
             </div>
           </div>
 
@@ -2858,35 +3004,30 @@ export default function MessagesView() {
               </div>
 
               {/* Thread input */}
-              <div className="relative z-10 px-4 pt-4 pb-8 border-t border-border-gray bg-bg-white">
+              <div className="relative z-10 px-4 pt-2 pb-6 bg-bg-white">
                 {forwardingMessage && (
                   <ForwardPreviewBar
                     message={forwardingMessage}
                     onCancel={() => setForwardingMessage(null)}
                   />
                 )}
-                <div className={`flex items-center gap-2 bg-bg-white border border-border-gray ${forwardingMessage ? 'rounded-b-lg' : 'rounded-lg'} px-3 py-2.5 focus-within:border-text-tertiary transition-colors`}>
-                  <textarea
-                    ref={threadTextareaRef}
-                    value={threadInput}
-                    onChange={(e) => setThreadInput(e.target.value)}
-                    onKeyDown={handleThreadKeyDown}
-                    placeholder="Reply..."
-                    rows={1}
-                    className="flex-1 bg-transparent resize-none outline-none text-text-body placeholder-text-tertiary text-[15px] leading-6 min-h-[24px] max-h-[200px]"
-                  />
-                  <button
-                    onClick={handleSendThreadReply}
-                    disabled={!threadInput.trim() && !forwardingMessage}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg flex-shrink-0 transition-all duration-200 ${
-                      threadInput.trim() || forwardingMessage
-                        ? "bg-brand-primary text-white hover:opacity-90"
-                        : "bg-border-gray text-text-tertiary cursor-not-allowed"
-                    }`}
-                  >
-                    <ArrowUpIcon className="w-4.5 h-4.5 stroke-2" />
-                  </button>
-                </div>
+                <input
+                  ref={threadFileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleThreadFileInputChange}
+                />
+                <MessageComposer
+                  placeholder="Reply..."
+                  onSend={(blocks) => handleSendThreadReply(blocks)}
+                  workspaceId={workspaceId || ""}
+                  channelId={activeThreadId || ""}
+                  pendingFiles={threadPendingFiles}
+                  onFileSelect={handleThreadFileSelect}
+                  onRemovePendingFile={removeThreadPendingFile}
+                  isUploading={isThreadUploading}
+                />
               </div>
             </motion.div>
           )}
@@ -2895,7 +3036,6 @@ export default function MessagesView() {
       ) : (
         <div className="flex-1 flex items-center justify-center text-text-tertiary bg-white rounded-r-lg relative">
           <p>Select a channel or start a conversation</p>
-          <NotificationsPanel />
         </div>
       )}
       </div>
@@ -3126,6 +3266,7 @@ export default function MessagesView() {
         trigger={settingsButtonRef}
         onRename={currentChannel ? () => handleOpenChannelDetails("channel") : undefined}
         onMembers={currentChannel ? () => handleOpenChannelDetails("channel") : undefined}
+        memberCount={!isLoadingChannelMembers ? safeChannelMembers.length : undefined}
         onAppSettings={() => handleOpenChannelDetails("app")}
         onLeave={currentChannel ? handleLeaveChannel : undefined}
         onDelete={currentChannel ? () => handleDeleteChannel(currentChannel.id) : undefined}

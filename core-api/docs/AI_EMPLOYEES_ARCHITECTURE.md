@@ -1126,7 +1126,7 @@ async def execute_tool(
 Add `'agents'` to the union and `AVAILABLE_MINI_APPS`:
 
 ```typescript
-export type MiniAppType = 'files' | 'dashboard' | 'projects' | 'agents';
+export type MiniAppType = 'tasks' | 'files' | 'biometrics' | 'exercise' | 'sounds' | 'dashboard' | 'projects' | 'agents';
 
 export const AVAILABLE_MINI_APPS: { type: MiniAppType; name: string; icon: string }[] = [
   // ... existing entries ...

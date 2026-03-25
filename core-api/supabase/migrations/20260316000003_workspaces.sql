@@ -621,7 +621,7 @@ BEGIN
 
     -- Create the default workspace
     INSERT INTO public.workspaces (name, owner_id, is_default)
-    VALUES ('Dashboard', NEW.id, TRUE)
+    VALUES ('Personal', NEW.id, TRUE)
     RETURNING id INTO v_workspace_id;
 
     -- Add user as owner

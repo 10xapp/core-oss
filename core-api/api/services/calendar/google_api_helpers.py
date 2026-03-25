@@ -32,7 +32,7 @@ def get_google_calendar_service_for_account(user_id: str, user_jwt: str, account
 
         # Get specific connection by ID
         connection_result = auth_supabase.table('ext_connections')\
-            .select('id, access_token, refresh_token, token_expires_at, metadata')\
+            .select('id, access_token, refresh_token, token_expires_at, metadata, provider_email')\
             .eq('id', account_id)\
             .eq('user_id', user_id)\
             .eq('provider', 'google')\
@@ -48,15 +48,14 @@ def get_google_calendar_service_for_account(user_id: str, user_jwt: str, account
         connection_data['user_id'] = user_id
         connection_id = connection_data['id']
 
-        # Get valid access token (refresh if needed)
-        access_token = _refresh_google_token_if_needed(connection_data)
+        # Get valid credentials (refresh if needed)
+        credentials = _get_google_credentials(connection_data)
 
-        if not access_token:
-            logger.error(f"❌ Unable to get valid access token for account {account_id}")
+        if not credentials:
+            logger.error(f"❌ Unable to get valid credentials for account {account_id}")
             return None, None
 
         # Build Google Calendar API client
-        credentials = Credentials(token=access_token)
         service = build('calendar', 'v3', credentials=credentials)
 
         logger.info(f"✅ Built Calendar service for account {account_id[:8]}...")
@@ -94,7 +93,7 @@ def get_google_calendar_service(user_id: str, user_jwt: str, account_id: str = N
         # Get user's Google OAuth connection (primary first, fallback to most recent)
         # This supports multi-account: uses primary account for calendar
         connection_result = auth_supabase.table('ext_connections')\
-            .select('id, access_token, refresh_token, token_expires_at, metadata')\
+            .select('id, access_token, refresh_token, token_expires_at, metadata, provider_email')\
             .eq('user_id', user_id)\
             .eq('provider', 'google')\
             .eq('is_active', True)\
@@ -114,18 +113,17 @@ def get_google_calendar_service(user_id: str, user_jwt: str, account_id: str = N
 
         logger.info(f"✅ Found Google connection (ID: {connection_id})")
 
-        # Get valid access token (refresh if needed)
-        access_token = _refresh_google_token_if_needed(connection_data)
+        # Get valid credentials (refresh if needed)
+        credentials = _get_google_credentials(connection_data)
 
-        if not access_token:
-            logger.error(f"❌ Unable to get valid access token for user {user_id}")
+        if not credentials:
+            logger.error(f"❌ Unable to get valid credentials for user {user_id}")
             logger.error("💡 Token may be expired or invalid. User should re-authenticate.")
             return None, None
 
-        logger.info("✅ Got valid access token")
+        logger.info("✅ Got valid credentials")
 
         # Build Google Calendar API client
-        credentials = Credentials(token=access_token)
         service = build('calendar', 'v3', credentials=credentials)
 
         logger.info("✅ Built Google Calendar API service")
@@ -137,6 +135,33 @@ def get_google_calendar_service(user_id: str, user_jwt: str, account_id: str = N
         import traceback
         logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return None, None
+
+
+def _get_google_credentials(connection_data: Dict[str, Any]) -> Optional[Credentials]:
+    """
+    Build a full Google Credentials object with refresh capability.
+    Refreshes the token first if expired, then returns credentials that
+    the Google API client can auto-refresh if needed during a request.
+    """
+    from api.config import settings
+
+    # Refresh token proactively if expired
+    access_token = _refresh_google_token_if_needed(connection_data)
+    if not access_token:
+        return None
+
+    refresh_token = connection_data.get('refresh_token')
+    metadata = connection_data.get('metadata') or {}
+    client_id = metadata.get('client_id') or settings.google_client_id
+    client_secret = metadata.get('client_secret') or settings.google_client_secret
+
+    return Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=client_id,
+        client_secret=client_secret,
+    )
 
 
 def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional[str]:
@@ -240,6 +265,7 @@ def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional
         # Save new refresh_token if Google issued one
         if credentials.refresh_token and credentials.refresh_token != connection_data.get('refresh_token'):
             update_data['refresh_token'] = credentials.refresh_token
+            connection_data['refresh_token'] = credentials.refresh_token
             logger.info("Google issued new refresh token, saving it")
 
         service_supabase = get_service_role_client()

@@ -10,6 +10,9 @@ interface UIState {
   isVersionHistoryOpen: boolean;
   toggleVersionHistory: () => void;
   setVersionHistoryOpen: (open: boolean) => void;
+  isChatHistoryOpen: boolean;
+  setChatHistoryOpen: (open: boolean) => void;
+  toggleChatHistory: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -38,4 +41,7 @@ export const useUIStore = create<UIState>((set) => ({
   isVersionHistoryOpen: false,
   toggleVersionHistory: () => set((state) => ({ isVersionHistoryOpen: !state.isVersionHistoryOpen })),
   setVersionHistoryOpen: (open: boolean) => set({ isVersionHistoryOpen: open }),
+  isChatHistoryOpen: false,
+  setChatHistoryOpen: (open: boolean) => set({ isChatHistoryOpen: open }),
+  toggleChatHistory: () => set((state) => ({ isChatHistoryOpen: !state.isChatHistoryOpen })),
 }));

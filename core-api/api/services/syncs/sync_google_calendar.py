@@ -6,6 +6,10 @@ from datetime import datetime, timezone, timedelta
 from lib.supabase_client import get_authenticated_supabase_client
 from lib.batch_utils import batch_upsert, get_existing_external_ids
 from api.services.calendar.event_parser import parse_google_event_to_data
+from api.services.notifications.calendar_invites import (
+    get_calendar_event_rows_by_external_ids,
+    reconcile_calendar_invite_notifications,
+)
 import logging
 from googleapiclient.errors import HttpError
 from api.services.calendar.google_api_helpers import get_google_calendar_service
@@ -31,6 +35,12 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
         raise ValueError("No active Google connection found for user. Please sign in with Google first.")
 
     try:
+        connection_info = auth_supabase.table('ext_connections')\
+            .select('provider_email')\
+            .eq('id', connection_id)\
+            .maybe_single()\
+            .execute()
+        connection_email = connection_info.data.get('provider_email') if connection_info and connection_info.data else None
 
         # Fetch events from Google Calendar (last 7 days to next 30 days)
         sync_started_at = datetime.now(timezone.utc)
@@ -75,6 +85,7 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
         )
         synced_count = len([eid for eid in all_external_ids if eid not in existing_ids])
         updated_count = len(all_external_ids) - synced_count
+        previous_rows_by_external_id: Dict[str, Dict[str, Any]] = {}
 
         # Batch upsert all events
         batch_had_errors = False
@@ -94,7 +105,18 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
         deleted_count = 0
         if not batch_had_errors:
             try:
+                stale_rows = []
+                null_sync_stale_rows = []
                 if all_external_ids:
+                    stale_rows = auth_supabase.table('calendar_events')\
+                        .select('*')\
+                        .eq('user_id', user_id)\
+                        .eq('ext_connection_id', connection_id)\
+                        .gte('start_time', time_min)\
+                        .lte('start_time', time_max)\
+                        .lt('synced_at', sync_marker)\
+                        .execute().data or []
+
                     # Rows touched in this run have synced_at == sync_marker. Older rows are stale and can be deleted.
                     delete_result = auth_supabase.table('calendar_events')\
                         .delete()\
@@ -105,6 +127,15 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
                         .lt('synced_at', sync_marker)\
                         .execute()
                     deleted_count = len(delete_result.data) if delete_result.data else 0
+
+                    null_sync_stale_rows = auth_supabase.table('calendar_events')\
+                        .select('*')\
+                        .eq('user_id', user_id)\
+                        .eq('ext_connection_id', connection_id)\
+                        .gte('start_time', time_min)\
+                        .lte('start_time', time_max)\
+                        .is_('synced_at', 'null')\
+                        .execute().data or []
 
                     # Backfill cleanup for legacy rows that don't have synced_at populated.
                     null_sync_delete_result = auth_supabase.table('calendar_events')\
@@ -117,6 +148,14 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
                         .execute()
                     deleted_count += len(null_sync_delete_result.data) if null_sync_delete_result.data else 0
                 else:
+                    stale_rows = auth_supabase.table('calendar_events')\
+                        .select('*')\
+                        .eq('user_id', user_id)\
+                        .eq('ext_connection_id', connection_id)\
+                        .gte('start_time', time_min)\
+                        .lte('start_time', time_max)\
+                        .execute().data or []
+
                     # Google returned zero events in this range; remove all local events in the same range.
                     delete_result = auth_supabase.table('calendar_events')\
                         .delete()\
@@ -127,10 +166,30 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
                         .execute()
                     deleted_count = len(delete_result.data) if delete_result.data else 0
 
+                for stale_row in [*stale_rows, *null_sync_stale_rows]:
+                    external_id = stale_row.get('external_id')
+                    if external_id:
+                        previous_rows_by_external_id[external_id] = stale_row
+
                 if deleted_count > 0:
                     logger.info(f"🗑️ Deleted {deleted_count} events no longer in Google Calendar")
             except Exception as e:
                 logger.warning(f"⚠️ Delete reconciliation failed (non-fatal): {e}")
+
+        if not batch_had_errors:
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=auth_supabase,
+                user_id=user_id,
+                external_ids=all_external_ids,
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=auth_supabase,
+                user_id=user_id,
+                account_email=connection_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
 
         # Update last synced timestamp only if no errors occurred
         if not batch_had_errors:

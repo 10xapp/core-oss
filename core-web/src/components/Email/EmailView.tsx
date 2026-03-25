@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { useIsRestoring } from '@tanstack/react-query';
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { useIsRestoring } from "@tanstack/react-query";
 import {
   StarIcon,
   ArchiveBoxIcon,
@@ -17,20 +18,20 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
   CloudArrowDownIcon,
-} from '@heroicons/react/24/outline';
-import { motion, AnimatePresence } from 'motion/react';
-import { HugeiconsIcon } from '@hugeicons/react';
+} from "@heroicons/react/24/outline";
+import { motion, AnimatePresence } from "motion/react";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   PencilEdit01Icon,
   ArrowMoveUpLeftIcon,
   ArrowMoveUpRightIcon,
-} from '@hugeicons-pro/core-stroke-standard';
-import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
-import { useInView } from 'react-intersection-observer';
-import { SIDEBAR } from '../../lib/sidebar';
-import { useEmailStore, type EmailFolder } from '../../stores/emailStore';
-import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
-import type { Email, EmailWithAttachments } from '../../api/client';
+} from "@hugeicons-pro/core-stroke-standard";
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
+import { useInView } from "react-intersection-observer";
+import { SIDEBAR } from "../../lib/sidebar";
+import { useEmailStore, type EmailFolder } from "../../stores/emailStore";
+import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
+import type { Email, EmailWithAttachments } from "../../api/client";
 import {
   useEmailFolder,
   useEmailCounts,
@@ -47,41 +48,40 @@ import {
   usePrefetchEmailDetails,
   flattenEmailPages,
   type EmailFolder as RQEmailFolder,
-} from '../../hooks/queries/useEmails';
-import { ComposeEmail } from './ComposeEmail';
-import { InlineReplyComposer } from './InlineReplyComposer';
-import { AttachmentList } from './AttachmentList';
-import NotificationsPanel from '../NotificationsPanel/NotificationsPanel';
-import { HeaderButtons } from '../MiniAppHeader';
-import EmailSettingsDropdown from './EmailSettingsDropdown';
-import { sanitizeEmailHtml } from '../../utils/sanitizeHtml';
+} from "../../hooks/queries/useEmails";
+import { ComposeEmail } from "./ComposeEmail";
+import { InlineReplyComposer } from "./InlineReplyComposer";
+import { AttachmentList } from "./AttachmentList";
+import { HeaderButtons } from "../MiniAppHeader";
+import EmailSettingsDropdown from "./EmailSettingsDropdown";
+import { sanitizeEmailHtml } from "../../utils/sanitizeHtml";
 
 // Get initials from name or email
 function getInitials(name?: string, email?: string): string {
   if (name) {
-    const parts = name.split(' ').filter(Boolean);
+    const parts = name.split(" ").filter(Boolean);
     if (parts.length >= 2) {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
-    return parts[0]?.[0]?.toUpperCase() || 'U';
+    return parts[0]?.[0]?.toUpperCase() || "U";
   }
   if (email) {
-    return email[0]?.toUpperCase() || 'U';
+    return email[0]?.toUpperCase() || "U";
   }
-  return 'U'; // "Unknown" instead of "?"
+  return "U"; // "Unknown" instead of "?"
 }
 
 // Generate consistent color from string
 function getAvatarColor(str?: string): string {
   const colors = [
-    '#5E5CE6', // purple
-    '#FF375F', // red
-    '#FF9F0A', // orange
-    '#30D158', // green
-    '#64D2FF', // blue
-    '#BF5AF2', // violet
-    '#FF6482', // pink
-    '#40C8E0', // teal
+    "#5E5CE6", // purple
+    "#FF375F", // red
+    "#FF9F0A", // orange
+    "#30D158", // green
+    "#64D2FF", // blue
+    "#BF5AF2", // violet
+    "#FF6482", // pink
+    "#40C8E0", // teal
   ];
   if (!str) return colors[0];
   let hash = 0;
@@ -91,10 +91,9 @@ function getAvatarColor(str?: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-
 // Decode HTML entities in text (for email snippets that contain encoded characters)
 function decodeHtmlEntities(text: string): string {
-  const textarea = document.createElement('textarea');
+  const textarea = document.createElement("textarea");
   textarea.innerHTML = text;
   return textarea.value;
 }
@@ -102,7 +101,8 @@ function decodeHtmlEntities(text: string): string {
 // Strip quoted reply content from email snippet for cleaner display
 function stripQuotedFromSnippet(snippet: string): string {
   // Broad pattern: "On [anything with a year], [name/email] wrote:"
-  const quotePattern = /\s*On\s+[\w,.\s\/]+\d{4}[\w,.\s:]*(?:<[^>]+>|\[[^\]]*\][>]?|[^<\[]*)\s*wrote:.*/is;
+  const quotePattern =
+    /\s*On\s+[\w,.\s\/]+\d{4}[\w,.\s:]*(?:<[^>]+>|\[[^\]]*\][>]?|[^<\[]*)\s*wrote:.*/is;
   const match = snippet.match(quotePattern);
   if (match && match.index !== undefined && match.index > 0) {
     return snippet.slice(0, match.index).trim();
@@ -113,36 +113,43 @@ function stripQuotedFromSnippet(snippet: string): string {
 
 // Format date Apple Mail style
 function formatDate(dateString?: string): string {
-  if (!dateString) return '';
+  if (!dateString) return "";
   const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
+  if (isNaN(date.getTime())) return "";
   const now = new Date();
 
   if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   if (date.toDateString() === yesterday.toDateString()) {
-    return 'Yesterday';
+    return "Yesterday";
   }
 
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString([], { weekday: "short" });
   }
 
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
   }
 
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' });
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "2-digit",
+  });
 }
 
 // Split email HTML into main content and quoted content (for replies only, not forwards)
-function splitQuotedContent(html: string): { mainContent: string; quotedContent: string | null } {
+function splitQuotedContent(html: string): {
+  mainContent: string;
+  quotedContent: string | null;
+} {
   // Skip splitting for forwarded messages - the forwarded content IS the main content
   const forwardPattern = /-{5,}\s*Forwarded message\s*-{5,}/i;
   if (forwardPattern.test(html)) {
@@ -161,7 +168,7 @@ function splitQuotedContent(html: string): { mainContent: string; quotedContent:
       const mainContent = html.slice(0, match.index).trim();
       const quotedContent = match[0];
       // Only split if there's meaningful main content
-      if (mainContent && mainContent !== '<p></p>' && mainContent !== '<br>') {
+      if (mainContent && mainContent !== "<p></p>" && mainContent !== "<br>") {
         return { mainContent, quotedContent };
       }
     }
@@ -169,16 +176,17 @@ function splitQuotedContent(html: string): { mainContent: string; quotedContent:
 
   // Text-based pattern: "On [date], [name] wrote:" (common email reply quote format)
   // Matches variations like:
-  // - "On 2/2/2026, 10:38:58 AM, Cherry Tam <cherry@10x.app> wrote:"
+  // - "On 2/2/2026, 10:38:58 AM, Jane Doe <jane@example.com> wrote:"
   // - "On Mon, Feb 2, 2026 at 10:38 AM John wrote:"
   // - "On Wed, February 18, 2026 3:45 PM, Name [email@example.com]> wrote:"
-  const textQuotePattern = /On\s+[\w,.\s\/]+\d{4}[\w,.\s:]*(?:&lt;[^&]*&gt;|<[^>]*>|\[[^\]]*\][>]?)?\s*wrote:/i;
+  const textQuotePattern =
+    /On\s+[\w,.\s\/]+\d{4}[\w,.\s:]*(?:&lt;[^&]*&gt;|<[^>]*>|\[[^\]]*\][>]?)?\s*wrote:/i;
   const textMatch = html.match(textQuotePattern);
   if (textMatch && textMatch.index !== undefined) {
     const mainContent = html.slice(0, textMatch.index).trim();
     const quotedContent = html.slice(textMatch.index);
     // Only split if there's meaningful main content
-    if (mainContent && mainContent !== '<p></p>' && mainContent !== '<br>') {
+    if (mainContent && mainContent !== "<p></p>" && mainContent !== "<br>") {
       return { mainContent, quotedContent };
     }
   }
@@ -190,19 +198,19 @@ function splitQuotedContent(html: string): { mainContent: string; quotedContent:
 // Handles > quoted lines, "On ... wrote:" headers, and preserves line breaks
 function plainTextToHtml(text: string): string {
   const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
-  const lines = escaped.split('\n');
+  const lines = escaped.split("\n");
   const parts: string[] = [];
   let inQuote = false;
   const quoteBuffer: string[] = [];
 
   const flushQuote = () => {
     if (quoteBuffer.length > 0) {
-      parts.push(`<blockquote>${quoteBuffer.join('<br>')}</blockquote>`);
+      parts.push(`<blockquote>${quoteBuffer.join("<br>")}</blockquote>`);
       quoteBuffer.length = 0;
     }
     inQuote = false;
@@ -210,14 +218,14 @@ function plainTextToHtml(text: string): string {
 
   for (const line of lines) {
     // Lines starting with > (after our HTML escaping, > becomes &gt;)
-    if (line.startsWith('&gt; ') || line === '&gt;') {
+    if (line.startsWith("&gt; ") || line === "&gt;") {
       if (!inQuote) inQuote = true;
-      quoteBuffer.push(line.replace(/^&gt;\s?/, ''));
+      quoteBuffer.push(line.replace(/^&gt;\s?/, ""));
     } else {
       if (inQuote) flushQuote();
 
-      if (line.trim() === '') {
-        parts.push('<br>');
+      if (line.trim() === "") {
+        parts.push("<br>");
       } else {
         parts.push(`<p>${line}</p>`);
       }
@@ -225,7 +233,7 @@ function plainTextToHtml(text: string): string {
   }
   if (inQuote) flushQuote();
 
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 // Thread info type - extends Email with thread metadata
@@ -239,7 +247,7 @@ function groupEmailsByThread(emails: Email[]): EmailWithThreadInfo[] {
   // Group by thread_id
   const threadMap = new Map<string, Email[]>();
 
-  emails.forEach(email => {
+  emails.forEach((email) => {
     const threadId = email.thread_id || email.id; // Fallback to email id if no thread
     const existing = threadMap.get(threadId) || [];
     threadMap.set(threadId, [...existing, email]);
@@ -250,31 +258,38 @@ function groupEmailsByThread(emails: Email[]): EmailWithThreadInfo[] {
 
   threadMap.forEach((threadEmails) => {
     // Sort by date, newest first
-    const sorted = [...threadEmails].sort((a, b) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
+    const sorted = [...threadEmails].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
 
     const mostRecent = sorted[0];
 
     // Check if any email in thread is unread
-    const hasUnread = threadEmails.some(e => !e.is_read);
+    const hasUnread = threadEmails.some((e) => !e.is_read);
+
+    // Use API-provided message_count (accurate, includes all thread messages)
+    // with fallback to local count
+    const apiThreadCount = Math.max(...threadEmails.map(e => e.message_count || 0));
+    const threadCount = apiThreadCount > threadEmails.length ? apiThreadCount : threadEmails.length;
 
     result.push({
       ...mostRecent,
       is_read: !hasUnread, // Thread is "unread" if any email is unread
-      threadCount: threadEmails.length,
+      threadCount,
       threadEmails: sorted.reverse(), // Oldest first for display
     });
   });
 
   // Sort threads by most recent email date
-  return result.sort((a, b) =>
-    new Date(b.date).getTime() - new Date(a.date).getTime()
+  return result.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   );
 }
 
 // Group emails by date
-function groupEmailsByDate(emails: EmailWithThreadInfo[]): { label: string; emails: EmailWithThreadInfo[] }[] {
+function groupEmailsByDate(
+  emails: EmailWithThreadInfo[],
+): { label: string; emails: EmailWithThreadInfo[] }[] {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
@@ -287,42 +302,46 @@ function groupEmailsByDate(emails: EmailWithThreadInfo[]): { label: string; emai
 
   const groups: Record<string, EmailWithThreadInfo[]> = {};
 
-  emails.forEach(email => {
+  emails.forEach((email) => {
     if (!email.date) {
-      const existing = groups['Other'] || [];
-      groups['Other'] = [...existing, email];
+      const existing = groups["Other"] || [];
+      groups["Other"] = [...existing, email];
       return;
     }
     const date = new Date(email.date);
     if (isNaN(date.getTime())) {
-      const existing = groups['Other'] || [];
-      groups['Other'] = [...existing, email];
+      const existing = groups["Other"] || [];
+      groups["Other"] = [...existing, email];
       return;
     }
-    const emailDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const emailDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
 
     let label: string;
     if (emailDate >= today) {
-      label = 'Today';
+      label = "Today";
     } else if (emailDate >= yesterday) {
-      label = 'Yesterday';
+      label = "Yesterday";
     } else if (emailDate >= thisWeekStart) {
-      label = 'This Week';
+      label = "This Week";
     } else if (emailDate >= lastWeekStart) {
-      label = 'Last Week';
+      label = "Last Week";
     } else if (emailDate >= thisMonthStart) {
-      label = 'This Month';
+      label = "This Month";
     } else if (date.getFullYear() === now.getFullYear()) {
-      label = date.toLocaleDateString([], { month: 'long' });
+      label = date.toLocaleDateString([], { month: "long" });
     } else {
-      label = date.toLocaleDateString([], { month: 'long', year: 'numeric' });
+      label = date.toLocaleDateString([], { month: "long", year: "numeric" });
     }
 
     if (!groups[label]) groups[label] = [];
     groups[label].push(email);
   });
 
-  const order = ['Today', 'Yesterday', 'This Week', 'Last Week', 'This Month'];
+  const order = ["Today", "Yesterday", "This Week", "Last Week", "This Month"];
   return Object.entries(groups)
     .sort(([a], [b]) => {
       const aIdx = order.indexOf(a);
@@ -335,12 +354,16 @@ function groupEmailsByDate(emails: EmailWithThreadInfo[]): { label: string; emai
     .map(([label, emails]) => ({ label, emails }));
 }
 
-const FOLDER_LIST: { id: EmailFolder; name: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'INBOX', name: 'Inbox', icon: EnvelopeOpenIcon },
-  { id: 'STARRED', name: 'Flagged', icon: StarIcon },
-  { id: 'SENT', name: 'Sent', icon: PaperAirplaneIcon },
-  { id: 'DRAFT', name: 'Drafts', icon: PencilIcon },
-  { id: 'TRASH', name: 'Trash', icon: TrashIcon },
+const FOLDER_LIST: {
+  id: EmailFolder;
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { id: "INBOX", name: "Inbox", icon: EnvelopeOpenIcon },
+  { id: "STARRED", name: "Flagged", icon: StarIcon },
+  { id: "SENT", name: "Sent", icon: PaperAirplaneIcon },
+  { id: "DRAFT", name: "Drafts", icon: PencilIcon },
+  { id: "TRASH", name: "Trash", icon: TrashIcon },
 ];
 
 // TTL for read overrides (must match emailStore.ts and useEmails.ts)
@@ -378,6 +401,18 @@ export default function EmailView() {
     optimisticReply,
   } = useEmailStore();
 
+  // Handle deep-link: /email?open=<emailId>&thread=<threadId> (from chat email cards, etc.)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openEmailId = searchParams.get("open");
+  const openThreadId = searchParams.get("thread");
+  const deepLinkThreadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openEmailId && !openThreadId) return;
+    if (openThreadId) deepLinkThreadRef.current = openThreadId;
+    setSelectedEmailId(openEmailId ?? openThreadId ?? null);
+    setSearchParams({}, { replace: true });
+  }, [openEmailId, openThreadId, setSelectedEmailId, setSearchParams]);
+
   // Derive account key
   const accountKey = getAccountKey();
 
@@ -398,31 +433,46 @@ export default function EmailView() {
   const { data: counts } = useEmailCounts(selectedAccountIds);
 
   // Search state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
 
   // Category filter state (for inbox only)
-  type CategoryFilter = 'personal' | 'promotions' | 'social';
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('personal');
+  type CategoryFilter = "personal" | "promotions" | "social";
+  const [categoryFilter, setCategoryFilter] =
+    useState<CategoryFilter>("personal");
   const { data: searchData, isFetching: isSearching } = useEmailSearch(
     debouncedSearchQuery,
     selectedAccountIds,
-    isSearchActive && debouncedSearchQuery.length > 0
+    isSearchActive && debouncedSearchQuery.length > 0,
   );
   const searchResults = searchData?.emails ?? null;
-  const searchMeta = searchData ? {
-    local_count: searchData.local_count,
-    remote_count: searchData.remote_count,
-    provider_errors: searchData.provider_errors,
-    has_provider_errors: searchData.has_provider_errors,
-  } : null;
+  const searchMeta = searchData
+    ? {
+        local_count: searchData.local_count,
+        remote_count: searchData.remote_count,
+        provider_errors: searchData.provider_errors,
+        has_provider_errors: searchData.has_provider_errors,
+      }
+    : null;
 
   // Mutations
-  const markReadMutation = useMarkEmailsRead(activeFolder as RQEmailFolder, selectedAccountIds);
-  const archiveMutation = useArchiveEmail(activeFolder as RQEmailFolder, selectedAccountIds);
-  const deleteMutation = useDeleteEmail(activeFolder as RQEmailFolder, selectedAccountIds);
-  const restoreMutation = useRestoreEmail(activeFolder as RQEmailFolder, selectedAccountIds);
+  const markReadMutation = useMarkEmailsRead(
+    activeFolder as RQEmailFolder,
+    selectedAccountIds,
+  );
+  const archiveMutation = useArchiveEmail(
+    activeFolder as RQEmailFolder,
+    selectedAccountIds,
+  );
+  const deleteMutation = useDeleteEmail(
+    activeFolder as RQEmailFolder,
+    selectedAccountIds,
+  );
+  const restoreMutation = useRestoreEmail(
+    activeFolder as RQEmailFolder,
+    selectedAccountIds,
+  );
   const deleteDraftMutation = useDeleteDraft(selectedAccountIds);
   const syncMutation = useSyncEmails();
 
@@ -461,11 +511,15 @@ export default function EmailView() {
     if (!selectedEmail.thread_id) return selectedEmail.id;
 
     // Find the latest email in this thread
-    const threadEmails = allEmails.filter((e) => e.thread_id === selectedEmail.thread_id);
+    const threadEmails = allEmails.filter(
+      (e) => e.thread_id === selectedEmail.thread_id,
+    );
     if (threadEmails.length <= 1) return selectedEmail.id;
 
     // Sort by date and return the latest
-    threadEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    threadEmails.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
     return threadEmails[0]?.id ?? selectedEmail.id;
   }, [selectedEmailId, rqEmails, storeEmails]);
 
@@ -482,9 +536,13 @@ export default function EmailView() {
     // Fall back to store cache, apply readOverrides manually for store data
     if (storeEmails.length > 0 && Object.keys(readOverrides).length > 0) {
       const now = Date.now();
-      return storeEmails.map(email => {
+      return storeEmails.map((email) => {
         const overrideAt = readOverrides[email.id];
-        if (overrideAt && now - overrideAt <= READ_OVERRIDE_TTL_MS && !email.is_read) {
+        if (
+          overrideAt &&
+          now - overrideAt <= READ_OVERRIDE_TTL_MS &&
+          !email.is_read
+        ) {
           return { ...email, is_read: true };
         }
         return email;
@@ -502,18 +560,36 @@ export default function EmailView() {
   const error = null; // Errors now handled per-query
 
   // Clear stale selection when the selected email no longer exists in the loaded list.
+  // If exact id match fails, try to find a thread match (handles chat deep-links
+  // where the message id may differ from the inbox's latest thread message id).
   useEffect(() => {
     if (!selectedEmailId || isLoading || isFetching) return;
     const allEmails = rqEmails.length > 0 ? rqEmails : storeEmails;
-    if (!allEmails.some((email) => email.id === selectedEmailId)) {
-      setSelectedEmailId(null);
+    if (allEmails.some((email) => email.id === selectedEmailId)) return;
+
+    const threadId = deepLinkThreadRef.current;
+    if (threadId) {
+      const byThread = allEmails.find((email) => email.thread_id === threadId);
+      if (byThread) {
+        deepLinkThreadRef.current = null;
+        setSelectedEmailId(byThread.id);
+        return;
+      }
     }
-  }, [selectedEmailId, isLoading, isFetching, rqEmails, storeEmails, setSelectedEmailId]);
+    setSelectedEmailId(null);
+  }, [
+    selectedEmailId,
+    isLoading,
+    isFetching,
+    rqEmails,
+    storeEmails,
+    setSelectedEmailId,
+  ]);
 
   // Get selected email with detail merged from React Query cache
   const selectedEmail = useMemo((): Email | null => {
     if (!selectedEmailId) return null;
-    const email = emails.find(e => e.id === selectedEmailId);
+    const email = emails.find((e) => e.id === selectedEmailId);
     if (!email) return null;
     // Merge with detail data from React Query (includes body_html, body_text)
     if (emailDetailData) {
@@ -536,8 +612,12 @@ export default function EmailView() {
   const replyComposerRef = useRef<HTMLDivElement>(null);
 
   // Track which accounts are expanded to show folders
-  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set(['all']));
-  const [expandedThreadEmails, setExpandedThreadEmails] = useState<Set<string>>(new Set());
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(
+    new Set(["all"]),
+  );
+  const [expandedThreadEmails, setExpandedThreadEmails] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Search UI state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -549,15 +629,15 @@ export default function EmailView() {
   }, []);
 
   const clearSearch = useCallback(() => {
-    setSearchQuery('');
-    setDebouncedSearchQuery('');
+    setSearchQuery("");
+    setDebouncedSearchQuery("");
     setIsSearchActive(false);
   }, []);
 
   // Debounce provider search requests
   useEffect(() => {
     if (!isSearchActive || !searchQuery.trim()) {
-      setDebouncedSearchQuery('');
+      setDebouncedSearchQuery("");
       return;
     }
     const timer = setTimeout(() => {
@@ -567,7 +647,9 @@ export default function EmailView() {
   }, [searchQuery, isSearchActive]);
 
   // Thread attachments map
-  const [threadAttachmentsMap, setThreadAttachmentsMap] = useState<Record<string, EmailWithAttachments[]>>({});
+  const [threadAttachmentsMap, setThreadAttachmentsMap] = useState<
+    Record<string, EmailWithAttachments[]>
+  >({});
 
   // Track whether to show quoted content in emails
   const [showQuotedContent, setShowQuotedContent] = useState(false);
@@ -589,7 +671,10 @@ export default function EmailView() {
     if (inlineReply.isOpen && replyComposerRef.current) {
       // Wait for TipTap editor to fully initialize before scrolling
       setTimeout(() => {
-        replyComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        replyComposerRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
       }, 200);
     }
   }, [inlineReply.isOpen]);
@@ -621,11 +706,14 @@ export default function EmailView() {
     if (email.gmail_draft_id) return email.gmail_draft_id;
 
     const rawItem = email.raw_item;
-    if (rawItem && typeof rawItem === 'object') {
-      if (typeof rawItem.gmail_draft_id === 'string' && rawItem.gmail_draft_id) {
+    if (rawItem && typeof rawItem === "object") {
+      if (
+        typeof rawItem.gmail_draft_id === "string" &&
+        rawItem.gmail_draft_id
+      ) {
         return rawItem.gmail_draft_id;
       }
-      if (rawItem.message && typeof rawItem.id === 'string' && rawItem.id) {
+      if (rawItem.message && typeof rawItem.id === "string" && rawItem.id) {
         return rawItem.id;
       }
     }
@@ -634,13 +722,15 @@ export default function EmailView() {
 
   const handleEmailClick = async (email: EmailWithThreadInfo | Email) => {
     // Handle remote-only search results — fetch from provider first
-    if ('source' in email && email.source === 'remote') {
+    if ("source" in email && email.source === "remote") {
       fetchRemoteAndOpen(email);
       return;
     }
 
     const emailId = email.id;
-    const isDraft = email.label_ids?.some((l) => l.toUpperCase() === 'DRAFT') || activeFolder === 'DRAFT';
+    const isDraft =
+      email.label_ids?.some((l) => l.toUpperCase() === "DRAFT") ||
+      activeFolder === "DRAFT";
 
     // Drafts should open in compose, not read-only detail
     if (isDraft) {
@@ -652,7 +742,7 @@ export default function EmailView() {
     setSelectedEmailId(emailId);
 
     // Prefetch adjacent emails for faster keyboard navigation
-    const currentIndex = flatEmailList.findIndex(e => e.id === emailId);
+    const currentIndex = flatEmailList.findIndex((e) => e.id === emailId);
     if (currentIndex !== -1) {
       const adjacentIds: string[] = [];
       // Prefetch next/previous email only to avoid request bursts
@@ -713,7 +803,9 @@ export default function EmailView() {
   };
 
   const handleDelete = async (email: Email) => {
-    const isDraft = email.label_ids?.some((l) => l.toUpperCase() === 'DRAFT') || activeFolder === 'DRAFT';
+    const isDraft =
+      email.label_ids?.some((l) => l.toUpperCase() === "DRAFT") ||
+      activeFolder === "DRAFT";
     if (isDraft) {
       await deleteDraftMutation.mutateAsync(resolveDraftDeleteId(email));
       if (selectedEmailId === email.id) {
@@ -736,30 +828,33 @@ export default function EmailView() {
       } else {
         // Client-side filter while server is loading
         const q = searchQuery.toLowerCase();
-        result = result.filter(email =>
-          email.subject?.toLowerCase().includes(q) ||
-          email.from_name?.toLowerCase().includes(q) ||
-          email.from_email?.toLowerCase().includes(q) ||
-          email.snippet?.toLowerCase().includes(q)
+        result = result.filter(
+          (email) =>
+            email.subject?.toLowerCase().includes(q) ||
+            email.from_name?.toLowerCase().includes(q) ||
+            email.from_email?.toLowerCase().includes(q) ||
+            email.snippet?.toLowerCase().includes(q),
         );
       }
     }
 
     // Apply category filter (only for inbox)
-    if (activeFolder === 'INBOX' && !searchQuery.trim()) {
-      result = result.filter(email => {
+    if (activeFolder === "INBOX" && !searchQuery.trim()) {
+      result = result.filter((email) => {
         const labels = email.label_ids || [];
         const hasCategory = (cat: string) =>
-          labels.some(l => l.toUpperCase() === `CATEGORY_${cat.toUpperCase()}`);
+          labels.some(
+            (l) => l.toUpperCase() === `CATEGORY_${cat.toUpperCase()}`,
+          );
 
-        if (categoryFilter === 'personal') {
+        if (categoryFilter === "personal") {
           // Personal = everything EXCEPT promotions and social
           // This includes: PRIMARY, PERSONAL, UPDATES, FORUMS, or no category
-          return !hasCategory('PROMOTIONS') && !hasCategory('SOCIAL');
-        } else if (categoryFilter === 'promotions') {
-          return hasCategory('PROMOTIONS');
-        } else if (categoryFilter === 'social') {
-          return hasCategory('SOCIAL');
+          return !hasCategory("PROMOTIONS") && !hasCategory("SOCIAL");
+        } else if (categoryFilter === "promotions") {
+          return hasCategory("PROMOTIONS");
+        } else if (categoryFilter === "social") {
+          return hasCategory("SOCIAL");
         }
         return true;
       });
@@ -774,17 +869,28 @@ export default function EmailView() {
   // 3. Not already fetching
   // 4. There are filtered emails visible (prevents fetching when category shows 0 results)
   useEffect(() => {
-    if (inView && hasNextPage && !isFetchingNextPage && filteredEmails.length > 0) {
+    if (
+      inView &&
+      hasNextPage &&
+      !isFetchingNextPage &&
+      filteredEmails.length > 0
+    ) {
       fetchNextPage();
     }
-  }, [inView, hasNextPage, isFetchingNextPage, filteredEmails.length, fetchNextPage]);
+  }, [
+    inView,
+    hasNextPage,
+    isFetchingNextPage,
+    filteredEmails.length,
+    fetchNextPage,
+  ]);
 
   // First group emails by thread, then by date
   // Skip threading for DRAFT and SENT folders - show each email individually
   const threadedEmails = useMemo(() => {
-    if (activeFolder === 'DRAFT' || activeFolder === 'SENT') {
+    if (activeFolder === "DRAFT" || activeFolder === "SENT") {
       // Don't group drafts/sent - each is its own item
-      return filteredEmails.map(email => ({
+      return filteredEmails.map((email) => ({
         ...email,
         threadCount: 1,
         threadEmails: [email],
@@ -792,21 +898,25 @@ export default function EmailView() {
     }
     return groupEmailsByThread(filteredEmails);
   }, [filteredEmails, activeFolder]);
-  const groupedEmails = useMemo(() => groupEmailsByDate(threadedEmails), [threadedEmails]);
+  const groupedEmails = useMemo(
+    () => groupEmailsByDate(threadedEmails),
+    [threadedEmails],
+  );
 
   // Flat list of all emails for keyboard navigation
   const flatEmailList = useMemo(() => {
-    return groupedEmails.flatMap(group => group.emails);
+    return groupedEmails.flatMap((group) => group.emails);
   }, [groupedEmails]);
 
   // Get thread emails - prefer API data, fall back to local search
   // Aggressively deduplicate to prevent showing draft-like duplicates
   const selectedThreadEmails = useMemo(() => {
-    if (!selectedEmail || !selectedEmail.thread_id) return [selectedEmail].filter(Boolean) as Email[];
+    if (!selectedEmail || !selectedEmail.thread_id)
+      return [selectedEmail].filter(Boolean) as Email[];
 
     // Build a map of local emails for merging missing fields
     const localEmailMap = new Map<string, Email>();
-    rqEmails.forEach(email => localEmailMap.set(email.id, email));
+    rqEmails.forEach((email) => localEmailMap.set(email.id, email));
     storeEmails.forEach((email) => {
       if (!localEmailMap.has(email.id)) {
         localEmailMap.set(email.id, email);
@@ -816,26 +926,28 @@ export default function EmailView() {
     const processEmails = (emails: Email[]) => {
       // Deduplicate by ID only - aggressive content-based deduplication was eating legitimate emails
       const seenIds = new Set<string>();
-      const deduplicated = emails.filter(email => {
+      const deduplicated = emails.filter((email) => {
         if (seenIds.has(email.id)) return false;
         seenIds.add(email.id);
         return true;
       });
 
       // Enrich with local data if API data is missing fields
-      return deduplicated.map(email => {
-        const localEmail = localEmailMap.get(email.id);
-        if (localEmail && (!email.from_email || !email.from_name)) {
-          return {
-            ...email,
-            from_email: email.from_email || localEmail.from_email,
-            from_name: email.from_name || localEmail.from_name,
-          };
-        }
-        return email;
-      }).sort((a, b) =>
-        new Date(a.date).getTime() - new Date(b.date).getTime()
-      );
+      return deduplicated
+        .map((email) => {
+          const localEmail = localEmailMap.get(email.id);
+          if (localEmail && (!email.from_email || !email.from_name)) {
+            return {
+              ...email,
+              from_email: email.from_email || localEmail.from_email,
+              from_name: email.from_name || localEmail.from_name,
+            };
+          }
+          return email;
+        })
+        .sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+        );
     };
 
     // If we have thread data from API, use it - with aggressive deduplication
@@ -845,7 +957,7 @@ export default function EmailView() {
     } else {
       // Fall back to searching local data (React Query + Zustand store)
       const threadEmails: Email[] = [];
-      localEmailMap.forEach(email => {
+      localEmailMap.forEach((email) => {
         if (email.thread_id === selectedEmail.thread_id) {
           threadEmails.push(email);
         }
@@ -854,7 +966,10 @@ export default function EmailView() {
     }
 
     // Append optimistic reply if it matches this thread
-    if (optimisticReply && optimisticReply.thread_id === selectedEmail.thread_id) {
+    if (
+      optimisticReply &&
+      optimisticReply.thread_id === selectedEmail.thread_id
+    ) {
       result = [...result, optimisticReply];
     }
 
@@ -871,11 +986,20 @@ export default function EmailView() {
     }
     // Fall back to store cache for other thread emails
     return emailDetailsCache[latest.id] || latest;
-  }, [selectedThreadEmails, selectedEmail, emailIdForDetail, emailDetailData, emailDetailsCache]);
+  }, [
+    selectedThreadEmails,
+    selectedEmail,
+    emailIdForDetail,
+    emailDetailData,
+    emailDetailsCache,
+  ]);
 
   // Split latest email content into main and quoted parts
   // For plain-text-only emails, convert to HTML first so they get the same treatment
-  const { mainContent: latestEmailMainContent, quotedContent: latestEmailQuotedContent } = useMemo(() => {
+  const {
+    mainContent: latestEmailMainContent,
+    quotedContent: latestEmailQuotedContent,
+  } = useMemo(() => {
     if (latestThreadEmail?.body_html) {
       return splitQuotedContent(sanitizeEmailHtml(latestThreadEmail.body_html));
     }
@@ -884,7 +1008,11 @@ export default function EmailView() {
       return splitQuotedContent(plainTextToHtml(textBody));
     }
     return { mainContent: null, quotedContent: null };
-  }, [latestThreadEmail?.body_html, latestThreadEmail?.body_text, latestThreadEmail?.snippet]);
+  }, [
+    latestThreadEmail?.body_html,
+    latestThreadEmail?.body_text,
+    latestThreadEmail?.snippet,
+  ]);
 
   // Generate iframe srcDoc for the latest thread email's HTML content (main content only)
   const latestEmailHtmlContent = useMemo(() => {
@@ -995,27 +1123,38 @@ export default function EmailView() {
   }, [latestEmailQuotedContent]);
 
   // Preload a single email in the background using React Query
-  const preloadEmail = useCallback((emailId: string) => {
-    if (preloadedIdsRef.current.has(emailId)) return;
-    preloadedIdsRef.current.add(emailId);
-    // Use React Query prefetch for better caching and deduplication
-    prefetchEmailDetails([emailId]);
-  }, [prefetchEmailDetails]);
+  const preloadEmail = useCallback(
+    (emailId: string) => {
+      if (preloadedIdsRef.current.has(emailId)) return;
+      preloadedIdsRef.current.add(emailId);
+      // Use React Query prefetch for better caching and deduplication
+      prefetchEmailDetails([emailId]);
+    },
+    [prefetchEmailDetails],
+  );
 
   // Preload adjacent emails around a given index
-  const preloadAdjacent = useCallback((currentIndex: number, range: number = 1) => {
-    if (flatEmailList.length === 0) return;
+  const preloadAdjacent = useCallback(
+    (currentIndex: number, range: number = 1) => {
+      if (flatEmailList.length === 0) return;
 
-    const start = Math.max(0, currentIndex - range);
-    const end = Math.min(flatEmailList.length - 1, currentIndex + range);
+      const start = Math.max(0, currentIndex - range);
+      const end = Math.min(flatEmailList.length - 1, currentIndex + range);
 
-    for (let i = start; i <= end; i++) {
-      const email = flatEmailList[i];
-      if (email && !email.body_html && !email.body_text && !('source' in email && email.source === 'remote')) {
-        preloadEmail(email.id);
+      for (let i = start; i <= end; i++) {
+        const email = flatEmailList[i];
+        if (
+          email &&
+          !email.body_html &&
+          !email.body_text &&
+          !("source" in email && email.source === "remote")
+        ) {
+          preloadEmail(email.id);
+        }
       }
-    }
-  }, [flatEmailList, preloadEmail]);
+    },
+    [flatEmailList, preloadEmail],
+  );
 
   // Preload first N emails on initial load
   useEffect(() => {
@@ -1023,7 +1162,12 @@ export default function EmailView() {
       const preloadCount = Math.min(3, flatEmailList.length);
       for (let i = 0; i < preloadCount; i++) {
         const email = flatEmailList[i];
-        if (email && !email.body_html && !email.body_text && !('source' in email && email.source === 'remote')) {
+        if (
+          email &&
+          !email.body_html &&
+          !email.body_text &&
+          !("source" in email && email.source === "remote")
+        ) {
           preloadEmail(email.id);
         }
       }
@@ -1033,7 +1177,9 @@ export default function EmailView() {
   // Preload adjacent emails when selection changes
   useEffect(() => {
     if (selectedEmailId && flatEmailList.length > 0) {
-      const currentIndex = flatEmailList.findIndex(e => e.id === selectedEmailId);
+      const currentIndex = flatEmailList.findIndex(
+        (e) => e.id === selectedEmailId,
+      );
       if (currentIndex !== -1) {
         preloadAdjacent(currentIndex);
       }
@@ -1043,7 +1189,7 @@ export default function EmailView() {
   // Reuse thread query payload for attachment rendering to avoid duplicate thread API calls
   useEffect(() => {
     if (!selectedThreadId || !threadData?.emails?.length) return;
-    setThreadAttachmentsMap(prev => {
+    setThreadAttachmentsMap((prev) => {
       if (prev[selectedThreadId]) return prev;
       return {
         ...prev,
@@ -1053,30 +1199,41 @@ export default function EmailView() {
   }, [selectedThreadId, threadData]);
 
   // Keyboard navigation
-  const navigateEmails = useCallback((direction: 'up' | 'down') => {
-    if (flatEmailList.length === 0) return;
+  const navigateEmails = useCallback(
+    (direction: "up" | "down") => {
+      if (flatEmailList.length === 0) return;
 
-    const currentIndex = selectedEmailId
-      ? flatEmailList.findIndex(e => e.id === selectedEmailId)
-      : -1;
+      const currentIndex = selectedEmailId
+        ? flatEmailList.findIndex((e) => e.id === selectedEmailId)
+        : -1;
 
-    let newIndex: number;
-    if (direction === 'down') {
-      newIndex = currentIndex < flatEmailList.length - 1 ? currentIndex + 1 : currentIndex;
-    } else {
-      newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-    }
+      let newIndex: number;
+      if (direction === "down") {
+        newIndex =
+          currentIndex < flatEmailList.length - 1
+            ? currentIndex + 1
+            : currentIndex;
+      } else {
+        newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+      }
 
-    if (newIndex !== currentIndex && flatEmailList[newIndex]) {
-      const email = flatEmailList[newIndex];
-      handleEmailClick(email);
+      if (newIndex !== currentIndex && flatEmailList[newIndex]) {
+        const email = flatEmailList[newIndex];
+        handleEmailClick(email);
 
-      setTimeout(() => {
-        const emailElement = document.querySelector(`[data-email-id="${email.id}"]`);
-        emailElement?.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-      }, 0);
-    }
-  }, [flatEmailList, selectedEmailId]);
+        setTimeout(() => {
+          const emailElement = document.querySelector(
+            `[data-email-id="${email.id}"]`,
+          );
+          emailElement?.scrollIntoView({
+            behavior: "instant",
+            block: "nearest",
+          });
+        }, 0);
+      }
+    },
+    [flatEmailList, selectedEmailId],
+  );
 
   // Zone-based keyboard navigation
   // app-sidebar = mailboxes sidebar (Inbox, Flagged, etc.)
@@ -1086,7 +1243,7 @@ export default function EmailView() {
   const emailListRef = useRef<HTMLDivElement>(null);
 
   // Build list of navigable folder IDs for keyboard navigation (only "All Accounts" folders for simplicity)
-  const folderIds = useMemo(() => FOLDER_LIST.map(f => f.id), []);
+  const folderIds = useMemo(() => FOLDER_LIST.map((f) => f.id), []);
 
   // Find current folder index
   const currentFolderIndex = useMemo(() => {
@@ -1108,11 +1265,11 @@ export default function EmailView() {
     // Don't steal focus when inline reply is open - user is typing a reply
     if (inlineReplyIsOpen) return;
 
-    if (activeZone === 'app-sidebar') {
+    if (activeZone === "app-sidebar") {
       setTimeout(() => {
         mailboxesSidebarRef.current?.focus();
       }, 0);
-    } else if (activeZone === 'content') {
+    } else if (activeZone === "content") {
       setTimeout(() => {
         emailListRef.current?.focus();
       }, 0);
@@ -1121,69 +1278,102 @@ export default function EmailView() {
         setSelectedEmailId(flatEmailList[0].id);
       }
     }
-  }, [activeZone, selectedEmailId, flatEmailList, setSelectedEmailId, isSearchOpen, composeIsOpen, inlineReplyIsOpen]);
+  }, [
+    activeZone,
+    selectedEmailId,
+    flatEmailList,
+    setSelectedEmailId,
+    isSearchOpen,
+    composeIsOpen,
+    inlineReplyIsOpen,
+  ]);
 
   // Keyboard handler for mailboxes sidebar (Inbox, Flagged, etc.)
-  const handleMailboxesKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setActiveZone('main-sidebar');
-      return;
-    }
+  const handleMailboxesKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setActiveZone("main-sidebar");
+        return;
+      }
 
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      setActiveZone('content');
-      return;
-    }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setActiveZone("content");
+        return;
+      }
 
-    if (activeZone !== 'app-sidebar') return;
+      if (activeZone !== "app-sidebar") return;
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const nextIndex = currentFolderIndex < folderIds.length - 1 ? currentFolderIndex + 1 : 0;
-      setActiveFolder(folderIds[nextIndex]);
-      setSelectedAccounts([]); // Ensure we're in "All Accounts" mode
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const prevIndex = currentFolderIndex > 0 ? currentFolderIndex - 1 : folderIds.length - 1;
-      setActiveFolder(folderIds[prevIndex]);
-      setSelectedAccounts([]); // Ensure we're in "All Accounts" mode
-    }
-  }, [activeZone, setActiveZone, currentFolderIndex, folderIds, setActiveFolder, setSelectedAccounts]);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const nextIndex =
+          currentFolderIndex < folderIds.length - 1
+            ? currentFolderIndex + 1
+            : 0;
+        setActiveFolder(folderIds[nextIndex]);
+        setSelectedAccounts([]); // Ensure we're in "All Accounts" mode
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prevIndex =
+          currentFolderIndex > 0
+            ? currentFolderIndex - 1
+            : folderIds.length - 1;
+        setActiveFolder(folderIds[prevIndex]);
+        setSelectedAccounts([]); // Ensure we're in "All Accounts" mode
+      }
+    },
+    [
+      activeZone,
+      setActiveZone,
+      currentFolderIndex,
+      folderIds,
+      setActiveFolder,
+      setSelectedAccounts,
+    ],
+  );
 
   // Keyboard handler for email list
-  const handleEmailListKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setActiveZone('app-sidebar');
-      return;
-    }
+  const handleEmailListKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setActiveZone("app-sidebar");
+        return;
+      }
 
-    if (activeZone !== 'content') return;
+      if (activeZone !== "content") return;
 
-    if (e.key === 'ArrowDown' || e.key === 'j') {
-      e.preventDefault();
-      navigateEmails('down');
-    } else if (e.key === 'ArrowUp' || e.key === 'k') {
-      e.preventDefault();
-      navigateEmails('up');
-    }
-  }, [navigateEmails, setActiveZone, activeZone]);
+      if (e.key === "ArrowDown" || e.key === "j") {
+        e.preventDefault();
+        navigateEmails("down");
+      } else if (e.key === "ArrowUp" || e.key === "k") {
+        e.preventDefault();
+        navigateEmails("up");
+      }
+    },
+    [navigateEmails, setActiveZone, activeZone],
+  );
 
   // Get folder counts for display (for "All Accounts" view)
   const getFolderCount = (folderId: EmailFolder): number | undefined => {
-    if (folderId === 'INBOX') return counts?.inbox_unread;
-    if (folderId === 'DRAFT') return counts?.drafts_count;
+    if (folderId === "INBOX") return counts?.inbox_unread;
+    if (folderId === "DRAFT") return counts?.drafts_count;
     return undefined;
   };
 
   // Get folder counts for a specific account
-  const getAccountFolderCount = (accountId: string, folderId: EmailFolder): number | undefined => {
-    if (folderId !== 'DRAFT') return undefined;
-    const accountStatus = accountsStatus.find((a) => a.connectionId === accountId);
+  const getAccountFolderCount = (
+    accountId: string,
+    folderId: EmailFolder,
+  ): number | undefined => {
+    if (folderId !== "DRAFT") return undefined;
+    const accountStatus = accountsStatus.find(
+      (a) => a.connectionId === accountId,
+    );
     const accountCount = counts?.per_account?.find(
-      (account) => account.id === accountId || account.email === accountStatus?.email
+      (account) =>
+        account.id === accountId || account.email === accountStatus?.email,
     );
     return accountCount?.drafts_count;
   };
@@ -1197,7 +1387,7 @@ export default function EmailView() {
           ref={mailboxesSidebarRef}
           tabIndex={0}
           onKeyDown={handleMailboxesKeyDown}
-          onFocus={() => setActiveZone('app-sidebar')}
+          onFocus={() => setActiveZone("app-sidebar")}
           className={`w-[212px] shrink-0 flex flex-col overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${SIDEBAR.bg} border-r border-black/5`}
         >
           {/* Header */}
@@ -1209,783 +1399,984 @@ export default function EmailView() {
               title="Compose email"
               aria-label="Compose email"
             >
-              <HugeiconsIcon icon={PencilEdit01Icon} size={16} aria-hidden="true" />
+              <HugeiconsIcon
+                icon={PencilEdit01Icon}
+                size={16}
+                aria-hidden="true"
+              />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 pt-0">
-          {/* All Accounts section */}
-          {(() => {
-            const isAllExpanded = expandedAccounts.has('all');
-            const toggleAllExpand = () => {
-              setExpandedAccounts(prev => {
-                const next = new Set(prev);
-                if (next.has('all')) {
-                  next.delete('all');
-                } else {
-                  next.add('all');
-                }
-                return next;
-              });
-            };
+            {/* All Accounts section */}
+            {(() => {
+              const isAllExpanded = expandedAccounts.has("all");
+              const toggleAllExpand = () => {
+                setExpandedAccounts((prev) => {
+                  const next = new Set(prev);
+                  if (next.has("all")) {
+                    next.delete("all");
+                  } else {
+                    next.add("all");
+                  }
+                  return next;
+                });
+              };
 
-            return (
-              <div className="space-y-0.5">
-                {/* All Accounts header - styled like folder row */}
-                <button
-                  onClick={toggleAllExpand}
-                  aria-expanded={isAllExpanded}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors group cursor-pointer text-text-secondary hover:text-text-body hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
-                >
-                  {isAllExpanded ? (
-                    <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  ) : (
-                    <ChevronRightIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="flex-1 text-left">All Accounts</span>
-                </button>
-
-                {/* Folders under All Accounts */}
-                {isAllExpanded && (
-                  <div className="space-y-0.5">
-                    {FOLDER_LIST.map(folder => {
-                      const count = getFolderCount(folder.id);
-                      const isActive = activeFolder === folder.id && selectedAccountIds.length === 0;
-                      const FolderIcon = folder.icon;
-
-                      return (
-                        <button
-                          key={folder.id}
-                          onClick={() => {
-                            setActiveFolder(folder.id);
-                            setSelectedAccounts([]);
-                          }}
-                          onMouseEnter={() => prefetchFolder(folder.id as RQEmailFolder, [])}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${
-                            isActive
-                              ? SIDEBAR.selected
-                              : `${SIDEBAR.item} hover:bg-black/5`
-                          }`}
-                        >
-                          <FolderIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                          <span className="flex-1 text-left">{folder.name}</span>
-                          {count !== undefined && count > 0 && (
-                            <span className="text-xs font-bold text-text-body">
-                              {count}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Individual account sections */}
-          {accountsStatus.map(account => {
-            const isExpanded = expandedAccounts.has(account.connectionId);
-            const toggleExpand = () => {
-              setExpandedAccounts(prev => {
-                const next = new Set(prev);
-                if (next.has(account.connectionId)) {
-                  next.delete(account.connectionId);
-                } else {
-                  next.add(account.connectionId);
-                }
-                return next;
-              });
-            };
-
-            return (
-              <div key={account.connectionId} className="mt-2 space-y-0.5">
-                {/* Account header - styled like folder row */}
-                <button
-                  onClick={toggleExpand}
-                  aria-expanded={isExpanded}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors group cursor-pointer text-text-secondary hover:text-text-body hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
-                >
-                  {isExpanded ? (
-                    <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  ) : (
-                    <ChevronRightIcon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                  )}
-                  <span className="flex-1 text-left truncate">{account.email}</span>
-                </button>
-
-                {/* Folders under this account */}
-                {isExpanded && (
-                  <div className="space-y-0.5">
-                    {FOLDER_LIST.map(folder => {
-                      const isActive = activeFolder === folder.id &&
-                        selectedAccountIds.length === 1 &&
-                        selectedAccountIds[0] === account.connectionId;
-                      const FolderIcon = folder.icon;
-                      const folderCount = getAccountFolderCount(account.connectionId, folder.id);
-
-                      return (
-                        <button
-                          key={folder.id}
-                          onClick={() => {
-                            setActiveFolder(folder.id);
-                            setSelectedAccounts([account.connectionId]);
-                          }}
-                          onMouseEnter={() => prefetchFolder(folder.id as RQEmailFolder, [account.connectionId])}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${
-                            isActive
-                              ? SIDEBAR.selected
-                              : `${SIDEBAR.item} hover:bg-black/5`
-                          }`}
-                        >
-                          <FolderIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                          <span className="flex-1 text-left">{folder.name}</span>
-                          {folderCount !== undefined && folderCount > 0 && (
-                            <span className="text-xs font-bold text-text-body">
-                              {folderCount}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="p-2">
-          <button
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-[13px] text-text-secondary hover:text-text-body transition-colors rounded-lg hover:bg-bg-gray-dark/50"
-          >
-            <ArrowPathIcon className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Syncing...' : 'Sync Mail'}
-          </button>
-        </div>
-      </div>
-
-      {/* Email list + detail container */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex flex-1 bg-white overflow-hidden">
-        {/* Email list */}
-        <div
-          ref={emailListRef}
-          tabIndex={0}
-          onKeyDown={handleEmailListKeyDown}
-          onFocus={() => setActiveZone('content')}
-          className="w-80 shrink-0 flex flex-col outline-none border-r border-border-gray"
-        >
-        <div className="h-12 shrink-0 flex items-center pl-4 pr-2 border-b border-border-gray">
-          <AnimatePresence mode="wait">
-            {isSearchOpen ? (
-              <motion.div
-                key="search"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.08 }}
-                className="flex-1 flex items-center gap-2"
-              >
-                <motion.div
-                  className="relative flex-1"
-                  initial={{ x: 8 }}
-                  animate={{ x: 0 }}
-                  exit={{ x: 8 }}
-                  transition={{ duration: 0.08 }}
-                >
-                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Search emails..."
-                    value={searchQuery}
-                    onChange={e => handleSearchChange(e.target.value)}
-                    onKeyDown={e => {
-                      e.stopPropagation();
-                      if (e.key === 'Escape') {
-                        setSearchQuery('');
-                        clearSearch();
-                        setIsSearchOpen(false);
-                      }
-                    }}
-                    className="w-full pl-9 pr-3 py-1.5 text-sm bg-bg-mini-app rounded-lg focus:outline-none"
-                    autoFocus
-                  />
-                </motion.div>
-                {isSearching && (
-                  <ArrowPathIcon className="w-3.5 h-3.5 text-text-tertiary animate-spin shrink-0" />
-                )}
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    clearSearch();
-                    setIsSearchOpen(false);
-                  }}
-                  className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors shrink-0"
-                  title="Close search"
-                >
-                  <XMarkIcon className="w-4.5 h-4.5" />
-                </button>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="header"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.05 }}
-                className="flex-1"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold text-text-body">
-                      {FOLDER_LIST.find(f => f.id === activeFolder)?.name}
-                      <span className="text-sm font-normal text-text-secondary ml-1.5">
-                        - {filteredEmails.length} {filteredEmails.length === 1 ? 'message' : 'messages'}
-                      </span>
-                    </h2>
-                  </div>
+              return (
+                <div className="space-y-0.5">
+                  {/* All Accounts header - styled like folder row */}
                   <button
-                    onClick={() => setIsSearchOpen(true)}
-                    className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                    title="Search"
+                    onClick={toggleAllExpand}
+                    aria-expanded={isAllExpanded}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors group cursor-pointer text-text-secondary hover:text-text-body hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
                   >
-                    <MagnifyingGlassIcon className="w-4.5 h-4.5" />
+                    {isAllExpanded ? (
+                      <ChevronDownIcon
+                        className="w-3.5 h-3.5 flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <ChevronRightIcon
+                        className="w-3.5 h-3.5 flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="flex-1 text-left">All Accounts</span>
                   </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
 
-        {isSearchOpen && searchQuery.trim() && searchMeta && !isSearching && (
-          <div className="px-4 py-1 text-[11px] text-text-tertiary border-b border-border-gray">
-            {searchMeta.local_count} local · {searchMeta.remote_count} from provider
-            {searchMeta.has_provider_errors && <span className="text-yellow-500 ml-1">(partial)</span>}
-          </div>
-        )}
+                  {/* Folders under All Accounts */}
+                  {isAllExpanded && (
+                    <div className="space-y-0.5">
+                      {FOLDER_LIST.map((folder) => {
+                        const count = getFolderCount(folder.id);
+                        const isActive =
+                          activeFolder === folder.id &&
+                          selectedAccountIds.length === 0;
+                        const FolderIcon = folder.icon;
 
-        {/* Category filter buttons - only show for inbox when not searching */}
-        {activeFolder === 'INBOX' && !isSearchOpen && (
-          <div className="px-4 py-2 flex gap-2">
-            {(['personal', 'promotions', 'social'] as const).map((category) => (
-              <button
-                key={category}
-                onClick={() => setCategoryFilter(category)}
-                className={`px-3 py-1 text-[13px] rounded-lg transition-colors ${
-                  categoryFilter === category
-                    ? 'bg-black/8 text-text-body font-medium'
-                    : 'text-text-secondary hover:text-text-body hover:bg-black/5'
-                }`}
-              >
-                {category.charAt(0).toUpperCase() + category.slice(1)}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/20 [&::-webkit-scrollbar-thumb]:rounded-full">
-          {/* Only show skeleton if actually loading AND not restoring from cache AND no emails */}
-          {isLoading && !isRestoring && emails.length === 0 ? (
-            <div className="animate-pulse">
-              {/* Skeleton email items */}
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="px-2 py-0.5">
-                  <div className="px-3 py-2.5">
-                    <div className="flex gap-2">
-                      {/* Unread indicator placeholder */}
-                      <div className="w-2 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="h-4 bg-gray-200 rounded w-32" />
-                          <div className="h-3 bg-gray-100 rounded w-12" />
-                        </div>
-                        <div className="h-4 bg-gray-200 rounded w-48 mb-1.5" />
-                        <div className="h-3.5 bg-gray-100 rounded w-full" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : error && emails.length === 0 ? (
-            <div className="p-4 text-center text-red-400">{error}</div>
-          ) : emails.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">
-              <p className="text-sm">No messages</p>
-            </div>
-          ) : filteredEmails.length === 0 && activeFolder === 'INBOX' ? (
-            <div className="p-8 text-center text-text-secondary">
-              <p className="text-sm">No {categoryFilter} emails</p>
-            </div>
-          ) : (
-            groupedEmails.map(group => (
-              <div key={group.label}>
-                <div className="sticky top-0 z-10 bg-white px-4 py-1.5 text-[10px] font-label font-medium text-text-tertiary uppercase tracking-wide">
-                  {group.label}
-                </div>
-                {group.emails.map(email => (
-                  <div key={email.id} className="px-2 py-0.5">
-                    <button
-                      data-email-id={email.id}
-                      onClick={() => handleEmailClick(email)}
-                      onMouseEnter={() => {
-                        // Prefetch email details on hover for instant navigation
-                        if (!('source' in email && email.source === 'remote')) {
-                          preloadEmail(email.id);
-                        }
-                      }}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-150 outline-none focus:outline-none ${
-                        selectedEmailId === email.id
-                          ? activeZone === 'content'
-                            ? 'bg-brand-primary/5'
-                            : 'bg-black/[0.03]'
-                          : 'hover:bg-black/[0.02]'
-                      }`}
-                    >
-                    <div className="flex gap-2">
-                      {/* Unread indicator */}
-                      <div className="w-2 shrink-0 flex items-start pt-1.5">
-                        {!email.is_read && (
-                          <div className="w-2 h-2 rounded-full bg-blue-600" />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`text-[14px] truncate ${
-                              !email.is_read
-                                ? 'text-text-body font-bold'
-                                : 'text-text-body font-medium'
-                            }`}>
-                              {email.from_name || email.from_email?.split('@')[0] || 'Unknown'}
+                        return (
+                          <button
+                            key={folder.id}
+                            onClick={() => {
+                              setActiveFolder(folder.id);
+                              setSelectedAccounts([]);
+                            }}
+                            onMouseEnter={() =>
+                              prefetchFolder(folder.id as RQEmailFolder, [])
+                            }
+                            className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${
+                              isActive
+                                ? SIDEBAR.selected
+                                : `${SIDEBAR.item} hover:bg-black/5`
+                            }`}
+                          >
+                            <FolderIcon
+                              className="w-4 h-4 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="flex-1 text-left">
+                              {folder.name}
                             </span>
-                            {email.threadCount > 1 && (
-                              <span className="text-[12px] text-text-secondary font-medium shrink-0">
-                                {email.threadCount}
+                            {count !== undefined && count > 0 && (
+                              <span className="text-xs font-bold text-text-body">
+                                {count}
                               </span>
                             )}
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {'source' in email && email.source === 'remote' && (
-                              <CloudArrowDownIcon className="w-3 h-3 text-text-tertiary" title="From provider" />
-                            )}
-                            {email.has_attachments && (
-                              <PaperClipIcon className="w-3 h-3 text-text-tertiary" />
-                            )}
-                            <span className="text-[11px] text-text-tertiary">
-                              {formatDate(email.date)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <p className="text-[13px] text-text-body line-clamp-1">
-                          {email.subject || '(No Subject)'}
-                        </p>
-                        <p className="text-[13px] mt-0.5 text-text-body opacity-60 line-clamp-1">
-                          {email.snippet
-                            ? decodeHtmlEntities(email.snippet.replace(/\s+/g, ' ').trim())
-                            : '\u00A0'}
-                        </p>
-                      </div>
+                          </button>
+                        );
+                      })}
                     </div>
-                  </button>
-                  </div>
-                ))}
-              </div>
-            ))
-          )}
-          {/* Infinite scroll trigger */}
-          <div ref={loadMoreRef} className="h-1" />
-          {/* Loading more indicator */}
-          {isLoadingMore && (
-            <div className="py-4 text-center">
-              <ArrowPathIcon className="w-4.5 h-4.5 mx-auto animate-spin text-text-tertiary" />
-            </div>
-          )}
-        </div>
-      </div>
-
-        {/* Email detail */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {selectedEmail ? (
-          <>
-            {/* Toolbar */}
-            <div className="h-12 flex items-center justify-between px-4 border-b border-border-gray">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => openInlineReply(selectedEmail, 'reply')}
-                  className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                  title="Reply"
-                >
-                  <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
-                </button>
-                {(selectedEmail.to_emails?.length > 1 || (selectedEmail.cc_emails?.length ?? 0) > 0) && (
-                  <button
-                    onClick={() => openInlineReply(selectedEmail, 'reply-all')}
-                    className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                    title="Reply All"
-                  >
-                    <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
-                  </button>
-                )}
-                <button
-                  onClick={() => openInlineForward(selectedEmail)}
-                  className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                  title="Forward"
-                >
-                  <HugeiconsIcon icon={ArrowMoveUpRightIcon} size={18} />
-                </button>
-                <div className="w-px h-5 bg-border-gray mx-1" />
-                {activeFolder === 'TRASH' ? (
-                  <button
-                    onClick={() => handleRestore(selectedEmail)}
-                    className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                    title="Restore"
-                  >
-                    <ArrowUturnLeftIcon className="w-4.5 h-4.5" />
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleArchive(selectedEmail)}
-                      className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                      title="Archive"
-                    >
-                      <ArchiveBoxIcon className="w-4.5 h-4.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(selectedEmail)}
-                      className="p-2 text-red-400 hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <TrashIcon className="w-4.5 h-4.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-0.5">
-                <HeaderButtons
-                  onSettingsClick={() => setShowSettingsDropdown(prev => !prev)}
-                  settingsButtonRef={settingsButtonRef}
-                />
-              </div>
-            </div>
-
-            {/* Content area - relative for panels */}
-            <div className="flex-1 overflow-hidden relative">
-              {/* Subject header */}
-              <div className="h-full overflow-y-auto">
-                <div className="px-6 py-4">
-                  <h1 className="text-xl font-semibold text-text-body">
-                    {selectedEmail.subject || '(No Subject)'}
-                  </h1>
+                  )}
                 </div>
-                <div className="mx-6 border-b border-border-gray" />
+              );
+            })()}
 
-                {/* Email thread + Inline Reply container */}
-                <div className="pb-32">
-                {/* Fetching remote email overlay */}
-                {fetchingRemoteId && fetchingRemoteId === selectedEmailId && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80">
-                    <div className="flex items-center gap-2 text-text-secondary">
-                      <ArrowPathIcon className="w-5 h-5 animate-spin" />
-                      <span className="text-sm">Fetching from provider...</span>
-                    </div>
-                  </div>
-                )}
-                {/* Previous emails in thread (collapsed) */}
-                {selectedThreadEmails.length > 1 && selectedThreadEmails.slice(0, -1).map((threadEmail) => {
-                  const isExpanded = expandedThreadEmails.has(threadEmail.id);
-                  // Use cached details if available
-                  const cachedEmail = emailDetailsCache[threadEmail.id];
-                  const emailToRender = cachedEmail || threadEmail;
-                  return (
-                    <div key={threadEmail.id} className="border-b border-border-gray">
-                      {/* Collapsed header - always visible */}
-                      <button
-                        onClick={() => {
-                          setExpandedThreadEmails(prev => {
-                            const next = new Set(prev);
-                            if (next.has(threadEmail.id)) {
-                              next.delete(threadEmail.id);
-                            } else {
-                              next.add(threadEmail.id);
-                              // Fetch details if not cached
-                              if (!emailDetailsCache[threadEmail.id]?.body_html && !emailDetailsCache[threadEmail.id]?.body_text) {
-                                fetchEmailDetails(threadEmail.id);
-                              }
+            {/* Individual account sections */}
+            {accountsStatus.map((account) => {
+              const isExpanded = expandedAccounts.has(account.connectionId);
+              const toggleExpand = () => {
+                setExpandedAccounts((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(account.connectionId)) {
+                    next.delete(account.connectionId);
+                  } else {
+                    next.add(account.connectionId);
+                  }
+                  return next;
+                });
+              };
+
+              return (
+                <div key={account.connectionId} className="mt-2 space-y-0.5">
+                  {/* Account header - styled like folder row */}
+                  <button
+                    onClick={toggleExpand}
+                    aria-expanded={isExpanded}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors group cursor-pointer text-text-secondary hover:text-text-body hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
+                  >
+                    {isExpanded ? (
+                      <ChevronDownIcon
+                        className="w-3.5 h-3.5 flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <ChevronRightIcon
+                        className="w-3.5 h-3.5 flex-shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="flex-1 text-left truncate">
+                      {account.email}
+                    </span>
+                  </button>
+
+                  {/* Folders under this account */}
+                  {isExpanded && (
+                    <div className="space-y-0.5">
+                      {FOLDER_LIST.map((folder) => {
+                        const isActive =
+                          activeFolder === folder.id &&
+                          selectedAccountIds.length === 1 &&
+                          selectedAccountIds[0] === account.connectionId;
+                        const FolderIcon = folder.icon;
+                        const folderCount = getAccountFolderCount(
+                          account.connectionId,
+                          folder.id,
+                        );
+
+                        return (
+                          <button
+                            key={folder.id}
+                            onClick={() => {
+                              setActiveFolder(folder.id);
+                              setSelectedAccounts([account.connectionId]);
+                            }}
+                            onMouseEnter={() =>
+                              prefetchFolder(folder.id as RQEmailFolder, [
+                                account.connectionId,
+                              ])
                             }
-                            return next;
-                          });
-                        }}
-                        className="w-full text-left px-6 py-3 hover:bg-bg-gray transition-colors flex items-center gap-3"
-                      >
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
-                          style={{ backgroundColor: getAvatarColor(threadEmail.from_email) }}
-                        >
-                          {getInitials(threadEmail.from_name, threadEmail.from_email)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-medium text-text-body truncate">
-                              {threadEmail.from_name || threadEmail.from_email || 'Unknown'}
-                            </span>
-                            <span className="text-[12px] text-text-tertiary shrink-0">
-                              {formatDate(threadEmail.date)}
-                            </span>
-                          </div>
-                          {!isExpanded && (
-                            <p className="text-[13px] text-text-secondary truncate mt-0.5">
-                              {threadEmail.snippet ? decodeHtmlEntities(stripQuotedFromSnippet(threadEmail.snippet)) : ''}
-                            </p>
-                          )}
-                        </div>
-                        <ChevronDownIcon
-                          className={`w-4 h-4 text-text-tertiary shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                        />
-                      </button>
-
-                      {/* Expanded content */}
-                      {isExpanded && (
-                        <div className="px-6 pb-4">
-                          <div className="text-[13px] text-text-secondary mb-3">
-                            To: {emailToRender.to_emails?.join(', ') || accountsStatus.map(a => a.email).join(', ') || 'me'}
-                          </div>
-                          {loadingDetailsId === threadEmail.id ? (
-                            <div className="flex items-center justify-center py-4">
-                              <ArrowPathIcon className="w-5 h-5 text-text-tertiary animate-spin" />
-                            </div>
-                          ) : emailToRender.body_html ? (
-                            <div
-                              className="prose prose-sm max-w-none text-[14px] text-text-body"
-                              dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(emailToRender.body_html) }}
+                            className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary ${
+                              isActive
+                                ? SIDEBAR.selected
+                                : `${SIDEBAR.item} hover:bg-black/5`
+                            }`}
+                          >
+                            <FolderIcon
+                              className="w-4 h-4 shrink-0"
+                              aria-hidden="true"
                             />
-                          ) : emailToRender.body_text || emailToRender.snippet ? (
-                            <div
-                              className="prose prose-sm max-w-none text-[14px] text-text-body"
-                              dangerouslySetInnerHTML={{ __html: plainTextToHtml(emailToRender.body_text || emailToRender.snippet || '') }}
-                            />
-                          ) : (
-                            <div className="text-[14px] text-text-secondary">No content</div>
-                          )}
-                          {(() => {
-                            const threadEmails = threadAttachmentsMap[selectedEmail?.thread_id || ''];
-                            const emailWithAttachments = threadEmails?.find(e => e.id === threadEmail.id);
-                            if (emailWithAttachments?.attachments?.length) {
-                              return (
-                                <AttachmentList
-                                  emailId={threadEmail.id}
-                                  attachments={emailWithAttachments.attachments}
-                                  compact
-                                  onImageClick={setLightboxImageUrl}
-                                />
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Current/Latest email - header + body */}
-                {latestThreadEmail && (
-                  <div>
-                    {/* Latest email header */}
-                    <div className="px-6 py-4 flex items-start gap-3">
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
-                        style={{ backgroundColor: getAvatarColor(latestThreadEmail.from_email) }}
-                      >
-                        {getInitials(latestThreadEmail.from_name, latestThreadEmail.from_email)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-[15px] font-medium text-text-body">
-                            {latestThreadEmail.from_name || latestThreadEmail.from_email}
-                          </span>
-                          {latestThreadEmail.from_name && (
-                            <span className="text-[13px] text-text-secondary">
-                              &lt;{latestThreadEmail.from_email}&gt;
+                            <span className="flex-1 text-left">
+                              {folder.name}
                             </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-[13px] text-text-secondary mt-0.5">
-                          <span>To: {latestThreadEmail.to_emails?.join(', ') || accountsStatus.map(a => a.email).join(', ') || 'me'}</span>
-                          <span>•</span>
-                          <span>{new Date(latestThreadEmail.date).toLocaleString([], {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit'
-                          })}</span>
-                        </div>
-                      </div>
-                      {latestThreadEmail.is_starred && (
-                        <StarIconSolid className="w-5 h-5 text-yellow-400 shrink-0" />
-                      )}
+                            {folderCount !== undefined && folderCount > 0 && (
+                              <span className="text-xs font-bold text-text-body">
+                                {folderCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-                    {/* Latest email body */}
-                    {loadingDetailsId === latestThreadEmail.id ? (
-                      <div className="flex items-center justify-center py-12">
-                        <ArrowPathIcon className="w-6 h-6 text-text-tertiary animate-spin" />
-                      </div>
-                    ) : latestEmailHtmlContent ? (
-                      <>
-                        <iframe
-                          srcDoc={latestEmailHtmlContent}
-                          className="w-full border-0"
-                          sandbox="allow-same-origin allow-popups"
-                          title="Email content"
-                          style={{ height: '100px' }}
-                          onLoad={(e) => {
-                            // Auto-resize iframe to content height
-                            const iframe = e.target as HTMLIFrameElement;
-                            if (iframe.contentDocument) {
-                              const contentHeight = iframe.contentDocument.body.scrollHeight;
-                              iframe.style.height = Math.max(contentHeight, 50) + 'px';
+          <div className="p-2">
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-[13px] text-text-secondary hover:text-text-body transition-colors rounded-lg hover:bg-bg-gray-dark/50"
+            >
+              <ArrowPathIcon
+                className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`}
+              />
+              {isSyncing ? "Syncing..." : "Sync Mail"}
+            </button>
+          </div>
+        </div>
+
+        {/* Email list + detail container */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex flex-1 bg-white overflow-hidden">
+            {/* Email list */}
+            <div
+              ref={emailListRef}
+              tabIndex={0}
+              onKeyDown={handleEmailListKeyDown}
+              onFocus={() => setActiveZone("content")}
+              className="w-80 shrink-0 flex flex-col outline-none border-r border-border-gray"
+            >
+              <div className="h-12 shrink-0 flex items-center pl-4 pr-2 border-b border-border-gray">
+                <AnimatePresence mode="wait">
+                  {isSearchOpen ? (
+                    <motion.div
+                      key="search"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.08 }}
+                      className="flex-1 flex items-center gap-2"
+                    >
+                      <motion.div
+                        className="relative flex-1"
+                        initial={{ x: 8 }}
+                        animate={{ x: 0 }}
+                        exit={{ x: 8 }}
+                        transition={{ duration: 0.08 }}
+                      >
+                        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          placeholder="Search emails..."
+                          value={searchQuery}
+                          onChange={(e) => handleSearchChange(e.target.value)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === "Escape") {
+                              setSearchQuery("");
+                              clearSearch();
+                              setIsSearchOpen(false);
                             }
                           }}
+                          className="w-full pl-9 pr-3 py-1.5 text-sm bg-bg-mini-app rounded-lg focus:outline-none"
+                          autoFocus
                         />
-                        {/* Ellipsis button to toggle quoted content */}
-                        {latestEmailQuotedContent && (
-                          <div className="px-6 py-2">
-                            <button
-                              onClick={() => setShowQuotedContent(!showQuotedContent)}
-                              className="p-1.5 rounded-md border border-border-gray hover:bg-bg-gray-light transition-colors"
-                              title={showQuotedContent ? "Hide quoted content" : "Show quoted content"}
-                            >
-                              <EllipsisHorizontalIcon className="w-4 h-4 stroke-2 text-text-secondary" />
-                            </button>
+                      </motion.div>
+                      {isSearching && (
+                        <ArrowPathIcon className="w-3.5 h-3.5 text-text-tertiary animate-spin shrink-0" />
+                      )}
+                      <button
+                        onClick={() => {
+                          setSearchQuery("");
+                          clearSearch();
+                          setIsSearchOpen(false);
+                        }}
+                        className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors shrink-0"
+                        title="Close search"
+                      >
+                        <XMarkIcon className="w-4.5 h-4.5" />
+                      </button>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="header"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.05 }}
+                      className="flex-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base font-semibold text-text-body">
+                            {
+                              FOLDER_LIST.find((f) => f.id === activeFolder)
+                                ?.name
+                            }
+                            <span className="text-sm font-normal text-text-secondary ml-1.5">
+                              - {filteredEmails.length}{" "}
+                              {filteredEmails.length === 1
+                                ? "message"
+                                : "messages"}
+                            </span>
+                          </h2>
+                        </div>
+                        <button
+                          onClick={() => setIsSearchOpen(true)}
+                          className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                          title="Search"
+                        >
+                          <MagnifyingGlassIcon className="w-4.5 h-4.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {isSearchOpen &&
+                searchQuery.trim() &&
+                searchMeta &&
+                !isSearching && (
+                  <div className="px-4 py-1 text-[11px] text-text-tertiary border-b border-border-gray">
+                    {searchMeta.local_count} local · {searchMeta.remote_count}{" "}
+                    from provider
+                    {searchMeta.has_provider_errors && (
+                      <span className="text-yellow-500 ml-1">(partial)</span>
+                    )}
+                  </div>
+                )}
+
+              {/* Category filter buttons - only show for inbox when not searching */}
+              {activeFolder === "INBOX" && !isSearchOpen && (
+                <div className="px-4 py-2 flex gap-2">
+                  {(["personal", "promotions", "social"] as const).map(
+                    (category) => (
+                      <button
+                        key={category}
+                        onClick={() => setCategoryFilter(category)}
+                        className={`px-3 py-1 text-[13px] rounded-lg transition-colors ${
+                          categoryFilter === category
+                            ? "bg-black/8 text-text-body font-medium"
+                            : "text-text-secondary hover:text-text-body hover:bg-black/5"
+                        }`}
+                      >
+                        {category.charAt(0).toUpperCase() + category.slice(1)}
+                      </button>
+                    ),
+                  )}
+                </div>
+              )}
+
+              <div
+                ref={scrollContainerRef}
+                className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-black/20 [&::-webkit-scrollbar-thumb]:rounded-full"
+              >
+                {/* Only show skeleton if actually loading AND not restoring from cache AND no emails */}
+                {isLoading && !isRestoring && emails.length === 0 ? (
+                  <div className="animate-pulse">
+                    {/* Skeleton email items */}
+                    {[...Array(8)].map((_, i) => (
+                      <div key={i} className="px-2 py-0.5">
+                        <div className="px-3 py-2.5">
+                          <div className="flex gap-2">
+                            {/* Unread indicator placeholder */}
+                            <div className="w-2 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="h-4 bg-gray-200 rounded w-32" />
+                                <div className="h-3 bg-gray-100 rounded w-12" />
+                              </div>
+                              <div className="h-4 bg-gray-200 rounded w-48 mb-1.5" />
+                              <div className="h-3.5 bg-gray-100 rounded w-full" />
+                            </div>
                           </div>
-                        )}
-                        {/* Quoted content iframe */}
-                        {latestEmailQuotedContent && showQuotedContent && quotedContentHtml && (
-                          <iframe
-                            srcDoc={quotedContentHtml}
-                            className="w-full border-0"
-                            sandbox="allow-same-origin allow-popups"
-                            title="Quoted content"
-                            style={{ height: '100px' }}
-                            onLoad={(e) => {
-                              const iframe = e.target as HTMLIFrameElement;
-                              if (iframe.contentDocument) {
-                                const contentHeight = iframe.contentDocument.body.scrollHeight;
-                                iframe.style.height = Math.max(contentHeight, 50) + 'px';
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : error && emails.length === 0 ? (
+                  <div className="p-4 text-center text-red-400">{error}</div>
+                ) : emails.length === 0 ? (
+                  <div className="p-8 text-center text-text-secondary">
+                    <p className="text-sm">No messages</p>
+                  </div>
+                ) : filteredEmails.length === 0 && activeFolder === "INBOX" ? (
+                  <div className="p-8 text-center text-text-secondary">
+                    <p className="text-sm">No {categoryFilter} emails</p>
+                  </div>
+                ) : (
+                  groupedEmails.map((group) => (
+                    <div key={group.label}>
+                      <div className="sticky top-0 z-10 bg-white px-4 py-1.5 text-[10px] font-label font-medium text-text-tertiary uppercase tracking-wide">
+                        {group.label}
+                      </div>
+                      {group.emails.map((email) => (
+                        <div key={email.id} className="px-2 py-0.5">
+                          <button
+                            data-email-id={email.id}
+                            onClick={() => handleEmailClick(email)}
+                            onMouseEnter={() => {
+                              // Prefetch email details on hover for instant navigation
+                              if (
+                                !(
+                                  "source" in email && email.source === "remote"
+                                )
+                              ) {
+                                preloadEmail(email.id);
                               }
                             }}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <div className="px-6 py-4 text-[14px] text-text-secondary">
-                        No content
+                            className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-150 outline-none focus:outline-none ${
+                              selectedEmailId === email.id
+                                ? activeZone === "content"
+                                  ? "bg-brand-primary/5"
+                                  : "bg-black/[0.03]"
+                                : "hover:bg-black/[0.02]"
+                            }`}
+                          >
+                            <div className="flex gap-2">
+                              {/* Unread indicator */}
+                              <div className="w-2 shrink-0 flex items-start pt-1.5">
+                                {!email.is_read && (
+                                  <div className="w-2 h-2 rounded-full bg-blue-600" />
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2 mb-0.5">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span
+                                      className={`text-[14px] truncate ${
+                                        !email.is_read
+                                          ? "text-text-body font-bold"
+                                          : "text-text-body font-medium"
+                                      }`}
+                                    >
+                                      {email.from_name ||
+                                        email.from_email?.split("@")[0] ||
+                                        "Unknown"}
+                                    </span>
+                                    {email.threadCount > 1 && (
+                                      <span className="text-[12px] text-text-secondary font-medium shrink-0">
+                                        {email.threadCount}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {"source" in email &&
+                                      email.source === "remote" && (
+                                        <CloudArrowDownIcon
+                                          className="w-3 h-3 text-text-tertiary"
+                                          title="From provider"
+                                        />
+                                      )}
+                                    {email.has_attachments && (
+                                      <PaperClipIcon className="w-3 h-3 text-text-tertiary" />
+                                    )}
+                                    <span className="text-[11px] text-text-tertiary">
+                                      {formatDate(email.date)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <p className="text-[13px] text-text-body line-clamp-1">
+                                  {email.subject || "(No Subject)"}
+                                </p>
+                                <p className="text-[13px] mt-0.5 text-text-body opacity-60 line-clamp-1">
+                                  {email.snippet
+                                    ? decodeHtmlEntities(
+                                        email.snippet
+                                          .replace(/\s+/g, " ")
+                                          .trim(),
+                                      )
+                                    : "\u00A0"}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )}
+                {/* Infinite scroll trigger */}
+                <div ref={loadMoreRef} className="h-1" />
+                {/* Loading more indicator */}
+                {isLoadingMore && (
+                  <div className="py-4 text-center">
+                    <ArrowPathIcon className="w-4.5 h-4.5 mx-auto animate-spin text-text-tertiary" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Email detail */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+              {selectedEmail ? (
+                <>
+                  {/* Toolbar */}
+                  <div className="h-12 flex items-center justify-between px-4 border-b border-border-gray">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openInlineReply(selectedEmail, "reply")}
+                        className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                        title="Reply"
+                      >
+                        <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
+                      </button>
+                      {(selectedEmail.to_emails?.length > 1 ||
+                        (selectedEmail.cc_emails?.length ?? 0) > 0) && (
+                        <button
+                          onClick={() =>
+                            openInlineReply(selectedEmail, "reply-all")
+                          }
+                          className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                          title="Reply All"
+                        >
+                          <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openInlineForward(selectedEmail)}
+                        className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                        title="Forward"
+                      >
+                        <HugeiconsIcon icon={ArrowMoveUpRightIcon} size={18} />
+                      </button>
+                      <div className="w-px h-5 bg-border-gray mx-1" />
+                      {activeFolder === "TRASH" ? (
+                        <button
+                          onClick={() => handleRestore(selectedEmail)}
+                          className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                          title="Restore"
+                        >
+                          <ArrowUturnLeftIcon className="w-4.5 h-4.5" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleArchive(selectedEmail)}
+                            className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                            title="Archive"
+                          >
+                            <ArchiveBoxIcon className="w-4.5 h-4.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(selectedEmail)}
+                            className="p-2 text-red-400 hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <TrashIcon className="w-4.5 h-4.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <HeaderButtons
+                        onSettingsClick={() =>
+                          setShowSettingsDropdown((prev) => !prev)
+                        }
+                        settingsButtonRef={settingsButtonRef}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Content area - relative for panels */}
+                  <div className="flex-1 overflow-hidden relative">
+                    {/* Subject header */}
+                    <div className="h-full overflow-y-auto">
+                      <div className="px-6 py-4">
+                        <h1 className="text-xl font-semibold text-text-body">
+                          {selectedEmail.subject || "(No Subject)"}
+                        </h1>
                       </div>
-                    )}
-                    {(() => {
-                      const threadEmails = threadAttachmentsMap[selectedEmail?.thread_id || ''];
-                      const emailWithAttachments = threadEmails?.find(e => e.id === latestThreadEmail?.id);
-                      if (emailWithAttachments?.attachments?.length) {
-                        return (
-                          <div className="px-6 py-4">
-                            <AttachmentList
-                              emailId={latestThreadEmail.id}
-                              attachments={emailWithAttachments.attachments}
-                              onImageClick={setLightboxImageUrl}
-                            />
+                      <div className="mx-6 border-b border-border-gray" />
+
+                      {/* Email thread + Inline Reply container */}
+                      <div className="pb-32">
+                        {/* Fetching remote email overlay */}
+                        {fetchingRemoteId &&
+                          fetchingRemoteId === selectedEmailId && (
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80">
+                              <div className="flex items-center gap-2 text-text-secondary">
+                                <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                                <span className="text-sm">
+                                  Fetching from provider...
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        {/* Previous emails in thread (collapsed) */}
+                        {selectedThreadEmails.length > 1 &&
+                          selectedThreadEmails
+                            .slice(0, -1)
+                            .map((threadEmail) => {
+                              const isExpanded = expandedThreadEmails.has(
+                                threadEmail.id,
+                              );
+                              // Use cached details if available
+                              const cachedEmail =
+                                emailDetailsCache[threadEmail.id];
+                              const emailToRender = cachedEmail || threadEmail;
+                              return (
+                                <div
+                                  key={threadEmail.id}
+                                  className="border-b border-border-gray"
+                                >
+                                  {/* Collapsed header - always visible */}
+                                  <button
+                                    onClick={() => {
+                                      setExpandedThreadEmails((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(threadEmail.id)) {
+                                          next.delete(threadEmail.id);
+                                        } else {
+                                          next.add(threadEmail.id);
+                                          // Fetch details if not cached
+                                          if (
+                                            !emailDetailsCache[threadEmail.id]
+                                              ?.body_html &&
+                                            !emailDetailsCache[threadEmail.id]
+                                              ?.body_text
+                                          ) {
+                                            fetchEmailDetails(threadEmail.id);
+                                          }
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-full text-left px-6 py-3 hover:bg-bg-gray transition-colors flex items-center gap-3"
+                                  >
+                                    <div
+                                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
+                                      style={{
+                                        backgroundColor: getAvatarColor(
+                                          threadEmail.from_email,
+                                        ),
+                                      }}
+                                    >
+                                      {getInitials(
+                                        threadEmail.from_name,
+                                        threadEmail.from_email,
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[14px] font-medium text-text-body truncate">
+                                          {threadEmail.from_name ||
+                                            threadEmail.from_email ||
+                                            "Unknown"}
+                                        </span>
+                                        <span className="text-[12px] text-text-tertiary shrink-0">
+                                          {formatDate(threadEmail.date)}
+                                        </span>
+                                      </div>
+                                      {!isExpanded && (
+                                        <p className="text-[13px] text-text-secondary truncate mt-0.5">
+                                          {threadEmail.snippet
+                                            ? decodeHtmlEntities(
+                                                stripQuotedFromSnippet(
+                                                  threadEmail.snippet,
+                                                ),
+                                              )
+                                            : ""}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <ChevronDownIcon
+                                      className={`w-4 h-4 text-text-tertiary shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                                    />
+                                  </button>
+
+                                  {/* Expanded content */}
+                                  {isExpanded && (
+                                    <div className="px-6 pb-4">
+                                      <div className="text-[13px] text-text-secondary mb-3">
+                                        To:{" "}
+                                        {emailToRender.to_emails?.join(", ") ||
+                                          accountsStatus
+                                            .map((a) => a.email)
+                                            .join(", ") ||
+                                          "me"}
+                                      </div>
+                                      {loadingDetailsId === threadEmail.id ? (
+                                        <div className="flex items-center justify-center py-4">
+                                          <ArrowPathIcon className="w-5 h-5 text-text-tertiary animate-spin" />
+                                        </div>
+                                      ) : emailToRender.body_html ? (
+                                        <div
+                                          className="prose prose-sm max-w-none text-[14px] text-text-body"
+                                          dangerouslySetInnerHTML={{
+                                            __html: sanitizeEmailHtml(
+                                              emailToRender.body_html,
+                                            ),
+                                          }}
+                                        />
+                                      ) : emailToRender.body_text ||
+                                        emailToRender.snippet ? (
+                                        <div
+                                          className="prose prose-sm max-w-none text-[14px] text-text-body"
+                                          dangerouslySetInnerHTML={{
+                                            __html: plainTextToHtml(
+                                              emailToRender.body_text ||
+                                                emailToRender.snippet ||
+                                                "",
+                                            ),
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="text-[14px] text-text-secondary">
+                                          No content
+                                        </div>
+                                      )}
+                                      {(() => {
+                                        const threadEmails =
+                                          threadAttachmentsMap[
+                                            selectedEmail?.thread_id || ""
+                                          ];
+                                        const emailWithAttachments =
+                                          threadEmails?.find(
+                                            (e) => e.id === threadEmail.id,
+                                          );
+                                        if (
+                                          emailWithAttachments?.attachments
+                                            ?.length
+                                        ) {
+                                          return (
+                                            <AttachmentList
+                                              emailId={threadEmail.id}
+                                              attachments={
+                                                emailWithAttachments.attachments
+                                              }
+                                              compact
+                                              onImageClick={setLightboxImageUrl}
+                                            />
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                        {/* Current/Latest email - header + body */}
+                        {latestThreadEmail && (
+                          <div>
+                            {/* Latest email header */}
+                            <div className="px-6 py-4 flex items-start gap-3">
+                              <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0"
+                                style={{
+                                  backgroundColor: getAvatarColor(
+                                    latestThreadEmail.from_email,
+                                  ),
+                                }}
+                              >
+                                {getInitials(
+                                  latestThreadEmail.from_name,
+                                  latestThreadEmail.from_email,
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-[15px] font-medium text-text-body">
+                                    {latestThreadEmail.from_name ||
+                                      latestThreadEmail.from_email}
+                                  </span>
+                                  {latestThreadEmail.from_name && (
+                                    <span className="text-[13px] text-text-secondary">
+                                      &lt;{latestThreadEmail.from_email}&gt;
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[13px] text-text-secondary mt-0.5">
+                                  <span>
+                                    To:{" "}
+                                    {latestThreadEmail.to_emails?.join(", ") ||
+                                      accountsStatus
+                                        .map((a) => a.email)
+                                        .join(", ") ||
+                                      "me"}
+                                  </span>
+                                  <span>•</span>
+                                  <span>
+                                    {new Date(
+                                      latestThreadEmail.date,
+                                    ).toLocaleString([], {
+                                      weekday: "short",
+                                      month: "short",
+                                      day: "numeric",
+                                      year: "numeric",
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                              </div>
+                              {latestThreadEmail.is_starred && (
+                                <StarIconSolid className="w-5 h-5 text-yellow-400 shrink-0" />
+                              )}
+                            </div>
+
+                            {/* Latest email body */}
+                            {loadingDetailsId === latestThreadEmail.id ? (
+                              <div className="flex items-center justify-center py-12">
+                                <ArrowPathIcon className="w-6 h-6 text-text-tertiary animate-spin" />
+                              </div>
+                            ) : latestEmailHtmlContent ? (
+                              <>
+                                <iframe
+                                  srcDoc={latestEmailHtmlContent}
+                                  className="w-full border-0"
+                                  sandbox="allow-same-origin allow-popups"
+                                  title="Email content"
+                                  style={{ height: "100px" }}
+                                  onLoad={(e) => {
+                                    // Auto-resize iframe to content height
+                                    const iframe =
+                                      e.target as HTMLIFrameElement;
+                                    if (iframe.contentDocument) {
+                                      const contentHeight =
+                                        iframe.contentDocument.body
+                                          .scrollHeight;
+                                      iframe.style.height =
+                                        Math.max(contentHeight, 50) + "px";
+                                    }
+                                  }}
+                                />
+                                {/* Ellipsis button to toggle quoted content */}
+                                {latestEmailQuotedContent && (
+                                  <div className="px-6 py-2">
+                                    <button
+                                      onClick={() =>
+                                        setShowQuotedContent(!showQuotedContent)
+                                      }
+                                      className="p-1.5 rounded-md border border-border-gray hover:bg-bg-gray-light transition-colors"
+                                      title={
+                                        showQuotedContent
+                                          ? "Hide quoted content"
+                                          : "Show quoted content"
+                                      }
+                                    >
+                                      <EllipsisHorizontalIcon className="w-4 h-4 stroke-2 text-text-secondary" />
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Quoted content iframe */}
+                                {latestEmailQuotedContent &&
+                                  showQuotedContent &&
+                                  quotedContentHtml && (
+                                    <iframe
+                                      srcDoc={quotedContentHtml}
+                                      className="w-full border-0"
+                                      sandbox="allow-same-origin allow-popups"
+                                      title="Quoted content"
+                                      style={{ height: "100px" }}
+                                      onLoad={(e) => {
+                                        const iframe =
+                                          e.target as HTMLIFrameElement;
+                                        if (iframe.contentDocument) {
+                                          const contentHeight =
+                                            iframe.contentDocument.body
+                                              .scrollHeight;
+                                          iframe.style.height =
+                                            Math.max(contentHeight, 50) + "px";
+                                        }
+                                      }}
+                                    />
+                                  )}
+                              </>
+                            ) : (
+                              <div className="px-6 py-4 text-[14px] text-text-secondary">
+                                No content
+                              </div>
+                            )}
+                            {(() => {
+                              const threadEmails =
+                                threadAttachmentsMap[
+                                  selectedEmail?.thread_id || ""
+                                ];
+                              const emailWithAttachments = threadEmails?.find(
+                                (e) => e.id === latestThreadEmail?.id,
+                              );
+                              if (emailWithAttachments?.attachments?.length) {
+                                return (
+                                  <div className="px-6 py-4">
+                                    <AttachmentList
+                                      emailId={latestThreadEmail.id}
+                                      attachments={
+                                        emailWithAttachments.attachments
+                                      }
+                                      onImageClick={setLightboxImageUrl}
+                                    />
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
-                        );
+                        )}
+
+                        {/* Inline Reply Composer - appears below latest email like Gmail */}
+                        {inlineReply.isOpen &&
+                          inlineReply.draft?.replyToEmailId ===
+                            selectedEmailId && (
+                            <div ref={replyComposerRef} className="px-6 py-4">
+                              <InlineReplyComposer />
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Header with buttons */}
+                  <div className="h-12 flex items-center justify-end pl-6 pr-3 border-b border-border-gray">
+                    <HeaderButtons
+                      onSettingsClick={() =>
+                        setShowSettingsDropdown((prev) => !prev)
                       }
-                      return null;
-                    })()}
+                      settingsButtonRef={settingsButtonRef}
+                    />
                   </div>
-                )}
-
-                {/* Inline Reply Composer - appears below latest email like Gmail */}
-                {inlineReply.isOpen && inlineReply.draft?.replyToEmailId === selectedEmailId && (
-                  <div ref={replyComposerRef} className="px-6 py-4">
-                    <InlineReplyComposer />
+                  {/* Content area - relative for panels */}
+                  <div className="flex-1 overflow-hidden relative">
+                    <div className="h-full flex items-center justify-center bg-white">
+                      <div className="text-center">
+                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-gray-dark flex items-center justify-center">
+                          <PaperAirplaneIcon className="w-8 h-8 text-text-secondary" />
+                        </div>
+                        <p className="text-lg font-medium text-text-body">
+                          No Message Selected
+                        </p>
+                        <p className="text-sm mt-1 text-text-secondary">
+                          Select a message to read
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                )}
-                </div>
-              </div>
-              <NotificationsPanel />
+                </>
+              )}
             </div>
-          </>
-        ) : (
-          <>
-            {/* Header with buttons */}
-            <div className="h-12 flex items-center justify-end pl-6 pr-3 border-b border-border-gray">
-              <HeaderButtons
-                onSettingsClick={() => setShowSettingsDropdown(prev => !prev)}
-                settingsButtonRef={settingsButtonRef}
-              />
-            </div>
-            {/* Content area - relative for panels */}
-            <div className="flex-1 overflow-hidden relative">
-              <div className="h-full flex items-center justify-center bg-white">
-                <div className="text-center">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-bg-gray-dark flex items-center justify-center">
-                    <PaperAirplaneIcon className="w-8 h-8 text-text-secondary" />
-                  </div>
-                  <p className="text-lg font-medium text-text-body">No Message Selected</p>
-                  <p className="text-sm mt-1 text-text-secondary">Select a message to read</p>
-                </div>
-              </div>
-              <NotificationsPanel />
-            </div>
-          </>
-        )}
+          </div>
         </div>
-      </div>
-      </div>
 
-      {/* Settings Dropdown */}
-      <EmailSettingsDropdown
-        isOpen={showSettingsDropdown}
-        onClose={() => setShowSettingsDropdown(false)}
-        trigger={settingsButtonRef}
-        onArchive={selectedEmail && activeFolder !== 'TRASH' ? () => handleArchive(selectedEmail) : undefined}
-        onDelete={selectedEmail && activeFolder !== 'TRASH' ? () => handleDelete(selectedEmail) : undefined}
-        onRestore={selectedEmail && activeFolder === 'TRASH' ? () => handleRestore(selectedEmail) : undefined}
-      />
+        {/* Settings Dropdown */}
+        <EmailSettingsDropdown
+          isOpen={showSettingsDropdown}
+          onClose={() => setShowSettingsDropdown(false)}
+          trigger={settingsButtonRef}
+          onArchive={
+            selectedEmail && activeFolder !== "TRASH"
+              ? () => handleArchive(selectedEmail)
+              : undefined
+          }
+          onDelete={
+            selectedEmail && activeFolder !== "TRASH"
+              ? () => handleDelete(selectedEmail)
+              : undefined
+          }
+          onRestore={
+            selectedEmail && activeFolder === "TRASH"
+              ? () => handleRestore(selectedEmail)
+              : undefined
+          }
+        />
 
-      {/* Compose Email Modal */}
-      <ComposeEmail />
+        {/* Compose Email Modal */}
+        <ComposeEmail />
 
-      {/* Image Lightbox */}
-      {lightboxImageUrl &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
-            onClick={() => setLightboxImageUrl(null)}
-          >
-            <button
+        {/* Image Lightbox */}
+        {lightboxImageUrl &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80"
               onClick={() => setLightboxImageUrl(null)}
-              className="absolute top-4 right-4 p-2 text-white/80 hover:text-white transition-colors"
-              aria-label="Close"
             >
-              <XMarkIcon className="w-6 h-6" />
-            </button>
-            <img
-              src={lightboxImageUrl}
-              alt="Full size"
-              className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>,
-          document.body,
-        )}
+              <button
+                onClick={() => setLightboxImageUrl(null)}
+                className="absolute top-4 right-4 p-2 text-white/80 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+              <img
+                src={lightboxImageUrl}
+                alt="Full size"
+                className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body,
+          )}
       </div>
     </div>
   );

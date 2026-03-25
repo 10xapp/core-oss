@@ -7,7 +7,7 @@ Uses async Supabase client for non-blocking I/O.
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import logging
-from lib.supabase_client import get_authenticated_async_client
+from lib.supabase_client import get_authenticated_async_client, get_async_service_role_client
 from lib.image_proxy import generate_image_url
 
 logger = logging.getLogger(__name__)
@@ -241,7 +241,21 @@ async def create_workspace(
             raise Exception("Workspace created but could not be fetched")
 
         logger.info(f"Created workspace '{name}' for user {user_id}")
-        return _enrich_workspace_with_icon_url(workspace_result.data)
+        workspace_data = _enrich_workspace_with_icon_url(workspace_result.data)
+
+        # Create welcome note if default apps were created
+        if create_default_apps:
+            try:
+                welcome_note = await _create_welcome_note(
+                    workspace_id=str(workspace_id),
+                    user_id=user_id,
+                )
+                if welcome_note:
+                    workspace_data["welcome_note_id"] = welcome_note["id"]
+            except Exception as e:
+                logger.exception(f"Failed to create welcome note for workspace {workspace_id}: {e}")
+
+        return workspace_data
 
     except Exception as e:
         logger.exception(f"Error creating workspace for user {user_id}: {e}")
@@ -353,3 +367,100 @@ async def delete_workspace(
     except Exception as e:
         logger.exception(f"Error deleting workspace {workspace_id}: {e}")
         raise
+
+
+WELCOME_NOTE_CONTENT = """# Welcome to Core! 👋
+
+Everything you need. In one place.
+
+---
+
+## What is Core?
+
+Core is an all-in-one productivity workspace that brings together your email, calendar, projects, files, and team messaging — all powered by an AI agent that helps you get things done faster.
+
+Think of it as your unified hub for work — where everything connects and your AI assistant (the Core Agent) understands your full context.
+
+---
+
+## Core Features
+
+- **Messaging** — Team channels for real-time discussions
+- **Projects Board** — Organize and track your work with a visual project board
+- **Files** — Upload, manage, and organize your files — including docs and notes that live right inside your file system
+- **Email** — Search, read, and send emails right from Core
+- **Calendar** — View, create, and manage your events
+- **Core Agent** — An AI assistant that can search across all your data, answer questions, and take actions on your behalf
+
+---
+
+## Getting Started
+
+1. **Set up your workspace** — Create or join a workspace to get started
+2. **Connect your accounts** — Link your email and calendar for the full experience
+3. **Explore your files** — Create docs, upload files, and keep everything organized in one place
+4. **Try the AI agent** — Ask it anything about your emails, calendar, projects, or files
+5. **Invite your team** — Add teammates to collaborate in channels and shared workspaces
+
+---
+
+## Platforms
+
+- **Web app** — Available now
+- **Desktop app** — Coming soon
+- **Mobile app** — Coming soon
+
+---
+
+## Need Help?
+
+The Core Agent is always here to help! Just ask it questions about your workspace, find information, or get things done.
+
+---
+
+Welcome aboard — let's build something great together!"""
+
+
+async def _create_welcome_note(
+    workspace_id: str,
+    user_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Create a 'Welcome to Core' note in the workspace's files app.
+
+    Uses the service role client to bypass RLS, since the user's membership
+    may not yet be visible to their JWT immediately after workspace creation.
+    """
+    supabase = await get_async_service_role_client()
+
+    # Look up the files app for this workspace
+    app_result = await supabase.table("workspace_apps")\
+        .select("id")\
+        .eq("workspace_id", workspace_id)\
+        .eq("app_type", "files")\
+        .maybe_single()\
+        .execute()
+
+    if not app_result.data:
+        logger.warning(f"No files app found for workspace {workspace_id}")
+        return None
+
+    files_app_id = app_result.data["id"]
+
+    result = await supabase.table("documents").insert({
+        "user_id": user_id,
+        "workspace_app_id": files_app_id,
+        "workspace_id": workspace_id,
+        "title": "Welcome to Core!",
+        "content": WELCOME_NOTE_CONTENT,
+        "icon": "\U0001f44b",
+        "type": "note",
+        "position": 0,
+        "tags": [],
+    }).execute()
+
+    if not result.data:
+        return None
+
+    doc = result.data[0]
+    logger.info(f"Created welcome note {doc['id']} for workspace {workspace_id}")
+    return doc

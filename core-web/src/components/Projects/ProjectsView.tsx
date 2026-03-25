@@ -5,7 +5,6 @@ import { useProjectsStore } from "../../stores/projectsStore";
 import { useProjectBoards, usePrefetchBoards } from "../../hooks/queries/useProjects";
 import { updateProjectBoard, deleteProjectBoard } from "../../api/client";
 import { useQueryClient } from "@tanstack/react-query";
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import ProjectSidebar from "./components/ProjectSidebar";
 import KanbanBoard from "./components/KanbanBoard";
 import CreateProjectModal from "./components/CreateProjectModal";
@@ -130,7 +129,7 @@ export default function ProjectsView() {
   }
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden">
+    <div className="flex-1 flex h-full min-w-0 overflow-hidden">
       {/* Main content container - light bg with rounded corners */}
       <div className="flex-1 flex overflow-hidden bg-bg-mini-app">
         {/* Sidebar */}
@@ -146,7 +145,7 @@ export default function ProjectsView() {
               <div className="h-12 flex items-center justify-between pl-5 pr-3 border-b border-border-gray">
                 <div className="flex items-center gap-2">
                   <HugeiconsIcon icon={KanbanIcon} size={18} className="text-text-body" />
-                  <h1 className="text-base font-medium text-text-body">
+                  <h1 className="text-base font-semibold text-text-body">
                     {activeBoard?.name || "Project Board"}
                   </h1>
                 </div>
@@ -161,7 +160,6 @@ export default function ProjectsView() {
                 <div className="flex-1 overflow-hidden">
                   {viewMode === "kanban" ? <KanbanBoard /> : <ProjectsListView />}
                 </div>
-                <NotificationsPanel />
               </div>
             </>
           ) : (
@@ -175,7 +173,6 @@ export default function ProjectsView() {
                   Create your first project
                 </button>
               </div>
-              <NotificationsPanel />
             </div>
           )}
         </div>

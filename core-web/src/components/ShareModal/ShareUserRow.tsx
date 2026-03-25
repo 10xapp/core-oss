@@ -1,6 +1,7 @@
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, LinkIcon } from '@heroicons/react/24/outline';
 import type { Permission } from '../../api/client';
 import PermissionSelect from './PermissionSelect';
+import { avatarGradient } from '../../utils/avatarGradient';
 
 interface ShareUserRowProps {
   permission: Permission;
@@ -9,9 +10,10 @@ interface ShareUserRowProps {
 }
 
 export default function ShareUserRow({ permission, onChangePermission, onRevoke }: ShareUserRowProps) {
+  const isLink = permission.grantee_type === 'link';
   const grantee = permission.grantee;
-  const name = grantee?.name || grantee?.email || 'User';
-  const email = grantee?.email || '';
+  const name = isLink ? 'Link' : (grantee?.name || grantee?.email || 'User');
+  const email = isLink ? '' : (grantee?.email || '');
   const initials = name
     .split(' ')
     .map((part) => part[0])
@@ -22,14 +24,18 @@ export default function ShareUserRow({ permission, onChangePermission, onRevoke 
   return (
     <div className="flex items-center justify-between gap-3 py-2">
       <div className="flex items-center gap-3 min-w-0">
-        {grantee?.avatar_url ? (
+        {isLink ? (
+          <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100">
+            <LinkIcon className="w-4 h-4 text-text-secondary" />
+          </div>
+        ) : grantee?.avatar_url ? (
           <img
             src={grantee.avatar_url}
             alt={name}
             className="w-8 h-8 rounded-full object-cover"
           />
         ) : (
-          <div className="w-8 h-8 rounded-full bg-bg-gray flex items-center justify-center text-xs font-semibold text-text-body">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white" style={{ background: avatarGradient(name) }}>
             {initials}
           </div>
         )}

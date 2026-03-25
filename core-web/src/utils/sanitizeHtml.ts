@@ -66,12 +66,26 @@ function sanitize(html: string, config: Config): string {
   return DOMPurify.sanitize(html, config);
 }
 
+/** Sanitize HTML and force all links to open in a new tab. */
+function sanitizeWithExternalLinks(html: string, config: Config): string {
+  if (!html) return '';
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+  const result = DOMPurify.sanitize(html, config);
+  DOMPurify.removeHook('afterSanitizeAttributes');
+  return result;
+}
+
 export function sanitizeEmailHtml(html: string): string {
   return sanitize(html, RICH_DOCUMENT_CONFIG);
 }
 
 export function sanitizeStrictHtml(html: string): string {
-  return sanitize(html, STRICT_CONFIG);
+  return sanitizeWithExternalLinks(html, STRICT_CONFIG);
 }
 
 export function sanitizeRichDocumentHtml(html: string): string {

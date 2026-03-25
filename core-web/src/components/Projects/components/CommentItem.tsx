@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { EllipsisHorizontalIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { avatarGradient } from '../../../utils/avatarGradient';
 import type { IssueComment, ContentBlock } from '../../../api/client';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -145,7 +146,7 @@ export default function CommentItem({
           className="w-7 h-7 rounded-full object-cover flex-shrink-0"
         />
       ) : (
-        <div className="w-7 h-7 rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0">
+        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: avatarGradient(comment.user?.name || comment.user?.email || '?') }}>
           <span className="text-[10px] font-medium text-white">{getInitials()}</span>
         </div>
       )}

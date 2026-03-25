@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotificationStore, type Notification } from '../../stores/notificationStore';
-import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { navigateFromNotification } from '../../lib/notificationNavigation';
 import NotificationPanel from './NotificationPanel';
 
 export default function NotificationBell() {
@@ -10,25 +10,7 @@ export default function NotificationBell() {
 
   const handleNavigate = useCallback((notification: Notification) => {
     setOpen(false);
-
-    // Navigate based on resource_type
-    if (notification.resource_type === 'issue' && notification.workspace_id) {
-      const boardId = notification.data?.board_id;
-      const workspace = useWorkspaceStore.getState().workspaces.find(
-        ws => ws.id === notification.workspace_id
-      );
-
-      if (workspace) {
-        // Find the projects app for this workspace
-        const projectsApp = workspace.apps
-          ?.find(app => app.type === 'projects');
-
-        if (projectsApp && boardId) {
-          useWorkspaceStore.getState().setActiveWorkspace(workspace.id);
-          navigate(`/workspace/${workspace.id}/projects`);
-        }
-      }
-    }
+    navigateFromNotification(notification, navigate);
   }, [navigate, setOpen]);
 
   return (

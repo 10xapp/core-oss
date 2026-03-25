@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -102,6 +103,42 @@ export function NoteToolbar({
   isHidden?: boolean;
 }) {
   const [showTextFormatting, setShowTextFormatting] = useState(false);
+  const [showHighlightMenu, setShowHighlightMenu] = useState(false);
+  const highlightButtonRef = useRef<HTMLButtonElement>(null);
+  const [linkPopover, setLinkPopover] = useState<{ x: number; y: number } | null>(null);
+  const [linkUrl, setLinkUrl] = useState('');
+  const linkInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus the link input when the popover opens
+  useEffect(() => {
+    if (linkPopover) {
+      // Small delay to ensure the input is rendered
+      requestAnimationFrame(() => linkInputRef.current?.focus());
+    }
+  }, [linkPopover]);
+
+  const openLinkPopover = () => {
+    if (!editor) return;
+    const { view, state } = editor;
+    const { from } = state.selection;
+    const coords = view.coordsAtPos(from);
+    setLinkUrl(editor.getAttributes('link').href || '');
+    setLinkPopover({ x: coords.left, y: coords.bottom + 4 });
+  };
+
+  const applyLink = () => {
+    if (linkUrl) {
+      editor?.chain().focus().setLink({ href: linkUrl }).run();
+    }
+    setLinkPopover(null);
+    setLinkUrl('');
+  };
+
+  const cancelLink = () => {
+    setLinkPopover(null);
+    setLinkUrl('');
+    editor?.chain().focus().run();
+  };
 
   if (!editor) return null;
 
@@ -132,27 +169,14 @@ export function NoteToolbar({
     </button>
   );
 
-  // Check if any text formatting is active
-  const hasActiveTextFormat = editor.isActive('heading', { level: 1 }) ||
-    editor.isActive('heading', { level: 2 }) ||
-    editor.isActive('bold') ||
-    editor.isActive('italic') ||
-    editor.isActive('strike') ||
-    editor.isActive('underline') ||
-    editor.isActive('highlight');
-
   return (
-    <div className={`flex items-center py-2 shrink-0 transition-opacity duration-[600ms] ${isHidden ? 'opacity-0' : 'opacity-100'}`}>
+    <div className={`flex items-center py-2 shrink-0 -ml-1.5 transition-opacity duration-[600ms] ${isHidden ? 'opacity-0' : 'opacity-100'}`}>
       <div className="flex items-center gap-1">
         {/* Text formatting toggle button */}
         <button
           onClick={() => setShowTextFormatting(!showTextFormatting)}
           title="Text formatting"
-          className={`p-1.5 rounded transition-colors text-sm font-medium ${
-            showTextFormatting || hasActiveTextFormat
-              ? 'bg-bg-gray-dark text-text-body'
-              : 'text-text-secondary hover:text-text-body hover:bg-bg-gray'
-          }`}
+          className="p-1.5 rounded transition-colors text-sm font-medium text-text-secondary hover:text-text-body hover:bg-bg-gray"
         >
           Aa
         </button>
@@ -169,14 +193,14 @@ export function NoteToolbar({
             isActive={editor.isActive('heading', { level: 1 })}
             title="Heading 1"
           >
-            <span className="text-xs font-bold">H1</span>
+            <span className="w-4 h-4 flex items-center justify-center text-xs font-bold">H1</span>
           </ToolbarButton>
           <ToolbarButton
             onAction={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             isActive={editor.isActive('heading', { level: 2 })}
             title="Heading 2"
           >
-            <span className="text-xs font-bold">H2</span>
+            <span className="w-4 h-4 flex items-center justify-center text-xs font-bold">H2</span>
           </ToolbarButton>
           <div className="w-px h-4 bg-border-gray mx-1" />
           <ToolbarButton
@@ -184,21 +208,21 @@ export function NoteToolbar({
             isActive={editor.isActive('bold')}
             title="Bold"
           >
-            <span className="font-bold text-sm">B</span>
+            <span className="w-4 h-4 flex items-center justify-center font-bold text-sm">B</span>
           </ToolbarButton>
           <ToolbarButton
             onAction={() => editor.chain().focus().toggleItalic().run()}
             isActive={editor.isActive('italic')}
             title="Italic"
           >
-            <span className="italic text-sm">I</span>
+            <span className="w-4 h-4 flex items-center justify-center italic text-sm">I</span>
           </ToolbarButton>
           <ToolbarButton
             onAction={() => editor.chain().focus().toggleStrike().run()}
             isActive={editor.isActive('strike')}
             title="Strikethrough"
           >
-            <span className="line-through text-sm">S</span>
+            <span className="w-4 h-4 flex items-center justify-center line-through text-sm">S</span>
           </ToolbarButton>
           <ToolbarButton
             onAction={() => editor.chain().focus().toggleUnderline().run()}
@@ -207,22 +231,27 @@ export function NoteToolbar({
           >
             <HugeiconsIcon icon={TextUnderlineIcon} size={16} />
           </ToolbarButton>
-          <ToolbarButton
-            onAction={() => editor.chain().focus().toggleHighlight().run()}
-            isActive={editor.isActive('highlight')}
+          <button
+            ref={highlightButtonRef}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setShowHighlightMenu(!showHighlightMenu);
+            }}
             title="Highlight"
+            className={`p-1.5 rounded transition-colors ${
+              editor.isActive('highlight')
+                ? 'bg-bg-gray-dark text-text-body'
+                : 'text-text-secondary hover:text-text-body hover:bg-bg-gray'
+            }`}
           >
             <HugeiconsIcon icon={HighlighterIcon} size={16} />
-          </ToolbarButton>
+          </button>
           <ToolbarButton
             onAction={() => {
               if (editor.isActive('link')) {
                 editor.chain().focus().unsetLink().run();
               } else {
-                const url = window.prompt('URL');
-                if (url) {
-                  editor.chain().focus().setLink({ href: url }).run();
-                }
+                openLinkPopover();
               }
             }}
             isActive={editor.isActive('link')}
@@ -275,13 +304,106 @@ export function NoteToolbar({
           isActive={editor.isActive('table')}
           title="Insert Table"
         >
-          <svg width="16" height="13" viewBox="0 0 24 19" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-            <rect x="1" y="1" width="22" height="17" rx="2" />
-            <line x1="12" y1="1" x2="12" y2="18" />
-            <line x1="1" y1="9.5" x2="23" y2="9.5" />
-          </svg>
+          <span className="w-4 h-4 flex items-center justify-center">
+            <svg width="16" height="13" viewBox="0 0 24 19" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
+              <rect x="1" y="1" width="22" height="17" rx="2" />
+              <line x1="12" y1="1" x2="12" y2="18" />
+              <line x1="1" y1="9.5" x2="23" y2="9.5" />
+            </svg>
+          </span>
         </ToolbarButton>
       </div>
+
+      {/* Highlight color picker */}
+      {showHighlightMenu && highlightButtonRef.current && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setShowHighlightMenu(false)} />
+          <div
+            className="fixed z-[9999] bg-white border border-border-gray rounded-lg shadow-lg p-1.5 flex items-center gap-1"
+            style={{
+              left: highlightButtonRef.current.getBoundingClientRect().left + highlightButtonRef.current.getBoundingClientRect().width / 2,
+              top: highlightButtonRef.current.getBoundingClientRect().bottom + 4,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            {[
+              { color: '#fef08a', label: 'Yellow' },
+              { color: '#bbf7d0', label: 'Green' },
+              { color: '#bfdbfe', label: 'Blue' },
+              { color: '#e9d5ff', label: 'Purple' },
+              { color: '#fecdd3', label: 'Pink' },
+              { color: '#fed7aa', label: 'Orange' },
+            ].map(({ color, label }) => (
+              <button
+                key={color}
+                title={label}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (editor.isActive('highlight', { color })) {
+                    editor.chain().focus().unsetHighlight().run();
+                  } else {
+                    editor.chain().focus().setHighlight({ color }).run();
+                  }
+                  setShowHighlightMenu(false);
+                }}
+                className={`w-5 h-5 rounded-full border transition-transform hover:scale-110 ${
+                  editor.isActive('highlight', { color }) ? 'border-text-body ring-1 ring-text-body' : 'border-black/10'
+                }`}
+                style={{ backgroundColor: color }}
+              />
+            ))}
+            {editor.isActive('highlight') && (
+              <button
+                title="Remove highlight"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().unsetHighlight().run();
+                  setShowHighlightMenu(false);
+                }}
+                className="w-5 h-5 rounded-full border border-border-gray flex items-center justify-center text-text-tertiary hover:text-text-body hover:border-text-body transition-colors text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Link URL popover */}
+      {linkPopover && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={cancelLink} />
+          <div
+            className="fixed z-[9999] bg-bg-base border border-border-gray rounded-lg shadow-lg p-2 flex items-center gap-2"
+            style={{ left: linkPopover.x, top: linkPopover.y }}
+          >
+            <input
+              ref={linkInputRef}
+              type="url"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  applyLink();
+                } else if (e.key === 'Escape') {
+                  cancelLink();
+                }
+              }}
+              placeholder="https://..."
+              className="bg-white border border-border-light rounded-md px-2 py-1 text-sm w-64 outline-none focus:border-text-tertiary"
+            />
+            <button
+              onClick={applyLink}
+              className="px-2.5 py-1 text-sm bg-black text-white rounded-md hover:bg-gray-800 transition-colors"
+            >
+              OK
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -374,27 +496,25 @@ function TableFloatingToolbar({ editor }: { editor: Editor }) {
 
     try {
       const tablePos = $from.before(depth);
-      const dom = editor.view.nodeDOM(tablePos);
+      let dom = editor.view.nodeDOM(tablePos);
       if (!(dom instanceof HTMLElement)) {
         setPosition(null);
         return;
       }
-
-      const editorRect = editor.view.dom.closest('.pt-2')?.getBoundingClientRect();
-      const tableRect = dom.getBoundingClientRect();
-      if (!editorRect) {
+      // Ensure we have the <table> element itself, not a wrapper
+      const tableEl = dom.tagName === 'TABLE' ? dom : dom.querySelector('table');
+      if (!tableEl) {
         setPosition(null);
         return;
       }
 
       const toolbarWidth = toolbarRef.current?.offsetWidth ?? 320;
-      let left = tableRect.left - editorRect.left + tableRect.width / 2 - toolbarWidth / 2;
-      // Clamp so it doesn't overflow left
-      if (left < 0) left = 0;
+      const tableBottom = tableEl.offsetTop + tableEl.offsetHeight;
+      const tableCenterLeft = tableEl.offsetLeft + tableEl.offsetWidth / 2 - toolbarWidth / 2;
 
       setPosition({
-        top: tableRect.top - editorRect.top - 40,
-        left,
+        top: tableBottom + 8,
+        left: Math.max(0, tableCenterLeft),
       });
     } catch {
       setPosition(null);
@@ -432,7 +552,7 @@ function TableFloatingToolbar({ editor }: { editor: Editor }) {
   return (
     <div
       ref={toolbarRef}
-      className="absolute z-50 flex items-center gap-0.5 bg-white border border-border-gray rounded-lg shadow-md px-1 py-0.5"
+      className="absolute z-50 flex items-center gap-0.5 bg-white border border-border-gray rounded-lg shadow-md px-0.5 py-0.5"
       style={{ top: position.top, left: position.left }}
     >
       {btn('+ Row ↑', 'Add row above', () => editor.chain().focus().addRowBefore().run())}
@@ -526,11 +646,11 @@ export default function NoteEditor({ content, onChange, placeholder = 'Start wri
       }),
       Link.configure({
         openOnClick: false,
-        HTMLAttributes: { class: 'tiptap-link' },
+        HTMLAttributes: { class: 'tiptap-link', target: '_blank', rel: 'noopener noreferrer' },
       }),
       Underline,
       Highlight.configure({
-        multicolor: false,
+        multicolor: true,
       }),
       Image.configure({
         inline: false,
@@ -578,9 +698,9 @@ export default function NoteEditor({ content, onChange, placeholder = 'Start wri
         from,
         '\n',
       );
-      const mentionMatch = textBefore.match(/@(\w*)$/);
+      const mentionMatch = textBefore.match(/(^|[\s])@(\w*)$/);
       if (mentionMatch) {
-        setMentionQuery(mentionMatch[1]);
+        setMentionQuery(mentionMatch[2]);
         setShowMentionAutocomplete(true);
         // Compute cursor position for dropdown placement
         try {
@@ -744,10 +864,11 @@ export default function NoteEditor({ content, onChange, placeholder = 'Start wri
         from,
         '\n',
       );
-      const mentionMatch = textBefore.match(/@(\w*)$/);
+      const mentionMatch = textBefore.match(/(^|[\s])@(\w*)$/);
 
       if (mentionMatch) {
-        const start = from - mentionMatch[0].length;
+        const prefixLen = mentionMatch[1].length; // leading whitespace
+        const start = from - mentionMatch[0].length + prefixLen;
         editor
           .chain()
           .focus()
@@ -786,7 +907,16 @@ export default function NoteEditor({ content, onChange, placeholder = 'Start wri
   return (
     <div ref={mentionAnchorRef} className="relative">
       <TableFloatingToolbar editor={editor} />
-      <EditorContent editor={editor} />
+      <EditorContent
+        editor={editor}
+        onClick={(e) => {
+          const link = (e.target as HTMLElement).closest('a');
+          if (link?.href) {
+            e.preventDefault();
+            window.open(link.href, '_blank', 'noopener,noreferrer');
+          }
+        }}
+      />
       {/* Bottom spacer so the cursor isn't stuck at the screen edge */}
       <div className="h-[40vh]" onClick={() => editor?.commands.focus('end')} />
       {showMentionAutocomplete && workspaceId && (

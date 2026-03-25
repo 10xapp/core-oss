@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { PencilEdit01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { PencilEdit01Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
 import { updateCalendarEvent } from '../../../api/client';
 import TimePickerInput from './TimePickerInput';
 import type { CalendarEvent } from '../../../api/client';
@@ -172,7 +172,17 @@ export default function EditEventModal({
             <div className="space-y-4">
               <div>
                 <label className="block text-xs text-text-secondary mb-1.5">Meeting Link</label>
-                {meetingLink.trim() && !isEditingLink ? (
+                {meetingLink.trim() && meetingLink.includes('meet.google.com') ? (
+                  <a
+                    href={meetingLink.trim()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-600 font-medium hover:bg-blue-100 transition-colors"
+                  >
+                    <HugeiconsIcon icon={Video01Icon} size={14} className="text-blue-600 shrink-0" />
+                    Join with Google Meet
+                  </a>
+                ) : meetingLink.trim() && !isEditingLink ? (
                   <div className="flex items-center gap-2 px-3 py-2.5 bg-white border border-border-gray rounded-lg">
                     <a
                       href={meetingLink.trim()}

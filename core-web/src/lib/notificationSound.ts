@@ -23,20 +23,10 @@ function getAudioContext(): AudioContext | null {
  * Plays a subtle notification sound for new messages.
  * Uses two quick tones for a pleasant "ping" effect.
  */
-export function playMessageNotification(): void {
-  const ctx = getAudioContext();
-  if (!ctx) return;
-
-  // Resume context if suspended (browser autoplay policy)
-  if (ctx.state === 'suspended') {
-    ctx.resume();
-  }
-
+function playTone(ctx: AudioContext): void {
   const now = ctx.currentTime;
-  const volume = 0.15; // Keep it subtle
+  const volume = 0.15;
 
-  // Create a pleasant two-tone notification
-  // First tone: higher pitch
   const osc1 = ctx.createOscillator();
   const gain1 = ctx.createGain();
   osc1.connect(gain1);
@@ -48,7 +38,6 @@ export function playMessageNotification(): void {
   osc1.start(now);
   osc1.stop(now + 0.1);
 
-  // Second tone: slightly lower, delayed
   const osc2 = ctx.createOscillator();
   const gain2 = ctx.createGain();
   osc2.connect(gain2);
@@ -60,4 +49,20 @@ export function playMessageNotification(): void {
   gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
   osc2.start(now + 0.08);
   osc2.stop(now + 0.2);
+}
+
+/**
+ * Plays a subtle notification sound for new messages.
+ * Uses two quick tones for a pleasant "ping" effect.
+ */
+export function playMessageNotification(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  if (ctx.state === 'suspended') {
+    // Await resume before scheduling oscillators so they don't fire into a dead context
+    ctx.resume().then(() => playTone(ctx)).catch(() => {});
+  } else {
+    playTone(ctx);
+  }
 }

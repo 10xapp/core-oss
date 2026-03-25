@@ -9,12 +9,13 @@ Provides endpoints for:
 - Thread replies
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
 
 from api.dependencies import get_current_user_id, get_current_user_jwt
+from api.rate_limit import limiter
 from api.services.messages import (
     # Channels
     get_channels,
@@ -192,6 +193,7 @@ class MessageListResponse(BaseModel):
     """Response for listing messages."""
     messages: List[MessageResponse]
     count: int
+    has_more: bool = False
 
 
 class SingleMessageResponse(BaseModel):
@@ -246,9 +248,12 @@ async def list_channels(
 
 
 @router.post("/workspaces/apps/{workspace_app_id}/channels", response_model=SingleChannelResponse)
+@limiter.limit("5/minute;50/day")
 async def create_new_channel(
+    request: Request,
+    response: Response,
     workspace_app_id: str,
-    request: CreateChannelRequest,
+    body: CreateChannelRequest,
     user_id: str = Depends(get_current_user_id),
     user_jwt: str = Depends(get_current_user_jwt),
 ):
@@ -258,9 +263,9 @@ async def create_new_channel(
             workspace_app_id=workspace_app_id,
             user_id=user_id,
             user_jwt=user_jwt,
-            name=request.name,
-            description=request.description,
-            is_private=request.is_private,
+            name=body.name,
+            description=body.description,
+            is_private=body.is_private,
         )
         return {"channel": channel}
     except Exception as e:
@@ -399,9 +404,12 @@ async def list_user_dms(
 
 
 @router.post("/workspaces/apps/{workspace_app_id}/dms", response_model=SingleDMResponse)
+@limiter.limit("10/minute;100/day")
 async def create_or_get_dm(
+    request: Request,
+    response: Response,
     workspace_app_id: str,
-    request: CreateDMRequest,
+    body: CreateDMRequest,
     user_id: str = Depends(get_current_user_id),
     user_jwt: str = Depends(get_current_user_jwt),
 ):
@@ -411,7 +419,7 @@ async def create_or_get_dm(
             workspace_app_id=workspace_app_id,
             user_id=user_id,
             user_jwt=user_jwt,
-            participant_ids=request.participant_ids,
+            participant_ids=body.participant_ids,
         )
         return {"dm": dm}
     except Exception as e:
@@ -468,34 +476,40 @@ async def list_messages(
         messages = await get_messages(
             channel_id=channel_id,
             user_jwt=user_jwt,
-            limit=limit,
+            limit=limit + 1,
             offset=offset,
             before_id=before_id,
         )
-        return {"messages": messages, "count": len(messages)}
+        has_more = len(messages) > limit
+        if has_more:
+            messages = messages[1:]  # Drop oldest; keep `limit` most recent
+        return {"messages": messages, "count": len(messages), "has_more": has_more}
     except Exception as e:
         logger.error(f"Error listing messages: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/channels/{channel_id}/messages", response_model=SingleMessageResponse)
+@limiter.limit("30/minute;1000/day")
 async def send_message(
+    request: Request,
+    response: Response,
     channel_id: str,
-    request: CreateMessageRequest,
+    body: CreateMessageRequest,
     user_id: str = Depends(get_current_user_id),
     user_jwt: str = Depends(get_current_user_jwt),
 ):
     """Send a message to a channel."""
     try:
         # Convert Pydantic models to dicts
-        blocks = [block.model_dump() for block in request.blocks]
+        blocks = [block.model_dump() for block in body.blocks]
 
         message = await create_message(
             channel_id=channel_id,
             user_id=user_id,
             user_jwt=user_jwt,
             blocks=blocks,
-            thread_parent_id=request.thread_parent_id,
+            thread_parent_id=body.thread_parent_id,
         )
         return {"message": message}
     except Exception as e:
@@ -581,9 +595,12 @@ async def list_thread_replies(
 # =============================================================================
 
 @router.post("/messages/{message_id}/reactions", response_model=SingleReactionResponse)
+@limiter.limit("60/minute")
 async def add_reaction_to_message(
+    request: Request,
+    response: Response,
     message_id: str,
-    request: AddReactionRequest,
+    body: AddReactionRequest,
     user_id: str = Depends(get_current_user_id),
     user_jwt: str = Depends(get_current_user_jwt),
 ):
@@ -593,7 +610,7 @@ async def add_reaction_to_message(
             message_id=message_id,
             user_id=user_id,
             user_jwt=user_jwt,
-            emoji=request.emoji,
+            emoji=body.emoji,
         )
         return {"reaction": reaction}
     except Exception as e:

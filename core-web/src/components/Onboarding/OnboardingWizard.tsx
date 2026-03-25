@@ -98,13 +98,16 @@ export default function OnboardingWizard() {
         console.error("Onboarding: failed to mark complete:", err);
       }
 
-      // 5. Switch to the new workspace and navigate
+      // 5. Switch to the new workspace and navigate to notes
       await new Promise((r) => setTimeout(r, 600));
       if (newWorkspace) {
         setActiveWorkspace(newWorkspace.id);
-        navigate(`/workspace/${newWorkspace.id}/chat`, { replace: true });
+        const filesPath = newWorkspace.welcomeNoteId
+          ? `/workspace/${newWorkspace.id}/files/${newWorkspace.welcomeNoteId}`
+          : `/workspace/${newWorkspace.id}/files`;
+        navigate(filesPath, { replace: true });
       } else {
-        navigate("/chat", { replace: true });
+        navigate("/files", { replace: true });
       }
     },
     [navigate]

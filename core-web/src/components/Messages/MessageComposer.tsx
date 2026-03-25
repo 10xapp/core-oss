@@ -380,9 +380,9 @@ export function MessageComposer({
         from,
         "\n",
       );
-      const mentionMatch = textBefore.match(/@(\w*)$/);
+      const mentionMatch = textBefore.match(/(^|[\s])@(\w*)$/);
       if (mentionMatch) {
-        setMentionQuery(mentionMatch[1]);
+        setMentionQuery(mentionMatch[2]);
         setShowMentionAutocomplete(true);
       } else {
         setShowMentionAutocomplete(false);
@@ -446,10 +446,11 @@ export function MessageComposer({
         from,
         "\n",
       );
-      const mentionMatch = textBefore.match(/@(\w*)$/);
+      const mentionMatch = textBefore.match(/(^|[\s])@(\w*)$/);
 
       if (mentionMatch) {
-        const start = from - mentionMatch[0].length;
+        const prefixLen = mentionMatch[1].length; // leading whitespace
+        const start = from - mentionMatch[0].length + prefixLen;
         editor
           .chain()
           .focus()

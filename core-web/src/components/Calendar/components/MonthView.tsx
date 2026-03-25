@@ -2,6 +2,7 @@ import { useMemo, useRef, useEffect, useState } from "react";
 import type { CalendarEvent } from "../../../api/client";
 import {
   isToday,
+  isSameDay,
   startOfWeek,
   addDays,
   formatTime,
@@ -10,12 +11,12 @@ import {
 } from "../utils/dateHelpers";
 import { useCalendarStore } from "../../../stores/calendarStore";
 import { getAccountPalette, type AccountColorPalette } from "../../../utils/accountColors";
+import { getUserResponseStatus } from "../../../stores/calendarStore";
 
 interface MonthViewProps {
   selectedDate: Date;
   onDateSelect: (date: Date) => void;
   onEventClick?: (event: CalendarEvent, element: HTMLDivElement) => void;
-  onSwitchToDayView: (date: Date) => void;
   onVisibleMonthChange?: (date: Date) => void;
 }
 
@@ -107,7 +108,6 @@ export default function MonthView({
   selectedDate,
   onDateSelect,
   onEventClick,
-  onSwitchToDayView,
   onVisibleMonthChange,
 }: MonthViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -196,9 +196,15 @@ export default function MonthView({
     onEventClick?.(event, e.currentTarget as unknown as HTMLDivElement);
   };
 
-  const handleDayClick = (date: Date) => {
+  const startCreatingAllDayEvent = useCalendarStore(
+    (state) => state.startCreatingAllDayEvent,
+  );
+
+  const handleDayClick = (date: Date, e: React.MouseEvent<HTMLDivElement>) => {
     onDateSelect(date);
-    onSwitchToDayView(date);
+    // Use click coordinates for precise popover positioning near the cursor
+    const clickRect = new DOMRect(e.clientX, e.clientY, 0, 0);
+    startCreatingAllDayEvent(date, clickRect);
   };
 
   // Get the month key for a week if it's a boundary
@@ -249,6 +255,7 @@ export default function MonthView({
                 const isCurrentMonth =
                   date.getMonth() === visibleMonth.getMonth() &&
                   date.getFullYear() === visibleMonth.getFullYear();
+                const isSelected = isSameDay(date, selectedDate);
                 const dayEvents = getEventsForDate(date);
                 const visibleEvents = dayEvents.slice(0, MAX_VISIBLE_EVENTS);
                 const hiddenCount = dayEvents.length - MAX_VISIBLE_EVENTS;
@@ -256,11 +263,13 @@ export default function MonthView({
                 return (
                   <div
                     key={dayIndex}
-                    onClick={() => handleDayClick(date)}
+                    data-day-cell
+                    onClick={(e) => handleDayClick(date, e)}
                     className={`
                     border-l border-gray-100 first:border-l-0 p-1 cursor-pointer
                     hover:bg-gray-50 transition-colors flex flex-col overflow-hidden
                     ${!isCurrentMonth ? "bg-gray-50/50" : ""}
+                    ${isSelected && !dayIsToday ? "bg-gray-50" : ""}
                   `}
                   >
                     <div className="flex items-center justify-end mb-1">
@@ -287,6 +296,10 @@ export default function MonthView({
 
                     <div className="flex-1 flex flex-col gap-1 overflow-hidden">
                       {visibleEvents.map((event) => {
+                        const rsvp = getUserResponseStatus(event);
+                        const isOutlined = rsvp === 'tentative' || rsvp === 'needsAction' || rsvp === 'declined';
+                        const isDeclined = rsvp === 'declined';
+
                         if (event.all_day) {
                           const palette = getAllDayEventPalette(event);
                           return (
@@ -295,8 +308,10 @@ export default function MonthView({
                               onClick={(e) => handleEventClick(e, event)}
                               className="w-full h-5 text-left px-1.5 rounded text-xs truncate transition-opacity hover:opacity-80 flex items-center"
                               style={{
-                                backgroundColor: palette.bg,
+                                backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
                                 color: palette.title,
+                                border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
+                                textDecoration: isDeclined ? 'line-through' : undefined,
                               }}
                             >
                               {event.title}
@@ -313,12 +328,15 @@ export default function MonthView({
                           >
                             <span
                               className="w-2 h-2 rounded-full shrink-0"
-                              style={{ backgroundColor: dotColor }}
+                              style={{
+                                backgroundColor: isOutlined ? 'transparent' : dotColor,
+                                border: isOutlined ? `1.5px solid ${dotColor}` : undefined,
+                              }}
                             />
-                            <span className="text-gray-500 shrink-0">
+                            <span className="text-gray-500 shrink-0" style={{ textDecoration: isDeclined ? 'line-through' : undefined }}>
                               {formatEventTime(event.start_time)}
                             </span>
-                            <span className="text-gray-700 truncate">
+                            <span className="text-gray-700 truncate" style={{ textDecoration: isDeclined ? 'line-through' : undefined }}>
                               {event.title}
                             </span>
                           </button>

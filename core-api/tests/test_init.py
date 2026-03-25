@@ -114,7 +114,7 @@ def test_get_init_data_recovers_default_workspace(client, monkeypatch):
 
     default_workspace = {
         "id": "ws-default",
-        "name": "Dashboard",
+        "name": "Personal",
         "is_default": True,
     }
 

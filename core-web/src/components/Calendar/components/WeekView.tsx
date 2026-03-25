@@ -77,23 +77,21 @@ export default function WeekView({
   const weekStart = useMemo(() => startOfWeek(selectedDate), [selectedDate]);
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
 
-  const dayColumnWidth = useMemo(() => {
-    if (containerWidth === 0) return 100;
-    return (containerWidth - TIME_LABEL_WIDTH) / 7;
-  }, [containerWidth]);
-
-  // Track container width
+  // Track container width from scrollRef (not containerRef) to account for scrollbar
+  // The header uses flex layout inside scrollRef, so we need to measure the same element
+  // to ensure dayColumnWidth matches the actual flex column widths
   useEffect(() => {
-    if (containerRef.current) {
-      setContainerWidth(containerRef.current.offsetWidth);
+    if (scrollRef.current) {
+      setContainerWidth(scrollRef.current.clientWidth);
 
       const resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
-          setContainerWidth(entry.contentRect.width);
+          // Use clientWidth to exclude scrollbar width
+          setContainerWidth((entry.target as HTMLElement).clientWidth);
         }
       });
 
-      resizeObserver.observe(containerRef.current);
+      resizeObserver.observe(scrollRef.current);
       return () => resizeObserver.disconnect();
     }
   }, []);
@@ -221,110 +219,134 @@ export default function WeekView({
 
   return (
     <div ref={containerRef} className="flex-1 flex flex-col overflow-hidden">
-      {/* Week header with day names and dates */}
-      <div className="shrink-0 border-b border-gray-200 bg-white">
-        <div className="flex">
-          {/* Time column spacer - matches time label width in grid */}
-          <div style={{ width: TIME_COLUMN_WIDTH - 8 }} />
-
-          {/* Day headers */}
-          {weekDays.map((day, index) => {
-            const dayIsToday = isToday(day);
-
-            return (
-              <button
-                key={index}
-                onClick={() => onDateSelect(day)}
-                className="flex-1 py-4 flex flex-col items-center hover:bg-gray-50 transition-colors"
-              >
-                <span className="text-sm text-gray-500">
-                  {DAY_NAMES[index]}
-                </span>
-                <span
-                  className={`
-                    mt-1 text-lg font-medium
-                    ${dayIsToday ? "text-slate-500" : "text-gray-900"}
-                  `}
-                >
-                  {day.getDate()}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* All-day events row - always visible */}
-        <div className="flex min-h-8">
-          <div
-            style={{ width: TIME_COLUMN_WIDTH - 8 }}
-            className="shrink-0 flex items-center justify-end pr-2"
-          >
-            <span className="text-xs text-gray-400">All</span>
-          </div>
-          {weekDays.map((day, dayIndex) => {
-            const dayAllDayEvents = allDayEventsByDay[dayIndex];
-            return (
-              <div
-                key={dayIndex}
-                className="flex-1 border-l border-gray-100 px-1 py-1 flex flex-col gap-0.5 cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={(e) => {
-                  // Only trigger if clicking the container itself, not an event
-                  if (
-                    e.target === e.currentTarget ||
-                    (e.target as HTMLElement).classList.contains("all-day-slot")
-                  ) {
-                    startCreatingAllDayEvent(
-                      day,
-                      e.currentTarget.getBoundingClientRect(),
-                    );
-                  }
-                }}
-              >
-                {dayAllDayEvents.slice(0, 2).map((event) => {
-                  const palette = getAccountPalette(event.account_email);
-                  return (
-                    <button
-                      key={event.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEventClick(
-                          event,
-                          e.currentTarget as unknown as HTMLDivElement,
-                        );
-                      }}
-                      className="text-left px-1.5 py-0.5 rounded text-xs font-medium truncate transition-opacity hover:opacity-80"
-                      style={{
-                        backgroundColor: palette.bg,
-                        color: palette.title,
-                      }}
-                    >
-                      {event.title}
-                    </button>
-                  );
-                })}
-                {dayAllDayEvents.length > 2 && (
-                  <span className="text-xs text-gray-400 px-1">
-                    +{dayAllDayEvents.length - 2}
-                  </span>
-                )}
-                {/* Clickable area when no events */}
-                {dayAllDayEvents.length === 0 && (
-                  <div className="all-day-slot flex-1 min-h-4" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Scrollable timeline */}
+      {/* Scrollable timeline - header is sticky inside to share the same width */}
       <div
         ref={scrollRef}
         id="calendar-scroll-container"
         className="flex-1 overflow-y-auto"
         style={{ backgroundColor: "#FCFCFC" }}
       >
+        {/* Week header with day names and dates - sticky at top */}
+        <div className="sticky top-0 z-30 border-b border-gray-200 bg-white">
+          <div className="flex">
+            {/* Time column spacer - matches time label width in grid */}
+            <div style={{ width: TIME_COLUMN_WIDTH - 8 }} />
+
+            {/* Day headers */}
+            {weekDays.map((day, index) => {
+              const dayIsToday = isToday(day);
+              const isSelected = isSameDay(day, selectedDate);
+
+              return (
+                <button
+                  key={index}
+                  onClick={() => onDateSelect(day)}
+                  className={`flex-1 py-4 flex flex-col items-center hover:bg-gray-50 transition-colors ${
+                    isSelected && !dayIsToday ? "bg-gray-50" : ""
+                  }`}
+                >
+                  <span className="text-sm text-gray-500">
+                    {DAY_NAMES[index]}
+                  </span>
+                  <span
+                    className={`
+                      mt-1 text-lg font-medium
+                      ${dayIsToday ? "text-slate-500" : "text-gray-900"}
+                    `}
+                  >
+                    {day.getDate()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* All-day events row - always visible */}
+          <div className="flex min-h-8">
+            <div
+              style={{ width: TIME_COLUMN_WIDTH - 8 }}
+              className="shrink-0 flex items-center justify-end pr-2"
+            >
+              <span className="text-xs text-gray-400">All</span>
+            </div>
+            {weekDays.map((day, dayIndex) => {
+              const dayAllDayEvents = allDayEventsByDay[dayIndex];
+              const isSelectedDay = isSameDay(day, selectedDate);
+              const dayIsToday = isToday(day);
+              return (
+                <div
+                  key={dayIndex}
+                  className={`flex-1 border-l border-gray-100 px-1 py-1 flex flex-col gap-0.5 cursor-pointer hover:bg-gray-50 transition-colors ${
+                    isSelectedDay && !dayIsToday ? "bg-gray-50" : ""
+                  }`}
+                  onClick={(e) => {
+                    // Only trigger if clicking the container itself, not an event
+                    if (
+                      e.target === e.currentTarget ||
+                      (e.target as HTMLElement).classList.contains(
+                        "all-day-slot",
+                      )
+                    ) {
+                      startCreatingAllDayEvent(
+                        day,
+                        e.currentTarget.getBoundingClientRect(),
+                      );
+                    }
+                  }}
+                >
+                  {dayAllDayEvents.slice(0, 2).map((event) => {
+                    const palette = getAccountPalette(event.account_email);
+                    return (
+                      <button
+                        key={event.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEventClick(
+                            event,
+                            e.currentTarget as unknown as HTMLDivElement,
+                          );
+                        }}
+                        className="text-left px-1.5 py-0.5 rounded text-xs font-medium truncate transition-opacity hover:opacity-80"
+                        style={{
+                          backgroundColor: palette.bg,
+                          color: palette.title,
+                        }}
+                      >
+                        {event.title}
+                      </button>
+                    );
+                  })}
+                  {dayAllDayEvents.length > 2 && (
+                    <span className="text-xs text-gray-400 px-1">
+                      +{dayAllDayEvents.length - 2}
+                    </span>
+                  )}
+                  {/* Clickable area when no events */}
+                  {dayAllDayEvents.length === 0 && (
+                    <div className="all-day-slot flex-1 min-h-4" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="relative" style={{ height: 24 * HOUR_HEIGHT }}>
+          {/* Background shading for selected day — uses flex layout to match header/grid columns */}
+          <div className="absolute inset-0 flex pointer-events-none">
+            <div className="shrink-0" style={{ width: TIME_COLUMN_WIDTH - 8 }} />
+            {weekDays.map((day, index) => {
+              const isSelected = isSameDay(day, selectedDate);
+              const dayIsToday = isToday(day);
+              return (
+                <div
+                  key={`bg-${index}`}
+                  className={`flex-1 ${isSelected && !dayIsToday ? "bg-gray-50" : ""}`}
+                />
+              );
+            })}
+          </div>
+
           {/* Hour grid with 4 invisible 15-minute drop zones per hour */}
           {HOURS.map((hour) => (
             <div
@@ -357,7 +379,7 @@ export default function WeekView({
                 style={{
                   position: "absolute",
                   top: 0,
-                  left: TIME_COLUMN_WIDTH,
+                  left: TIME_LABEL_WIDTH,
                   right: 0,
                   borderTop: "0.5px solid rgba(209, 213, 221, 0.6)",
                   pointerEvents: "none",
@@ -401,80 +423,73 @@ export default function WeekView({
             </div>
           ))}
 
-          {/* Current time indicator for today */}
-          {weekDays.some((day) => isToday(day)) && (
-            <CurrentTimeIndicatorWeek
-              weekDays={weekDays}
-              hourHeight={HOUR_HEIGHT}
-              timeLabelWidth={TIME_LABEL_WIDTH}
-              dayColumnWidth={dayColumnWidth}
-            />
-          )}
-
-          {/* Event blocks for each day */}
-          {weekDays.map((_, dayIndex) => {
-            const dayEvents = timedEventsByDay[dayIndex];
-            const layouts = layoutsByDay[dayIndex];
-
-            return dayEvents.map((event) => {
-              const layout = layouts.get(event.id);
-              if (!layout) return null;
+          {/* Event blocks and current time indicator - flex overlay matching grid columns */}
+          <div className="absolute inset-0 flex pointer-events-none">
+            <div className="shrink-0" style={{ width: TIME_LABEL_WIDTH }} />
+            {weekDays.map((day, dayIndex) => {
+              const dayEvents = timedEventsByDay[dayIndex];
+              const layouts = layoutsByDay[dayIndex];
+              const dayIsToday = isToday(day);
 
               return (
-                <DraggableEventBlock
-                  key={event.id}
-                  event={event}
-                  layout={layout}
-                  containerWidth={containerWidth}
-                  dayIndex={dayIndex}
-                  onClick={onEventClick}
-                  isWeekView
-                  hourHeight={HOUR_HEIGHT}
-                  timeColumnWidth={TIME_COLUMN_WIDTH}
-                  viewDate={weekDays[dayIndex]}
-                />
-              );
-            });
-          })}
+                <div key={dayIndex} className="flex-1 relative">
+                  {/* Current time indicator for today */}
+                  {dayIsToday && (
+                    <CurrentTimeIndicatorWeek hourHeight={HOUR_HEIGHT} />
+                  )}
 
-          {/* New event block (when creating inline) */}
-          {pendingEvent &&
-            weekDays.map((day, dayIndex) => {
-              if (!isSameDay(pendingEvent.date, day)) return null;
-              return (
-                <NewEventBlock
-                  key="pending-event"
-                  date={pendingEvent.date}
-                  hour={pendingEvent.hour}
-                  minute={pendingEvent.minute}
-                  endHour={pendingEvent.endHour}
-                  endMinute={pendingEvent.endMinute}
-                  containerWidth={containerWidth}
-                  dayIndex={dayIndex}
-                  isWeekView
-                  hourHeight={HOUR_HEIGHT}
-                  timeColumnWidth={TIME_COLUMN_WIDTH}
-                  title={pendingEvent.title}
-                />
+                  {/* Event blocks */}
+                  {dayEvents.map((event) => {
+                    const layout = layouts.get(event.id);
+                    if (!layout) return null;
+
+                    return (
+                      <DraggableEventBlock
+                        key={event.id}
+                        event={event}
+                        layout={layout}
+                        containerWidth={containerWidth}
+                        dayIndex={dayIndex}
+                        onClick={onEventClick}
+                        isWeekView
+                        hourHeight={HOUR_HEIGHT}
+                        timeColumnWidth={TIME_COLUMN_WIDTH}
+                        viewDate={weekDays[dayIndex]}
+                      />
+                    );
+                  })}
+
+                  {/* New event block (when creating inline) */}
+                  {pendingEvent && isSameDay(pendingEvent.date, day) && (
+                    <NewEventBlock
+                      key="pending-event"
+                      date={pendingEvent.date}
+                      hour={pendingEvent.hour}
+                      minute={pendingEvent.minute}
+                      endHour={pendingEvent.endHour}
+                      endMinute={pendingEvent.endMinute}
+                      containerWidth={containerWidth}
+                      isWeekView
+                      hourHeight={HOUR_HEIGHT}
+                      timeColumnWidth={TIME_COLUMN_WIDTH}
+                      title={pendingEvent.title}
+                    />
+                  )}
+                </div>
               );
             })}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Current time indicator for week view
+// Current time indicator for week view (rendered inside the day column flex container)
 function CurrentTimeIndicatorWeek({
-  weekDays,
   hourHeight,
-  timeLabelWidth,
-  dayColumnWidth,
 }: {
-  weekDays: Date[];
   hourHeight: number;
-  timeLabelWidth: number;
-  dayColumnWidth: number;
 }) {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -483,13 +498,9 @@ function CurrentTimeIndicatorWeek({
     return () => clearInterval(timer);
   }, []);
 
-  const todayIndex = weekDays.findIndex((day) => isToday(day));
-  if (todayIndex === -1) return null;
-
   const hours = currentTime.getHours();
   const minutes = currentTime.getMinutes();
   const topPosition = (hours * 60 + minutes) * (hourHeight / 60);
-  const leftPosition = timeLabelWidth + todayIndex * dayColumnWidth;
   const circleSize = 8;
 
   return (
@@ -497,8 +508,8 @@ function CurrentTimeIndicatorWeek({
       className="absolute pointer-events-none z-20"
       style={{
         top: topPosition,
-        left: leftPosition - circleSize / 2,
-        width: dayColumnWidth,
+        left: -circleSize / 2,
+        right: 0,
       }}
     >
       {/* Circle centered on the left edge of today's column */}

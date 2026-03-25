@@ -4,13 +4,15 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFilesStore } from '../stores/filesStore';
 import { useMessagesStore } from '../stores/messagesStore';
 import { useProjectMembers, useProjectBoards } from './queries/useProjects';
+import { todoKeys } from './queries/keys';
 import type { MentionMenuItem, MentionMenuLevel } from '../types/mention';
-import type { Document, Channel } from '../api/client';
+import type { Document, Channel, Todo } from '../api/client';
 
 const APP_EMOJIS: Record<string, string> = {
   files: '📁',
   projects: '📋',
   messages: '💬',
+  tasks: '✓',
 };
 
 // App types that support @ mention drill-down
@@ -117,6 +119,23 @@ export function useMentionData(workspaceId: string | null) {
               displayName: ch.name,
               icon: ch.is_private ? '🔒' : '💬',
             })),
+          };
+        }
+
+        case 'tasks': {
+          const todos =
+            queryClient.getQueryData<Todo[]>(todoKeys.list(appId, 'all')) || [];
+          return {
+            title: item.displayName,
+            items: todos
+              .filter((t) => !t.is_completed)
+              .slice(0, 30)
+              .map((todo) => ({
+                id: todo.id,
+                entityType: 'todo' as const,
+                displayName: todo.title,
+                icon: '✓',
+              })),
           };
         }
 

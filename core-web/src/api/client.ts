@@ -270,13 +270,13 @@ export async function getDefaultWorkspace(): Promise<Workspace> {
 export async function createWorkspace(
   name: string,
   createDefaultApps: boolean = true
-): Promise<Workspace> {
-  const response = await api<{ workspace: Workspace }>('/workspaces', {
+): Promise<{ workspace: Workspace; welcome_note_id?: string }> {
+  const response = await api<{ workspace: Workspace; welcome_note_id?: string }>('/workspaces', {
     method: 'POST',
     body: JSON.stringify({ name, create_default_apps: createDefaultApps }),
   });
   trackEvent('workspace_created');
-  return response.workspace;
+  return response;
 }
 
 export async function updateWorkspace(
@@ -841,6 +841,7 @@ export interface Email {
   account_provider?: string;
   source?: 'local' | 'remote';
   connection_id?: string;
+  message_count?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   raw_item?: any;
 }
@@ -958,6 +959,7 @@ export async function getEmails(options?: {
       account_email: e.account_email,
       account_provider: e.account_provider,
       connection_id: e.ext_connection_id || e.connection_id,
+      message_count: e.message_count,
     };
   });
 
@@ -1267,6 +1269,12 @@ export async function syncEmails(): Promise<{ new_emails: number; updated_emails
 }
 
 // Send email
+export interface EmailAttachmentUpload {
+  filename: string;
+  content: string; // Base64-encoded
+  mime_type: string;
+}
+
 export interface SendEmailRequest {
   to: string[];
   cc?: string[];
@@ -1275,6 +1283,7 @@ export interface SendEmailRequest {
   body: string;       // Plain text body
   body_html?: string; // HTML body (optional)
   account_id?: string;
+  attachments?: EmailAttachmentUpload[];
   // Reply threading fields
   in_reply_to?: string;  // Message-ID of email being replied to
   thread_id?: string;    // Thread ID for grouping
@@ -1293,13 +1302,14 @@ export async function sendEmail(data: SendEmailRequest): Promise<{ id: string; t
     in_reply_to: data.in_reply_to,
     thread_id: data.thread_id,
     references: data.references,
+    attachments: data.attachments?.length ? data.attachments : undefined,
   };
 
   const result = await api<{ id: string; thread_id: string }>('/email/send', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  trackEvent('email_sent', { is_reply: !!data.in_reply_to });
+  trackEvent('email_sent', { is_reply: !!data.in_reply_to, has_attachments: !!data.attachments?.length });
   return result;
 }
 
@@ -1307,6 +1317,7 @@ export async function sendEmail(data: SendEmailRequest): Promise<{ id: string; t
 export interface SaveDraftRequest {
   to?: string[];
   cc?: string[];
+  bcc?: string[];
   subject?: string;
   body_html?: string;
   body_text?: string;
@@ -1322,6 +1333,7 @@ export async function saveDraft(data: SaveDraftRequest): Promise<{ draft_id: str
     body: JSON.stringify({
       to: data.to?.length ? data.to.join(', ') : undefined,
       cc: data.cc?.length ? data.cc : undefined,
+      bcc: data.bcc?.length ? data.bcc : undefined,
       subject: data.subject,
       body: data.body_text ?? '',
       html_body: data.body_html,
@@ -1337,6 +1349,7 @@ export async function updateDraft(draftId: string, data: SaveDraftRequest): Prom
     body: JSON.stringify({
       to: data.to?.length ? data.to.join(', ') : undefined,
       cc: data.cc?.length ? data.cc : undefined,
+      bcc: data.bcc?.length ? data.bcc : undefined,
       subject: data.subject,
       body: data.body_text,
       html_body: data.body_html,
@@ -1372,6 +1385,8 @@ export interface CalendarEvent {
   recurrence?: string[];
   attendees?: { email: string; display_name?: string; response_status: string }[];
   meeting_link?: string;
+  is_organizer?: boolean;
+  organizer_email?: string;
 }
 
 export interface CalendarEventsResponse {
@@ -1398,6 +1413,7 @@ export async function createCalendarEvent(event: {
   all_day?: boolean;
   location?: string;
   meeting_link?: string;
+  add_google_meet?: boolean;
 }): Promise<CalendarEvent> {
   const response = await api<any>('/calendar/events', {
     method: 'POST',
@@ -1423,6 +1439,23 @@ export async function updateCalendarEvent(
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
   await api(`/calendar/events/${eventId}`, { method: 'DELETE' });
   trackEvent('calendar_event_deleted');
+}
+
+export type CalendarResponseStatus = 'accepted' | 'declined' | 'tentative';
+
+export async function respondToCalendarEvent(
+  eventId: string,
+  responseStatus: CalendarResponseStatus
+): Promise<{ id: string; response_status: string; synced_to_google: boolean }> {
+  const result = await api<{ id: string; response_status: string; synced_to_google: boolean }>(
+    `/calendar/events/${eventId}/rsvp`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ response_status: responseStatus }),
+    }
+  );
+  trackEvent('calendar_event_rsvp', { response_status: responseStatus });
+  return result;
 }
 
 export async function syncCalendar(): Promise<{ synced: number }> {
@@ -1452,7 +1485,7 @@ export interface Message {
 
 export interface ContentPart {
   id: string;
-  type: 'text' | 'display' | 'action' | 'sources' | 'attachment' | 'source_ref' | 'tool_result' | 'reasoning' | 'tool_call';
+  type: 'text' | 'display' | 'action' | 'sources' | 'attachment' | 'source_ref' | 'email_ref' | 'cal_ref' | 'tool_result' | 'reasoning' | 'tool_call';
   data: Record<string, unknown>;
 }
 
@@ -1485,7 +1518,6 @@ export interface Source {
   domain?: string;
   favicon?: string;
 }
-
 
 // API functions
 export async function getConversations(): Promise<Conversation[]> {
@@ -2041,8 +2073,6 @@ export async function getFileDownloadUrl(fileId: string): Promise<{ url: string 
 }
 
 
-
-
 // ============================================================================
 // Messages Types & API Functions (Workspace Team Messaging)
 // ============================================================================
@@ -2173,7 +2203,7 @@ export async function removeChannelMember(channelId: string, userId: string): Pr
 export async function getChannelMessages(
   channelId: string,
   options?: { limit?: number; offset?: number; beforeId?: string }
-): Promise<{ messages: ChannelMessage[]; count: number }> {
+): Promise<{ messages: ChannelMessage[]; count: number; has_more?: boolean }> {
   const params = new URLSearchParams();
   if (options?.limit) params.append('limit', String(options.limit));
   if (options?.offset) params.append('offset', String(options.offset));

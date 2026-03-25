@@ -11,6 +11,10 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
 from lib.supabase_client import supabase, get_authenticated_supabase_client, get_service_role_client
 from api.services.calendar.event_parser import parse_google_event_to_data
+from api.services.notifications.calendar_invites import (
+    get_calendar_event_rows_by_external_ids,
+    reconcile_calendar_invite_notifications,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -322,8 +326,16 @@ def _sync_single_google_account_events(
             logger.warning(f"Could not get Google service for connection {connection_id[:8]}...")
             return []
 
+        connection_info = auth_supabase.table('ext_connections')\
+            .select('provider_email')\
+            .eq('id', connection_id)\
+            .maybe_single()\
+            .execute()
+        connection_email = connection_info.data.get('provider_email') if connection_info and connection_info.data else None
+
         # Fetch events from Google Calendar (last 7 days to next 30 days)
         now = datetime.now(timezone.utc)
+        sync_marker = now.isoformat()
         time_min = (now - timedelta(days=7)).isoformat()
         time_max = (now + timedelta(days=30)).isoformat()
 
@@ -358,7 +370,10 @@ def _sync_single_google_account_events(
             event_data = parse_google_event_to_data(
                 event, user_id, connection_id, include_raw_item=True
             )
+            event_data['synced_at'] = sync_marker
             events_to_upsert.append(event_data)
+
+        previous_rows_by_external_id: Dict[str, Dict[str, Any]] = {}
 
         # Batch upsert — single operation instead of per-event SELECT+INSERT/UPDATE
         synced_count = 0
@@ -374,6 +389,78 @@ def _sync_single_google_account_events(
             if result['errors']:
                 logger.warning(f"⚠️ Batch upsert errors for {connection_id[:8]}...: {result['errors'][:3]}")
                 batch_had_errors = True
+
+        if not batch_had_errors:
+            stale_rows = []
+            null_sync_stale_rows = []
+            if events_to_upsert:
+                stale_rows = auth_supabase.table('calendar_events')\
+                    .select('*')\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .lt('synced_at', sync_marker)\
+                    .execute().data or []
+                null_sync_stale_rows = auth_supabase.table('calendar_events')\
+                    .select('*')\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .is_('synced_at', 'null')\
+                    .execute().data or []
+
+                auth_supabase.table('calendar_events')\
+                    .delete()\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .lt('synced_at', sync_marker)\
+                    .execute()
+                auth_supabase.table('calendar_events')\
+                    .delete()\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .is_('synced_at', 'null')\
+                    .execute()
+            else:
+                stale_rows = auth_supabase.table('calendar_events')\
+                    .select('*')\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .execute().data or []
+                auth_supabase.table('calendar_events')\
+                    .delete()\
+                    .eq('user_id', user_id)\
+                    .eq('ext_connection_id', connection_id)\
+                    .gte('start_time', time_min)\
+                    .lte('start_time', time_max)\
+                    .execute()
+
+            for stale_row in [*stale_rows, *null_sync_stale_rows]:
+                external_id = stale_row.get('external_id')
+                if external_id:
+                    previous_rows_by_external_id[external_id] = stale_row
+
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=auth_supabase,
+                user_id=user_id,
+                external_ids=[event_data['external_id'] for event_data in events_to_upsert if event_data.get('external_id')],
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=auth_supabase,
+                user_id=user_id,
+                account_email=connection_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
 
         # Update last synced timestamp only if no batch errors
         if not batch_had_errors:

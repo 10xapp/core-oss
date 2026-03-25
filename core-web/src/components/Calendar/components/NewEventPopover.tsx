@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { Calendar03Icon, Location01Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Calendar03Icon, Location01Icon, Video01Icon, NoteEditIcon } from '@hugeicons-pro/core-stroke-standard';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { createCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
@@ -97,7 +97,7 @@ export default function NewEventPopover() {
   const updatePendingEventEndTime = useCalendarStore((state) => state.updatePendingEventEndTime);
   const updatePendingEventDescription = useCalendarStore((state) => state.updatePendingEventDescription);
   const updatePendingEventLocation = useCalendarStore((state) => state.updatePendingEventLocation);
-  const updatePendingEventLink = useCalendarStore((state) => state.updatePendingEventLink);
+  const togglePendingEventGoogleMeet = useCalendarStore((state) => state.togglePendingEventGoogleMeet);
   const cancelCreatingEvent = useCalendarStore((state) => state.cancelCreatingEvent);
   const updatePendingEventEndDate = useCalendarStore((state) => state.updatePendingEventEndDate);
   const updatePendingEventAllDay = useCalendarStore((state) => state.updatePendingEventAllDay);
@@ -109,28 +109,23 @@ export default function NewEventPopover() {
   const popoverRef = useRef<HTMLDivElement>(null);
   const isSavingRef = useRef(false);
   const initialScrollYRef = useRef(0);
-  const positionRef = useRef({ left: 0, top: 0, positionRight: true });
   const [isEditingTime, setIsEditingTime] = useState(false);
 
   // Track if popover is open (not the full pendingEvent to avoid effect re-runs on title change)
   const isOpen = !!pendingEvent;
-  const hasInitializedRef = useRef(false);
 
-  // Calculate position once when popover opens, store in ref to avoid recalculation during animation
-  useEffect(() => {
-    if (isOpen && pendingEvent && !hasInitializedRef.current) {
-      const triggerRect = pendingEvent.triggerRect;
+  // Calculate position synchronously in render (like EventPopover) to avoid flash
+  const positionRef = useRef<{ left: number; top: number; positionRight: boolean } | null>(null);
 
-      // Wait for valid triggerRect (NewEventBlock will update it after mounting)
-      if (triggerRect.width === 0 && triggerRect.height === 0) {
-        return; // Don't initialize yet, wait for NewEventBlock to update rect
-      }
+  if (isOpen && pendingEvent) {
+    const triggerRect = pendingEvent.triggerRect;
+    const isValidRect = !(triggerRect.width === 0 && triggerRect.height === 0 && triggerRect.x === 0 && triggerRect.y === 0);
 
-      hasInitializedRef.current = true;
-      isSavingRef.current = false; // Reset saving state when popover opens
+    // Calculate position once we have a valid triggerRect, and keep it stable
+    if (isValidRect && !positionRef.current) {
+      isSavingRef.current = false;
       initialScrollYRef.current = window.scrollY;
 
-      // Calculate and store position
       const spaceOnRight = window.innerWidth - triggerRect.right - POPOVER_GAP;
       const spaceOnLeft = triggerRect.left - POPOVER_GAP;
       const preferRight = spaceOnRight >= POPOVER_WIDTH;
@@ -144,7 +139,6 @@ export default function NewEventPopover() {
         left = triggerRect.left - POPOVER_WIDTH - POPOVER_GAP;
       }
 
-      // Vertical positioning
       let top = triggerRect.top;
       const popoverHeight = 140;
       const minTop = 20;
@@ -152,17 +146,27 @@ export default function NewEventPopover() {
       top = Math.max(minTop, Math.min(top, maxTop));
 
       positionRef.current = { left, top, positionRight };
+    }
+  } else {
+    positionRef.current = null;
+  }
 
-      setTimeout(() => {
+  const position = positionRef.current;
+
+  // Focus input when popover first appears
+  const hasFocusedRef = useRef(false);
+  useEffect(() => {
+    if (position && !hasFocusedRef.current) {
+      hasFocusedRef.current = true;
+      // Use requestAnimationFrame to focus after the portal renders
+      requestAnimationFrame(() => {
         inputRef.current?.focus();
-      }, 50);
+      });
     }
-
-    // Reset when popover closes
     if (!isOpen) {
-      hasInitializedRef.current = false;
+      hasFocusedRef.current = false;
     }
-  }, [isOpen, pendingEvent]);
+  }, [position, isOpen]);
 
 
   // Save event - matches CreateEventModal pattern exactly
@@ -177,7 +181,7 @@ export default function NewEventPopover() {
 
     isSavingRef.current = true;
 
-    const { date, hour, minute = 0, endDate, endHour, endMinute = 0, title, isAllDay, description, location, meeting_link } = currentPending;
+    const { date, hour, minute = 0, endDate, endHour, endMinute = 0, title, isAllDay, description, location, add_google_meet } = currentPending;
     const dateObj = date instanceof Date ? date : new Date(date);
 
     // Helper to format timezone offset as ±HH:MM
@@ -257,7 +261,6 @@ export default function NewEventPopover() {
       end_time,
       all_day: isAllDay || false,
       status: 'confirmed' as const,
-      meeting_link: meeting_link?.trim() || undefined,
     };
 
     // Add optimistic event and close popover immediately (matches CreateEventModal)
@@ -272,7 +275,7 @@ export default function NewEventPopover() {
         start_time,
         end_time,
         all_day: isAllDay || false,
-        meeting_link: meeting_link?.trim() || undefined
+        add_google_meet: add_google_meet || undefined,
       });
       console.log('Event created successfully:', createdEvent);
       // Replace optimistic event with the real one from server
@@ -339,12 +342,9 @@ export default function NewEventPopover() {
     };
   }, [isOpen, cancelCreatingEvent, saveEvent]);
 
-  if (!pendingEvent) return null;
+  if (!pendingEvent || !position) return null;
 
   const { date, hour, title } = pendingEvent;
-
-  // Use stored position to avoid recalculation during animation
-  const position = positionRef.current;
 
   const formatDisplayDate = () => {
     return date.toLocaleDateString('en-US', {
@@ -407,21 +407,9 @@ export default function NewEventPopover() {
   return createPortal(
     <motion.div
       ref={popoverRef}
-      initial={{
-        opacity: 0,
-        scale: 0.95,
-        x: position.positionRight ? -8 : 8
-      }}
-      animate={{
-        opacity: 1,
-        scale: 1,
-        x: 0
-      }}
-      exit={{
-        opacity: 0,
-        scale: 0.95,
-        x: position.positionRight ? -8 : 8
-      }}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       transition={{
         duration: 0.15,
         ease: [0.4, 0, 0.2, 1]
@@ -585,18 +573,26 @@ export default function NewEventPopover() {
           </div>
         </div>
 
-        {/* Meeting Link */}
-        <div className="flex items-center gap-2.5 mb-2">
-          <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 shrink-0" />
-          <input
-            type="url"
-            value={pendingEvent?.meeting_link || ''}
-            onChange={(e) => updatePendingEventLink(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Add Meeting Link"
-            className="flex-1 text-sm text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-400 px-0 py-1"
-          />
-        </div>
+        {/* Google Meet toggle */}
+        {pendingEvent?.add_google_meet ? (
+          <button
+            type="button"
+            onClick={() => togglePendingEventGoogleMeet(false)}
+            className="flex items-center gap-2.5 mb-2 w-full text-left px-0 py-1"
+          >
+            <HugeiconsIcon icon={Video01Icon} size={16} className="text-blue-600 shrink-0" />
+            <span className="text-sm text-blue-600 underline underline-offset-2">meet.google.com/...</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => togglePendingEventGoogleMeet(true)}
+            className="flex items-center gap-2.5 mb-2 w-full text-left px-0 py-1"
+          >
+            <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 shrink-0" />
+            <span className="text-sm text-gray-400">Add Google Meet</span>
+          </button>
+        )}
 
         {/* Location */}
         <div className="flex items-center gap-2.5 mb-3">
@@ -612,13 +608,16 @@ export default function NewEventPopover() {
         </div>
 
         {/* Description */}
-        <textarea
-          value={pendingEvent?.description || ''}
-          onChange={(e) => updatePendingEventDescription(e.target.value)}
-          placeholder="Add description"
-          className="w-full text-sm text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-400 pl-[26px] py-1 resize-none"
-          rows={2}
-        />
+        <div className="flex items-start gap-2.5">
+          <HugeiconsIcon icon={NoteEditIcon} size={16} className="text-gray-400 shrink-0 mt-1.5" />
+          <textarea
+            value={pendingEvent?.description || ''}
+            onChange={(e) => updatePendingEventDescription(e.target.value)}
+            placeholder="Add description"
+            className="flex-1 text-sm text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-400 px-0 py-1 resize-none"
+            rows={2}
+          />
+        </div>
       </div>
     </motion.div>,
     document.body

@@ -28,7 +28,6 @@ CREATE TYPE "public"."mini_app_type" AS ENUM (
 ALTER TYPE "public"."mini_app_type" OWNER TO "postgres";
 
 
-
 CREATE TYPE "public"."workspace_invitation_status" AS ENUM (
     'pending',
     'accepted',

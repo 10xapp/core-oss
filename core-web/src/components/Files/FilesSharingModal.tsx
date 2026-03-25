@@ -6,7 +6,6 @@ import PermissionSelect from "../ShareModal/PermissionSelect";
 import ShareUserRow from "../ShareModal/ShareUserRow";
 import UserSearchInput from "../ShareModal/UserSearchInput";
 import PendingRequestRow from "../ShareModal/PendingRequestRow";
-import LinkSlugEditor from "../ShareModal/LinkSlugEditor";
 import type { UserSearchResult } from "../../api/client";
 
 interface FilesSharingModalProps {
@@ -24,6 +23,7 @@ export default function FilesSharingModal({
   const [permission, setPermission] = useState<"read" | "write" | "admin">("read");
   const [linkPermission, setLinkPermission] = useState<"read" | "write" | "admin">("read");
   const [linkSlug, setLinkSlug] = useState("");
+  const [linkDirty, setLinkDirty] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreatingLink, setIsCreatingLink] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
@@ -46,9 +46,6 @@ export default function FilesSharingModal({
     revokePermission,
     updatePermission,
     createLink,
-    revokeLink,
-    updateLinkPermission,
-    updateLinkSlug,
     approveRequest,
     denyRequest,
   } = usePermissionStore();
@@ -79,6 +76,7 @@ export default function FilesSharingModal({
       setLinkPermission("read");
       setLinkSlug("");
       setSelectedUser(null);
+      setLinkDirty(false);
     }
   }, [isOpen]);
 
@@ -90,6 +88,15 @@ export default function FilesSharingModal({
       fetchPendingRequests();
     }
   }, [isOpen, fileId, fetchResourceShares, fetchResourceLinks, fetchPendingRequests]);
+
+  // Populate slug input when links are loaded
+  useEffect(() => {
+    if (resourceLinks.length > 0 && !linkDirty) {
+      const first = resourceLinks[0];
+      setLinkSlug(first.link_slug || first.link_token);
+      setLinkPermission(first.permission);
+    }
+  }, [resourceLinks, linkDirty]);
 
   const handleShare = async () => {
     if (!fileId || !email.trim()) return;
@@ -104,25 +111,29 @@ export default function FilesSharingModal({
     }
   };
 
+  const activeLink = resourceLinks.length > 0 && !linkDirty ? resourceLinks[0] : null;
+
   const handleCreateLink = async () => {
     if (!fileId) return;
     setIsCreatingLink(true);
     const link = await createLink("document", fileId, linkPermission, linkSlug || null);
     setIsCreatingLink(false);
     if (link?.url) {
+      setLinkSlug(link.link_slug || link.link_token);
+      setLinkDirty(false);
       try {
         await navigator.clipboard.writeText(link.url);
         toast.success("Link copied to clipboard");
       } catch {
         toast.success("Link created");
       }
-      setLinkSlug("");
     }
   };
 
-  const handleCopyLink = async (url: string) => {
+  const handleCopyActiveLink = async () => {
+    if (!activeLink) return;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(activeLink.url);
       toast.success("Link copied to clipboard");
     } catch {
       toast.error("Failed to copy link");
@@ -152,23 +163,25 @@ export default function FilesSharingModal({
       <div className="space-y-4 -mt-1">
         {/* Share with user */}
         <div className="space-y-2">
-          <UserSearchInput
-            value={email}
-            onValueChange={(nextValue) => {
-              setEmail(nextValue);
-              setSelectedUser(null);
-            }}
-            onSelect={(user) => {
-              setEmail(user.email);
-              setSelectedUser(user);
-            }}
-          />
           <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <UserSearchInput
+                value={email}
+                onValueChange={(nextValue) => {
+                  setEmail(nextValue);
+                  setSelectedUser(null);
+                }}
+                onSelect={(user) => {
+                  setEmail(user.email);
+                  setSelectedUser(user);
+                }}
+              />
+            </div>
             <PermissionSelect value={permission} onChange={setPermission} />
             <button
               onClick={handleShare}
               disabled={!email.trim() || isSubmitting}
-              className="px-4 py-2 text-sm bg-black text-white rounded-md disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-black text-white rounded-md disabled:opacity-50 shrink-0"
             >
               {isSubmitting ? "Sharing..." : "Share"}
             </button>
@@ -282,67 +295,41 @@ export default function FilesSharingModal({
           </div>
 
           <div className="flex items-center gap-2">
-            <input
-              value={linkSlug}
-              onChange={(event) => setLinkSlug(event.target.value)}
-              placeholder="custom-link (optional)"
-              className="min-w-0 flex-1 px-2.5 py-1.5 text-xs border border-border-gray rounded-md"
-            />
+            <div className="min-w-0 flex-1 flex items-center bg-white border border-border-gray rounded-md overflow-hidden focus-within:border-text-tertiary">
+              <span className="pl-3 text-sm text-text-secondary shrink-0">{`${window.location.origin}/s/`}</span>
+              <input
+                value={linkSlug}
+                onChange={(event) => {
+                  setLinkSlug(event.target.value);
+                  setLinkDirty(true);
+                }}
+                placeholder="custom-link (optional)"
+                className="min-w-0 flex-1 py-2 pr-3 text-sm outline-none"
+              />
+            </div>
             <PermissionSelect
               value={linkPermission}
               onChange={setLinkPermission}
-              size="sm"
             />
-            <button
-              onClick={handleCreateLink}
-              disabled={isCreatingLink}
-              className="px-3 py-1.5 text-xs rounded bg-black text-white disabled:opacity-60"
-            >
-              {isCreatingLink ? "Creating..." : "Create link"}
-            </button>
+            {activeLink ? (
+              <button
+                onClick={handleCopyActiveLink}
+                className="px-4 py-2 text-sm rounded-md bg-black text-white shrink-0"
+              >
+                Copy link
+              </button>
+            ) : (
+              <button
+                onClick={handleCreateLink}
+                disabled={isCreatingLink}
+                className="px-4 py-2 text-sm rounded-md bg-black text-white disabled:opacity-60 shrink-0"
+              >
+                {isCreatingLink ? "Creating..." : "Create link"}
+              </button>
+            )}
           </div>
 
           {linksError && <p className="text-xs text-red-500 mt-2">{linksError}</p>}
-
-          {resourceLinks.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {resourceLinks.map((link) => (
-                <div
-                  key={link.id}
-                  className="flex items-center justify-between gap-2 p-2 border border-border-gray rounded-md"
-                >
-                  <div className="min-w-0 flex-1">
-                    <LinkSlugEditor
-                      link={link}
-                      onUpdateSlug={(slug) => updateLinkSlug(link.id, slug)}
-                    />
-                    <p className="text-[11px] text-text-secondary">
-                      Anyone with the link
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <PermissionSelect
-                      value={link.permission}
-                      onChange={(value) => updateLinkPermission(link.id, value)}
-                      size="sm"
-                    />
-                    <button
-                      onClick={() => handleCopyLink(link.url)}
-                      className="px-2.5 py-1 text-xs rounded border border-border-gray hover:bg-bg-gray"
-                    >
-                      Copy
-                    </button>
-                    <button
-                      onClick={() => revokeLink(link.link_token)}
-                      className="px-2.5 py-1 text-xs rounded border border-border-gray hover:bg-bg-gray text-red-600"
-                    >
-                      Revoke
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </Modal>

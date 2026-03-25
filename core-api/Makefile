@@ -18,7 +18,7 @@ start:
 
 install:
 	@echo "📦 Installing dependencies..."
-	@uv pip install -r requirements.txt
+	@uv pip install -r requirements-dev.txt
 	@uv pip install cryptography
 
 dev: start
@@ -60,4 +60,3 @@ clean:
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	@find . -type f -name "*.pyc" -delete
 	@echo "✨ Clean complete!"
-

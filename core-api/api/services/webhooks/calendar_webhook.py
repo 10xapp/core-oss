@@ -17,6 +17,10 @@ from api.services.google_auth import (
     GoogleAuthError
 )
 from api.services.calendar.event_parser import parse_google_event_to_data
+from api.services.notifications.calendar_invites import (
+    get_calendar_event_rows_by_external_ids,
+    reconcile_calendar_invite_notifications,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,7 @@ def process_calendar_notification(
     subscription = supabase.table('push_subscriptions')\
         .select(
             '*, ext_connections!push_subscriptions_ext_connection_id_fkey!inner('
-            'user_id, access_token, refresh_token, token_expires_at, metadata'
+            'user_id, access_token, refresh_token, token_expires_at, metadata, provider_email'
             ')'
         )\
         .eq('channel_id', channel_id)\
@@ -72,6 +76,7 @@ def process_calendar_notification(
 
     sub_data = subscription.data[0]
     user_id = sub_data['ext_connections']['user_id']
+    account_email = sub_data['ext_connections'].get('provider_email')
     sync_token = sub_data.get('sync_token')
     subscription_id = sub_data['id']
     connection_id = sub_data['ext_connection_id']
@@ -100,7 +105,7 @@ def process_calendar_notification(
     if sync_token:
         result = _incremental_sync(
             calendar_service, supabase, user_id, connection_id,
-            subscription_id, sync_token
+            subscription_id, sync_token, account_email
         )
         # If sync token expired, result will indicate fallback needed
         if result.get('fallback_needed'):
@@ -109,7 +114,7 @@ def process_calendar_notification(
     # Full sync if no sync_token or it expired
     if not sync_token:
         result = _full_sync(
-            calendar_service, supabase, user_id, connection_id, subscription_id
+            calendar_service, supabase, user_id, connection_id, subscription_id, account_email
         )
 
     return result
@@ -121,7 +126,8 @@ def _incremental_sync(
     user_id: str,
     connection_id: str,
     subscription_id: str,
-    sync_token: str
+    sync_token: str,
+    account_email: Optional[str],
 ) -> Dict[str, Any]:
     """
     Perform incremental sync using sync token.
@@ -170,6 +176,13 @@ def _incremental_sync(
                 event_data = _parse_event_to_data(event, user_id, connection_id)
                 events_to_upsert.append(event_data)
 
+        previous_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+            client=supabase,
+            user_id=user_id,
+            external_ids=cancelled_ids,
+            connection_id=connection_id,
+        ) if cancelled_ids else {}
+
         # Delete cancelled events
         deleted_count = 0
         for event_id in cancelled_ids:
@@ -199,6 +212,25 @@ def _incremental_sync(
             if result['errors']:
                 logger.warning(f"⚠️ Some batch errors: {result['errors'][:3]}")
                 batch_had_errors = True
+
+        if not batch_had_errors:
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=supabase,
+                user_id=user_id,
+                external_ids=[
+                    event_data['external_id']
+                    for event_data in events_to_upsert
+                    if event_data.get('external_id')
+                ],
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=supabase,
+                user_id=user_id,
+                account_email=account_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
 
         # Update sync token only after ALL pages processed and no batch errors
         if new_sync_token and not batch_had_errors:
@@ -237,7 +269,8 @@ def _full_sync(
     supabase,
     user_id: str,
     connection_id: str,
-    subscription_id: str
+    subscription_id: str,
+    account_email: Optional[str],
 ) -> Dict[str, Any]:
     """
     Perform full sync fetching events in a time window.
@@ -287,11 +320,21 @@ def _full_sync(
 
         # Get all external_ids from Google Calendar response
         google_event_ids = [event['id'] for event in events if event.get('id')]
+        previous_rows_by_external_id: Dict[str, Dict[str, Any]] = {}
 
         # Delete local events that no longer exist in Google Calendar.
         # Safe because we paginated through ALL results before reaching here.
         deleted_count = 0
         if google_event_ids:
+            stale_rows = supabase.table('calendar_events')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', time_min)\
+                .lte('start_time', time_max)\
+                .not_.in_('external_id', google_event_ids)\
+                .execute().data or []
+
             # Delete events for this user that are NOT in Google's response
             # Only delete events within the sync time range to avoid removing future events
             delete_result = supabase.table('calendar_events')\
@@ -303,9 +346,21 @@ def _full_sync(
                 .not_.in_('external_id', google_event_ids)\
                 .execute()
             deleted_count = len(delete_result.data) if delete_result.data else 0
+            for stale_row in stale_rows:
+                external_id = stale_row.get('external_id')
+                if external_id:
+                    previous_rows_by_external_id[external_id] = stale_row
             if deleted_count > 0:
                 logger.info(f"🗑️ Deleted {deleted_count} events no longer in Google Calendar")
         else:
+            stale_rows = supabase.table('calendar_events')\
+                .select('*')\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', time_min)\
+                .lte('start_time', time_max)\
+                .execute().data or []
+
             # No events from Google in this time range - delete all local events in range
             delete_result = supabase.table('calendar_events')\
                 .delete()\
@@ -315,6 +370,10 @@ def _full_sync(
                 .lte('start_time', time_max)\
                 .execute()
             deleted_count = len(delete_result.data) if delete_result.data else 0
+            for stale_row in stale_rows:
+                external_id = stale_row.get('external_id')
+                if external_id:
+                    previous_rows_by_external_id[external_id] = stale_row
             if deleted_count > 0:
                 logger.info(f"🗑️ Deleted {deleted_count} events (Google Calendar empty for time range)")
 
@@ -339,6 +398,21 @@ def _full_sync(
             if result['errors']:
                 logger.warning(f"⚠️ Some batch errors: {result['errors'][:3]}")
                 batch_had_errors = True
+
+        if not batch_had_errors:
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=supabase,
+                user_id=user_id,
+                external_ids=google_event_ids,
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=supabase,
+                user_id=user_id,
+                account_email=account_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
 
         # Update sync token for future incremental syncs (only if no batch errors)
         if new_sync_token and not batch_had_errors:

@@ -8,7 +8,7 @@ import {
   calculateWeekEventPosition,
   getEventDisplayInfo,
 } from "../utils/eventLayout";
-import { useCalendarStore } from "../../../stores/calendarStore";
+import { useCalendarStore, getUserResponseStatus } from "../../../stores/calendarStore";
 import { getAccountPalette } from "../../../utils/accountColors";
 import cn from "classnames";
 
@@ -203,8 +203,11 @@ export default function DraggableEventBlock({
   // Get display info for multi-day events
   const displayInfo = viewDate ? getEventDisplayInfo(event, viewDate) : null;
 
-  // Get account-based color palette
+  // Get account-based color palette and RSVP status
   const palette = useMemo(() => getAccountPalette(event.account_email), [event.account_email]);
+  const rsvpStatus = useMemo(() => getUserResponseStatus(event), [event.attendees, event.account_email]);
+  const isOutlined = rsvpStatus === 'tentative' || rsvpStatus === 'needsAction' || rsvpStatus === 'declined';
+  const isDeclined = rsvpStatus === 'declined';
 
   // When dragging, hide the original element since DragOverlay shows the preview
   const style = {
@@ -262,7 +265,7 @@ export default function DraggableEventBlock({
       }}
       {...dragListeners}
       className={cn(
-        "absolute text-left transition-opacity focus:outline-none focus:ring-2 select-none rounded-md group overflow-hidden",
+        "absolute pointer-events-auto text-left transition-opacity focus:outline-none focus:ring-2 select-none rounded-md group overflow-hidden",
         displayInfo?.isMultiDay && "multi-day-event",
         displayInfo?.isFirstDay && "multi-day-first",
         displayInfo?.isMiddleDay && "multi-day-middle",
@@ -270,7 +273,8 @@ export default function DraggableEventBlock({
       )}
       style={{
         ...style,
-        backgroundColor: palette.bg,
+        backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
+        border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
         // @ts-expect-error CSS custom property for focus ring
         '--tw-ring-color': `${palette.accent}66`,
       }}
@@ -293,12 +297,13 @@ export default function DraggableEventBlock({
           padding: getPadding(),
         }}
       >
-        {/* Left accent bar - inside the card */}
+        {/* Left accent bar */}
         <div
           className="shrink-0 rounded-full self-stretch"
           style={{
             width: isVeryShortEvent ? 3 : 4,
-            backgroundColor: palette.accent,
+            backgroundColor: rsvpStatus === 'needsAction' ? 'transparent' : palette.accent,
+            border: rsvpStatus === 'needsAction' ? `1.5px dashed ${palette.accent}` : undefined,
           }}
         />
 
@@ -316,6 +321,7 @@ export default function DraggableEventBlock({
               fontSize: isVeryShortEvent ? 11 : 12,
               lineHeight: 1.2,
               color: palette.title,
+              textDecoration: isDeclined ? 'line-through' : undefined,
             }}
           >
             {event.title}
@@ -327,6 +333,7 @@ export default function DraggableEventBlock({
                 fontSize: 10,
                 marginTop: 1,
                 color: palette.time,
+                textDecoration: isDeclined ? 'line-through' : undefined,
               }}
             >
               {getPreviewTimes() ||
@@ -378,6 +385,9 @@ export function EventBlockOverlay({
   const isVeryShort = height && height < 25;
   const showTime = !height || (height >= timeThreshold && !isVeryShort);
   const palette = useMemo(() => getAccountPalette(event.account_email), [event.account_email]);
+  const rsvpStatus = useMemo(() => getUserResponseStatus(event), [event.attendees, event.account_email]);
+  const isOutlined = rsvpStatus === 'tentative' || rsvpStatus === 'needsAction' || rsvpStatus === 'declined';
+  const isDeclined = rsvpStatus === 'declined';
 
   // Calculate adjusted times based on offset
   const parseTime = (dateString: string) => {
@@ -412,7 +422,7 @@ export function EventBlockOverlay({
         height: height || "auto",
         minHeight: 30,
         boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-        backgroundColor: `${palette.bg}cc`,
+        backgroundColor: isOutlined ? '#FFFFFFcc' : `${palette.bg}cc`,
         borderColor: palette.accent,
       }}
     >
@@ -422,8 +432,11 @@ export function EventBlockOverlay({
           padding: isWeekView ? "6px 8px" : "10px 8px",
         }}
       >
-        {/* Left accent bar - inside the card */}
-        <div className="w-1 shrink-0 rounded-full" style={{ backgroundColor: palette.accent }} />
+        {/* Left accent bar */}
+        <div className="w-1 shrink-0 rounded-full" style={{
+          backgroundColor: rsvpStatus === 'needsAction' ? 'transparent' : palette.accent,
+          border: rsvpStatus === 'needsAction' ? `1.5px dashed ${palette.accent}` : undefined,
+        }} />
         <div className="flex-1 overflow-hidden min-w-0">
           <p
             className="font-medium truncate"
@@ -431,6 +444,7 @@ export function EventBlockOverlay({
               fontSize: 12,
               lineHeight: 1.3,
               color: palette.title,
+              textDecoration: isDeclined ? 'line-through' : undefined,
             }}
           >
             {event.title}
@@ -442,6 +456,7 @@ export function EventBlockOverlay({
                 fontSize: 10,
                 marginTop: 1,
                 color: palette.time,
+                textDecoration: isDeclined ? 'line-through' : undefined,
               }}
             >
               {displayTime}

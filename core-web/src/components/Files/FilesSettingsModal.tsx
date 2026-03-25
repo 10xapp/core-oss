@@ -120,7 +120,7 @@ export default function FilesSettingsDropdown({
               >
                 <span
                   className={`absolute top-[3px] w-3 h-3 bg-white rounded-full shadow transition-transform ${
-                    isFullWidth ? "left-[14px]" : "left-[3px]"
+                    isFullWidth ? "left-[17px]" : "left-[3px]"
                   }`}
                 />
               </div>

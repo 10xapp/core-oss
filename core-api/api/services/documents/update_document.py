@@ -3,6 +3,7 @@ from typing import Optional, List
 import asyncio
 from fastapi import HTTPException, status
 from lib.supabase_client import get_authenticated_async_client
+from api.services.notifications.file_edits import emit_document_edited_notification
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ async def _snapshot_version_async(
     old_content: str,
     user_id: str,
     force: bool = False,
-) -> None:
+) -> bool:
     """Snapshot previous document content in the background.
 
     The interval check is handled atomically inside the RPC function under
@@ -101,7 +102,7 @@ async def _snapshot_version_async(
         if not insert_result.data:
             # RPC returned no rows — interval gate rejected the snapshot.
             logger.info("[version] %s: skipped by RPC (interval not met)", document_id)
-            return
+            return False
 
         version_number = insert_result.data[0].get("version_number")
         logger.info("[version] %s: saved v%s%s", document_id, version_number, " (forced)" if force else "")
@@ -133,6 +134,7 @@ async def _snapshot_version_async(
                 prune_exc,
             )
 
+        return True
     except Exception as exc:
         logger.error(
             "[version] %s: FAILED — %s: %s",
@@ -140,6 +142,54 @@ async def _snapshot_version_async(
             type(exc).__name__,
             exc,
             exc_info=True,
+        )
+        return False
+
+
+async def _process_document_change_async(
+    *,
+    user_jwt: str,
+    document_id: str,
+    old_title: str,
+    old_content: str,
+    new_title: str,
+    user_id: str,
+    workspace_id: Optional[str],
+    owner_id: Optional[str],
+    file_id: Optional[str],
+    should_snapshot: bool,
+    title_changed: bool,
+    force_snapshot: bool = False,
+) -> None:
+    """Run non-blocking versioning and notification side effects for a save."""
+    if should_snapshot:
+        await _snapshot_version_async(
+            user_jwt=user_jwt,
+            document_id=document_id,
+            old_title=old_title,
+            old_content=old_content,
+            user_id=user_id,
+            force=force_snapshot,
+        )
+
+    if not should_snapshot and not title_changed:
+        return
+
+    try:
+        await emit_document_edited_notification(
+            document_id=document_id,
+            document_title=new_title,
+            editor_user_id=user_id,
+            workspace_id=workspace_id,
+            owner_id=owner_id,
+            file_id=file_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[file_edited] %s: notification skipped — %s: %s",
+            document_id,
+            type(exc).__name__,
+            exc,
         )
 
 
@@ -215,7 +265,7 @@ async def update_document(
         # Read current state once for optimistic locking and version snapshot inputs.
         current_result = await (
             auth_supabase.table("documents")
-            .select("title, content, type, updated_at")
+            .select("title, content, type, updated_at, workspace_id, user_id, file_id")
             .eq("id", document_id)
             .limit(1)
             .execute()
@@ -227,6 +277,9 @@ async def update_document(
         old_title = current_doc.get("title") or ""
         old_content = current_doc.get("content") or ""
         doc_type = current_doc.get("type")
+        workspace_id = current_doc.get("workspace_id")
+        owner_id = current_doc.get("user_id")
+        file_id = current_doc.get("file_id")
 
         update_query = (
             auth_supabase.table("documents")
@@ -266,15 +319,28 @@ async def update_document(
             from lib.embed_hooks import embed_document
             embed_document(document_id, new_title, new_content)
 
-        if _should_snapshot(doc_type, old_content, content, force=force_snapshot):
+        should_snapshot = _should_snapshot(doc_type, old_content, content, force=force_snapshot)
+        title_changed = (
+            doc_type == "note"
+            and title is not None
+            and title != old_title
+        )
+
+        if should_snapshot or title_changed:
             asyncio.create_task(
-                _snapshot_version_async(
+                _process_document_change_async(
                     user_jwt=user_jwt,
                     document_id=document_id,
                     old_title=old_title,
                     old_content=old_content,
+                    new_title=new_title,
                     user_id=user_id,
-                    force=force_snapshot,
+                    workspace_id=workspace_id,
+                    owner_id=owner_id,
+                    file_id=file_id,
+                    should_snapshot=should_snapshot,
+                    title_changed=title_changed,
+                    force_snapshot=force_snapshot,
                 )
             )
 

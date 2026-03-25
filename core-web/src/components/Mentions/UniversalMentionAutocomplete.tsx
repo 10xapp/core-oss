@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { avatarGradient } from '../../utils/avatarGradient';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRightIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { useMentionData } from '../../hooks/useMentionData';
@@ -247,9 +248,11 @@ export function UniversalMentionAutocomplete({
           />
         ) : item.entityType === 'person' ? (
           <div
-            className="w-6 h-6 rounded-full flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #5A7864 0%, #607E98 100%)' }}
-          />
+            className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-[10px]"
+            style={{ background: avatarGradient(item.displayName || item.id) }}
+          >
+            {(item.displayName || "?").charAt(0).toUpperCase()}
+          </div>
         ) : (
           <span className="w-6 text-center flex-shrink-0">{item.icon}</span>
         )}

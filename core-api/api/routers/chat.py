@@ -21,6 +21,11 @@ from concurrent.futures import ThreadPoolExecutor
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+CHAT_STREAM_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "X-Accel-Buffering": "no",
+}
+
 
 # ============================================================================
 # Response Models
@@ -290,7 +295,7 @@ async def get_messages(
         },
     },
 })
-@limiter.limit("20/minute")
+@limiter.limit("10/minute;500/day")
 async def send_message(
     request: Request,
     response: Response,
@@ -590,7 +595,7 @@ async def send_message(
             except Exception:
                 pass  # Ignore cleanup errors
 
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
+    return StreamingResponse(generate(), media_type="application/x-ndjson", headers=CHAT_STREAM_HEADERS)
 
 
 class RegenerateRequest(BaseModel):
@@ -781,7 +786,7 @@ async def regenerate_message(
             except Exception:
                 pass
 
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
+    return StreamingResponse(generate(), media_type="application/x-ndjson", headers=CHAT_STREAM_HEADERS)
 
 
 @router.patch("/messages/{message_id}/actions/{action_id}/execute", response_model=ActionExecuteResponse)
@@ -795,7 +800,6 @@ async def execute_action(
 
     Dispatches to the appropriate service based on the action type:
     - create_calendar_event → creates event in DB + external calendar
-    - create_todo → creates todo in DB + optional calendar sync
     - send_email → sends email via Gmail/Microsoft
     - update_calendar_event → updates event in DB + external calendar
     - delete_calendar_event → deletes event from DB + external calendar
@@ -927,36 +931,17 @@ async def _execute_action(action_type: str, data: Dict[str, Any], user_id: str, 
             "is_all_day": data.get("is_all_day", False),
         }
         # create_event is synchronous — run in thread pool
-        await loop.run_in_executor(
+        result = await loop.run_in_executor(
             _action_executor,
             lambda: create_event(user_id, event_data, user_jwt, user_timezone=user_timezone)
         )
-
-    elif action_type == "create_todo":
-        from api.services.todos.create_todo import create_todo
-
-        tasks_app = await _resolve_workspace_app(user_id, user_jwt, "tasks", data.get("workspace_id"))
-
-        # Parse due_date to datetime if provided
-        due_at = None
-        due_date_str = data.get("due_date")
-        if due_date_str:
-            from datetime import datetime as dt
-            try:
-                due_at = dt.fromisoformat(due_date_str.replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                pass
-
-        await create_todo(
-            user_id=user_id,
-            user_jwt=user_jwt,
-            workspace_app_id=tasks_app["id"],
-            title=data.get("title", ""),
-            notes=data.get("notes"),
-            due_at=due_at,
-            priority=data.get("priority", 4),
-            tags=data.get("tags"),
-        )
+        # Surface sync status so frontend can warn if Google/Outlook sync failed
+        return {
+            "synced_to_external": result.get("synced_to_external", False),
+            "provider": result.get("provider"),
+            "sync_error": result.get("sync_error"),
+            "account_email": result.get("event", {}).get("ext_connection_id"),
+        }
 
     elif action_type == "send_email":
         from api.services.email.send_email import send_email

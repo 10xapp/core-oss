@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Cancel01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Cancel01Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
 import { createCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
 import DatePicker from '../../ui/DatePicker';
@@ -45,6 +45,7 @@ export default function CreateEventModal({
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [isAllDay, setIsAllDay] = useState(false);
+  const [addGoogleMeet, setAddGoogleMeet] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -86,7 +87,8 @@ export default function CreateEventModal({
         start_time: startDateTime,
         end_time: endDateTime,
         all_day: isAllDay,
-        location: location.trim() || undefined
+        location: location.trim() || undefined,
+        add_google_meet: addGoogleMeet || undefined,
       });
       // Replace optimistic event with the real one from server
       replaceEvent(tempId, createdEvent);
@@ -222,6 +224,21 @@ export default function CreateEventModal({
               placeholder="Add location"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setAddGoogleMeet(!addGoogleMeet)}
+            className={`flex items-center gap-2.5 w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
+              addGoogleMeet
+                ? 'border-blue-200 bg-blue-50'
+                : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+            }`}
+          >
+            <HugeiconsIcon icon={Video01Icon} size={16} className={addGoogleMeet ? 'text-blue-600' : 'text-gray-400'} />
+            <span className={`text-sm ${addGoogleMeet ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
+              {addGoogleMeet ? 'Google Meet video conferencing' : 'Add Google Meet video conferencing'}
+            </span>
+          </button>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>

@@ -647,11 +647,83 @@ async def test_resolve_post_signup_expires_and_archives_notifications(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_resolve_post_signup_updates_existing_active_notification(monkeypatch, invitations_module):
-    """When an active notification already exists, _ensure_invitation_notification
-    updates it in place rather than inserting a duplicate.
-    The DB unique partial index (uq_notifications_workspace_invite_active) prevents
-    duplicates in production; the service layer uses update-first-else-insert."""
+async def test_resolve_post_signup_preserves_read_state_for_matching_active_notification(
+    monkeypatch,
+    invitations_module,
+):
+    """Bootstrap should not resurrect an unchanged invite notification as unread."""
+    state = _base_state()
+    state["users"].append({"id": "user-1", "email": "invitee@example.com", "name": "Invitee"})
+    state["workspace_invitations"].append(
+        {
+            "id": "inv-1",
+            "workspace_id": "ws-1",
+            "email": "invitee@example.com",
+            "role": "member",
+            "status": "pending",
+            "token": "token-1",
+            "expires_at": _future_iso(days=1),
+            "invited_by_user_id": "admin-1",
+        }
+    )
+    state["notifications"].append(
+        {
+            "id": "notif-existing",
+            "user_id": "user-1",
+            "workspace_id": "ws-1",
+            "type": "workspace_invite",
+            "title": "Admin invited you to join Core Team",
+            "body": "Role: member",
+            "resource_type": "workspace_invitation",
+            "resource_id": "inv-1",
+            "actor_id": "admin-1",
+            "data": {
+                "invitation_id": "inv-1",
+                "workspace_id": "ws-1",
+                "workspace_name": "Core Team",
+                "inviter_name": "Admin",
+                "role": "member",
+                "status": "pending",
+            },
+            "read": True,
+            "seen": True,
+            "archived": False,
+            "created_at": "2026-02-18T10:00:00+00:00",
+        }
+    )
+
+    fake_client = FakeSupabaseClient(state)
+    monkeypatch.setattr(
+        invitations_module,
+        "get_async_service_role_client",
+        AsyncMock(return_value=fake_client),
+    )
+
+    result = await invitations_module.resolve_post_signup_pending_invitations("user-1")
+
+    assert result["count"] == 1
+
+    # Should still have exactly 1 notification (updated in place, no new insert)
+    invite_notifications = [
+        row for row in state["notifications"]
+        if row.get("resource_type") == "workspace_invitation"
+        and row.get("resource_id") == "inv-1"
+        and row.get("user_id") == "user-1"
+    ]
+    assert len(invite_notifications) == 1
+
+    notif = invite_notifications[0]
+    assert notif["id"] == "notif-existing"
+    assert notif["read"] is True
+    assert notif["seen"] is True
+    assert notif["archived"] is False
+    assert notif["title"] == "Admin invited you to join Core Team"
+    assert notif["body"] == "Role: member"
+
+
+@pytest.mark.asyncio
+async def test_resolve_post_signup_refreshes_changed_active_notification(monkeypatch, invitations_module):
+    """Changed invite details should still reopen the existing active row."""
     state = _base_state()
     state["users"].append({"id": "user-1", "email": "invitee@example.com", "name": "Invitee"})
     state["workspace_invitations"].append(
@@ -696,7 +768,6 @@ async def test_resolve_post_signup_updates_existing_active_notification(monkeypa
 
     assert result["count"] == 1
 
-    # Should still have exactly 1 notification (updated in place, no new insert)
     invite_notifications = [
         row for row in state["notifications"]
         if row.get("resource_type") == "workspace_invitation"
@@ -707,11 +778,11 @@ async def test_resolve_post_signup_updates_existing_active_notification(monkeypa
 
     notif = invite_notifications[0]
     assert notif["id"] == "notif-existing"
-    # Was read/seen=True, now refreshed to unread
     assert notif["read"] is False
     assert notif["seen"] is False
     assert notif["archived"] is False
-    assert "Admin" in notif["title"]  # Updated with inviter name
+    assert notif["title"] == "Admin invited you to join Core Team"
+    assert notif["body"] == "Role: member"
 
 
 @pytest.mark.asyncio

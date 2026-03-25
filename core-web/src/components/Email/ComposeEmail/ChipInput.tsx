@@ -89,7 +89,7 @@ const ChipInput = forwardRef<ChipInputRef, ChipInputProps>(({ value, onChange, p
 
   return (
     <div className="flex items-start px-4 py-2 gap-2">
-      {label && <label className="text-sm text-text-secondary w-10 pt-0.5">{label}</label>}
+      {label && <label className="text-sm text-text-secondary shrink-0 pt-0.5">{label}</label>}
       <div
         className="flex-1 flex flex-wrap items-center gap-1.5 cursor-text min-h-[24px]"
         onClick={handleContainerClick}

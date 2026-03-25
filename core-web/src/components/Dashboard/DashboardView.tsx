@@ -5,7 +5,6 @@ import QuickChatCard from './components/QuickChatCard';
 import ProjectsCard from './components/ProjectsCard';
 import CalendarCard from './components/CalendarCard';
 import AgentsCard from './components/AgentsCard';
-import NotificationsPanel from '../NotificationsPanel/NotificationsPanel';
 
 export default function DashboardView() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
@@ -46,7 +45,6 @@ export default function DashboardView() {
               </div>
             </div>
           </div>
-          <NotificationsPanel />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { useProjectsStore } from '../../../stores/projectsStore';
 import { useProjectMembers } from '../../../hooks/queries/useProjects';
+import { avatarGradient } from '../../../utils/avatarGradient';
 
 interface StackedAvatarsProps {
   userIds: string[];
@@ -47,10 +48,10 @@ export default function StackedAvatars({ userIds, maxVisible = 3, size = 'sm' }:
         return (
           <div
             key={userId}
-            className={`${s.avatar} rounded-full bg-gray-900 flex items-center justify-center flex-shrink-0 ${s.ring} overflow-hidden ${
+            className={`${s.avatar} rounded-full flex items-center justify-center flex-shrink-0 ${s.ring} overflow-hidden ${
               index > 0 ? s.overlap : ''
             }`}
-            style={{ zIndex: visibleIds.length - index }}
+            style={{ zIndex: visibleIds.length - index, ...(!member?.avatar_url ? { background: avatarGradient(member?.name || member?.email || userId) } : {}) }}
             title={member ? (member.name || member.email || 'Unknown') : 'Unknown'}
           >
             {member?.avatar_url ? (

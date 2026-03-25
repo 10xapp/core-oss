@@ -123,10 +123,10 @@ export default function ChatInput({
     // Detect @ mention trigger
     const cursorPos = e.target.selectionStart ?? 0;
     const textBeforeCursor = newValue.substring(0, cursorPos);
-    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    const mentionMatch = textBeforeCursor.match(/(^|[\s])@(\w*)$/);
 
     if (mentionMatch) {
-      setMentionQuery(mentionMatch[1]);
+      setMentionQuery(mentionMatch[2]);
       setShowMentionAutocomplete(true);
       const coords = getTextareaCursorCoords(e.target);
       setMentionCursorCoords(coords);
@@ -167,12 +167,13 @@ export default function ChatInput({
 
     const cursorPos = textarea.selectionStart ?? 0;
     const textBeforeCursor = value.substring(0, cursorPos);
-    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    const mentionMatch = textBeforeCursor.match(/(^|[\s])@(\w*)$/);
 
     if (mentionMatch) {
+      const prefix = mentionMatch[1]; // leading whitespace or empty (start of string)
       const start = cursorPos - mentionMatch[0].length;
       const icon = data.icon || MENTION_ICONS[data.entityType] || '';
-      const insertText = `${icon} ${data.displayName} `;
+      const insertText = `${prefix}${icon} ${data.displayName} `;
       const newValue = value.substring(0, start) + insertText + value.substring(cursorPos);
 
       onChange(newValue);

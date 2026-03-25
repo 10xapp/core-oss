@@ -17,6 +17,7 @@ import {
 const TYPING_TIMEOUT_MS = 3000;
 const TYPING_DEBOUNCE_MS = 2000;
 const PRESENCE_RECONNECT_DELAY_MS = 1500;
+const PRESENCE_REFRESH_INTERVAL_MS = 30000;
 
 interface ChannelContext {
   channel: RealtimeChannel;
@@ -25,6 +26,7 @@ interface ChannelContext {
 
 const presenceSessionId = getPresenceSessionId();
 const presenceChannels = new Map<string, ChannelContext>();
+const rebuildingWorkspaceIds = new Set<string>();
 
 let activeTypingWorkspaceId: string | null = null;
 let activeTypingChannel: RealtimeChannel | null = null;
@@ -38,6 +40,61 @@ function clearReconnectTimer(workspaceId: string) {
 }
 
 function teardownWorkspaceChannel(workspaceId: string) {
+  void removeWorkspaceChannel(workspaceId, { clearPresence: true });
+}
+
+function teardownAllPresenceChannels(clearPresence = true) {
+  for (const workspaceId of [...presenceChannels.keys()]) {
+    void removeWorkspaceChannel(workspaceId, { clearPresence });
+  }
+}
+
+function buildPresenceTrackPayload(currentUserId: string): PresenceTrackPayload {
+  return {
+    user_id: currentUserId,
+    session_id: presenceSessionId,
+    online_at: new Date().toISOString(),
+  };
+}
+
+async function trackPresence(
+  workspaceId: string,
+  channel: RealtimeChannel,
+  currentUserId: string,
+) {
+  try {
+    const status = await channel.track(buildPresenceTrackPayload(currentUserId));
+    if (status !== "ok") {
+      console.warn(`[WorkspacePresence] Track failed for ${workspaceId}:`, status);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn(`[WorkspacePresence] Track threw for ${workspaceId}:`, error);
+    return false;
+  }
+}
+
+function isChannelHealthy(channel: RealtimeChannel) {
+  return channel.state === "joined" || channel.state === "joining";
+}
+
+function forceRemoveChannel(channel: RealtimeChannel) {
+  const realtimeChannel = channel as RealtimeChannel & { teardown?: () => void };
+  realtimeChannel.teardown?.();
+
+  const realtimeClient = (
+    supabase as typeof supabase & {
+      realtime?: { _remove?: (channel: RealtimeChannel) => void };
+    }
+  ).realtime;
+  realtimeClient?._remove?.(channel);
+}
+
+async function removeWorkspaceChannel(
+  workspaceId: string,
+  options: { clearPresence: boolean },
+) {
   const context = presenceChannels.get(workspaceId);
   if (!context) return;
 
@@ -46,34 +103,176 @@ function teardownWorkspaceChannel(workspaceId: string) {
     activeTypingChannel = null;
   }
   clearReconnectTimer(workspaceId);
-  void context.channel.unsubscribe().catch((error) => {
-    console.warn(`[WorkspacePresence] Failed to unsubscribe ${workspaceId}:`, error);
-  });
   presenceChannels.delete(workspaceId);
-  usePresenceStore.getState().clearWorkspacePresence(workspaceId);
-}
-
-function teardownAllPresenceChannels() {
-  for (const workspaceId of [...presenceChannels.keys()]) {
-    teardownWorkspaceChannel(workspaceId);
+  if (options.clearPresence) {
+    usePresenceStore.getState().clearWorkspacePresence(workspaceId);
   }
-}
 
-function isChannelBusy(channel: RealtimeChannel) {
-  return channel.state === "joined" || channel.state === "joining" || channel.state === "leaving";
+  try {
+    const status = await supabase.removeChannel(context.channel);
+    if (status !== "ok") {
+      console.warn(`[WorkspacePresence] Forced channel cleanup for ${workspaceId}:`, status);
+      forceRemoveChannel(context.channel);
+    }
+  } catch (error) {
+    console.warn(`[WorkspacePresence] Failed to remove ${workspaceId}:`, error);
+    forceRemoveChannel(context.channel);
+  }
 }
 
 export function useWorkspacePresence(
   activeWorkspaceId: string | undefined,
   workspaceIds: string[],
 ) {
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const activeWsRef = useRef<string | undefined>(activeWorkspaceId);
+  const currentUserIdRef = useRef<string | undefined>(currentUserId);
+  const workspaceIdsRef = useRef<Set<string>>(new Set());
+  const createWorkspaceChannelRef = useRef<((workspaceId: string, userId: string) => void) | null>(null);
+  const scheduleWorkspaceChannelRecoveryRef = useRef<((workspaceId: string, channel: RealtimeChannel, reason: string) => void) | null>(null);
   activeWsRef.current = activeWorkspaceId;
-  const currentUserId = useAuthStore((s) => s.user?.id);
+  currentUserIdRef.current = currentUserId;
 
   const normalizedWorkspaceIds = [...new Set(workspaceIds.filter(Boolean))].sort();
   const workspaceIdsKey = JSON.stringify(normalizedWorkspaceIds);
+  workspaceIdsRef.current = new Set(normalizedWorkspaceIds);
+
+  function scheduleWorkspaceChannelRecovery(
+    workspaceId: string,
+    channel: RealtimeChannel,
+    reason: string,
+  ) {
+    const context = presenceChannels.get(workspaceId);
+    if (!context || context.channel !== channel || context.reconnectTimer) return;
+
+    context.reconnectTimer = setTimeout(() => {
+      const liveContext = presenceChannels.get(workspaceId);
+      if (!liveContext || liveContext.channel !== channel) return;
+
+      if (isChannelHealthy(channel)) {
+        liveContext.reconnectTimer = null;
+        return;
+      }
+
+      liveContext.reconnectTimer = null;
+      void rebuildWorkspaceChannel(workspaceId, channel, reason);
+    }, PRESENCE_RECONNECT_DELAY_MS);
+  }
+
+  async function rebuildWorkspaceChannel(
+    workspaceId: string,
+    channel: RealtimeChannel,
+    reason: string,
+  ) {
+    const context = presenceChannels.get(workspaceId);
+    if (!context || context.channel !== channel) return;
+    if (rebuildingWorkspaceIds.has(workspaceId)) return;
+
+    const userId = currentUserIdRef.current;
+    if (!userId) {
+      teardownWorkspaceChannel(workspaceId);
+      return;
+    }
+
+    if (!workspaceIdsRef.current.has(workspaceId)) {
+      teardownWorkspaceChannel(workspaceId);
+      return;
+    }
+
+    rebuildingWorkspaceIds.add(workspaceId);
+    console.log(`[WorkspacePresence] Rebuilding ${workspaceId} after ${reason}`);
+
+    try {
+      await removeWorkspaceChannel(workspaceId, { clearPresence: false });
+      createWorkspaceChannel(workspaceId, userId);
+    } finally {
+      rebuildingWorkspaceIds.delete(workspaceId);
+    }
+  }
+
+  function createWorkspaceChannel(workspaceId: string, userId: string) {
+    const channel = supabase.channel(`workspace:${workspaceId}`, {
+      config: { presence: { key: presenceSessionId } },
+    });
+    const context: ChannelContext = {
+      channel,
+      reconnectTimer: null,
+    };
+    presenceChannels.set(workspaceId, context);
+
+    channel
+      .on("presence", { event: "sync" }, () => {
+        const liveContext = presenceChannels.get(workspaceId);
+        if (!liveContext || liveContext.channel !== channel) return;
+        usePresenceStore
+          .getState()
+          .setWorkspacePresenceSnapshot(
+            workspaceId,
+            toWorkspacePresenceSnapshot(
+              channel.presenceState<PresenceTrackPayload>(),
+            ),
+          );
+      })
+      // Typing listeners gated to active workspace only
+      .on("broadcast", { event: "typing" }, (msg) => {
+        if (activeWsRef.current !== workspaceId) return;
+        const { userId: typingUserId, userName: name, channelId } = msg.payload;
+        if (!channelId || typingUserId === userId) return;
+
+        usePresenceStore.getState().addTypingUser({
+          userId: typingUserId,
+          userName: name,
+          channelId,
+          timestamp: Date.now(),
+        });
+
+        const timerKey = `${channelId}:${typingUserId}`;
+        const existing = typingTimersRef.current.get(timerKey);
+        if (existing) clearTimeout(existing);
+
+        const timer = setTimeout(() => {
+          usePresenceStore.getState().removeTypingUser(channelId, typingUserId);
+          typingTimersRef.current.delete(timerKey);
+        }, TYPING_TIMEOUT_MS);
+
+        typingTimersRef.current.set(timerKey, timer);
+      })
+      .on("broadcast", { event: "stop_typing" }, (msg) => {
+        if (activeWsRef.current !== workspaceId) return;
+        const { userId: typingUserId, channelId } = msg.payload;
+        if (!channelId) return;
+        usePresenceStore.getState().removeTypingUser(channelId, typingUserId);
+        const timerKey = `${channelId}:${typingUserId}`;
+        const existing = typingTimersRef.current.get(timerKey);
+        if (existing) {
+          clearTimeout(existing);
+          typingTimersRef.current.delete(timerKey);
+        }
+      })
+      .subscribe(async (status) => {
+        const liveContext = presenceChannels.get(workspaceId);
+        if (!liveContext || liveContext.channel !== channel) return;
+
+        console.log(`[WorkspacePresence] ${workspaceId} status:`, status);
+
+        if (status === "SUBSCRIBED") {
+          clearReconnectTimer(workspaceId);
+          const tracked = await trackPresence(workspaceId, channel, userId);
+          if (!tracked) {
+            scheduleWorkspaceChannelRecovery(workspaceId, channel, "track failure");
+          }
+          return;
+        }
+
+        if (status === "TIMED_OUT" || status === "CHANNEL_ERROR" || status === "CLOSED") {
+          scheduleWorkspaceChannelRecovery(workspaceId, channel, status);
+        }
+      });
+  }
+
+  createWorkspaceChannelRef.current = createWorkspaceChannel;
+  scheduleWorkspaceChannelRecoveryRef.current = scheduleWorkspaceChannelRecovery;
 
   // Subscribe to presence on ALL the user's workspaces simultaneously.
   useEffect(() => {
@@ -96,123 +295,8 @@ export function useWorkspacePresence(
 
     // Add channels for new workspaces
     for (const workspaceId of workspaceIdList) {
-      if (presenceChannels.has(workspaceId)) continue;
-
-      const channel = supabase.channel(`workspace:${workspaceId}`, {
-        config: { presence: { key: presenceSessionId } },
-      });
-      const context: ChannelContext = {
-        channel,
-        reconnectTimer: null,
-      };
-      presenceChannels.set(workspaceId, context);
-
-      channel
-        .on("presence", { event: "sync" }, () => {
-          const liveContext = presenceChannels.get(workspaceId);
-          if (!liveContext || liveContext.channel !== channel) return;
-          usePresenceStore
-            .getState()
-            .setWorkspacePresenceSnapshot(
-              workspaceId,
-              toWorkspacePresenceSnapshot(
-                channel.presenceState<PresenceTrackPayload>(),
-              ),
-            );
-        })
-        // Typing listeners gated to active workspace only
-        .on("broadcast", { event: "typing" }, (msg) => {
-          if (activeWsRef.current !== workspaceId) return;
-          const { userId, userName: name, channelId } = msg.payload;
-          if (!channelId || userId === currentUserId) return;
-
-          usePresenceStore.getState().addTypingUser({
-            userId,
-            userName: name,
-            channelId,
-            timestamp: Date.now(),
-          });
-
-          const timerKey = `${channelId}:${userId}`;
-          const existing = typingTimersRef.current.get(timerKey);
-          if (existing) clearTimeout(existing);
-
-          const timer = setTimeout(() => {
-            usePresenceStore.getState().removeTypingUser(channelId, userId);
-            typingTimersRef.current.delete(timerKey);
-          }, TYPING_TIMEOUT_MS);
-
-          typingTimersRef.current.set(timerKey, timer);
-        })
-        .on("broadcast", { event: "stop_typing" }, (msg) => {
-          if (activeWsRef.current !== workspaceId) return;
-          const { userId, channelId } = msg.payload;
-          if (!channelId) return;
-          usePresenceStore.getState().removeTypingUser(channelId, userId);
-          const timerKey = `${channelId}:${userId}`;
-          const existing = typingTimersRef.current.get(timerKey);
-          if (existing) {
-            clearTimeout(existing);
-            typingTimersRef.current.delete(timerKey);
-          }
-        })
-        .subscribe(async (status) => {
-          const liveContext = presenceChannels.get(workspaceId);
-          if (!liveContext || liveContext.channel !== channel) return;
-
-          console.log(`[WorkspacePresence] ${workspaceId} status:`, status);
-
-          if (status === "SUBSCRIBED") {
-            clearReconnectTimer(workspaceId);
-            await channel.track({
-              user_id: currentUserId,
-              session_id: presenceSessionId,
-              online_at: new Date().toISOString(),
-            });
-            return;
-          }
-
-          if (status !== "TIMED_OUT" && status !== "CHANNEL_ERROR" && status !== "CLOSED") {
-            return;
-          }
-
-          // Clear stale snapshot immediately — if the channel is unhealthy, the
-          // last-known presence data is unreliable. It will repopulate on the
-          // next successful sync after reconnect.
-          usePresenceStore.getState().clearWorkspacePresence(workspaceId);
-
-          if (liveContext.reconnectTimer) return;
-
-          liveContext.reconnectTimer = setTimeout(() => {
-            const currentContext = presenceChannels.get(workspaceId);
-            if (!currentContext || currentContext.channel !== channel) return;
-            if (isChannelBusy(channel)) {
-              currentContext.reconnectTimer = null;
-              return;
-            }
-
-            console.log(`[WorkspacePresence] Reconnecting ${workspaceId} after ${status}`);
-            markResubscribeAttempt();
-            void channel
-              .unsubscribe()
-              .catch((error) => {
-                console.warn(
-                  `[WorkspacePresence] Failed to unsubscribe ${workspaceId} during reconnect:`,
-                  error,
-                );
-              })
-              .finally(() => {
-                const latestContext = presenceChannels.get(workspaceId);
-                if (!latestContext || latestContext.channel !== channel) return;
-                if (channel.state === "joined" || channel.state === "joining") {
-                  latestContext.reconnectTimer = null;
-                  return;
-                }
-                channel.subscribe();
-                latestContext.reconnectTimer = null;
-              });
-          }, PRESENCE_RECONNECT_DELAY_MS);
-        });
+      if (presenceChannels.has(workspaceId) || rebuildingWorkspaceIds.has(workspaceId)) continue;
+      createWorkspaceChannelRef.current?.(workspaceId, currentUserId);
     }
   }, [currentUserId, workspaceIdsKey]);
 
@@ -250,22 +334,18 @@ export function useWorkspacePresence(
       if (!shouldResubscribeOnResume()) return;
 
       for (const [workspaceId, context] of presenceChannels.entries()) {
-        if (context.channel.state === "joining" || context.channel.state === "leaving") {
+        if (context.channel.state === "joined") {
+          void trackPresence(workspaceId, context.channel, currentUserId);
           continue;
         }
 
-        console.log(`[WorkspacePresence] Resubscribing ${workspaceId} on resume`);
+        if (context.channel.state === "joining") {
+          continue;
+        }
+
+        console.log(`[WorkspacePresence] Refreshing ${workspaceId} on resume`);
         markResubscribeAttempt();
-        void context.channel
-          .unsubscribe()
-          .catch((error) => {
-            console.warn(`[WorkspacePresence] Failed to unsubscribe ${workspaceId} on resume:`, error);
-          })
-          .finally(() => {
-            const liveContext = presenceChannels.get(workspaceId);
-            if (!liveContext || liveContext.channel !== context.channel) return;
-            context.channel.subscribe();
-          });
+        scheduleWorkspaceChannelRecoveryRef.current?.(workspaceId, context.channel, "resume");
       }
     };
 
@@ -274,6 +354,38 @@ export function useWorkspacePresence(
     return () => {
       document.removeEventListener("visibilitychange", handleResume);
       window.removeEventListener("focus", handleResume);
+    };
+  }, [currentUserId, workspaceIdsKey]);
+
+  // Reassert presence periodically while the tab is visible. This repairs
+  // sessions after transient transport issues without forcing channel churn.
+  useEffect(() => {
+    const workspaceIdList: string[] = workspaceIdsKey ? JSON.parse(workspaceIdsKey) : [];
+    if (!currentUserId || workspaceIdList.length === 0) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+
+      for (const [workspaceId, context] of presenceChannels.entries()) {
+        if (context.channel.state === "joined") {
+          void trackPresence(workspaceId, context.channel, currentUserId);
+          continue;
+        }
+
+        if (context.channel.state === "joining") {
+          continue;
+        }
+
+        scheduleWorkspaceChannelRecoveryRef.current?.(
+          workspaceId,
+          context.channel,
+          "refresh interval",
+        );
+      }
+    }, PRESENCE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
     };
   }, [currentUserId, workspaceIdsKey]);
 

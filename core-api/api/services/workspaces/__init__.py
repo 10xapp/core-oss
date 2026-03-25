@@ -14,6 +14,7 @@ from .members import (
     add_workspace_member,
     update_member_role,
     remove_workspace_member,
+    leave_workspace,
     get_user_workspace_role,
 )
 from .apps import (
@@ -49,6 +50,7 @@ __all__ = [
     "add_workspace_member",
     "update_member_role",
     "remove_workspace_member",
+    "leave_workspace",
     "get_user_workspace_role",
     # Apps
     "get_workspace_apps",

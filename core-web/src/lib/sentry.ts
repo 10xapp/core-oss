@@ -37,7 +37,6 @@ export function initSentry() {
     ],
     tracesSampleRate: 0.05,
     tracePropagationTargets: [
-      new RegExp(`^${import.meta.env.VITE_API_URL || 'http://localhost:8000'}`),
       /^http:\/\/localhost/,
     ],
     beforeSend(event) {

@@ -2,7 +2,7 @@
 Chat agent streaming response handler using Claude (Anthropic).
 
 Streams responses via NDJSON events, handles tool calling with parallel
-execution, image attachments, and food detection via Cal AI.
+execution, and image attachments.
 """
 
 from typing import List, Dict, AsyncGenerator, Optional, Any
@@ -216,7 +216,7 @@ async def get_user_connections(user_id: str, user_jwt: str) -> List[str]:
         result = await supabase.table("ext_connections") \
             .select("provider") \
             .eq("user_id", user_id) \
-            .eq("status", "active") \
+            .eq("is_active", True) \
             .execute()
         providers = list({row["provider"] for row in (result.data or [])})
         if providers:
@@ -283,9 +283,9 @@ async def stream_chat_response(
     image_blocks: List[Dict[str, Any]] = []
 
     if attachments and recent_messages:
-        image_blocks, base64_images = await _prepare_image_attachments(attachments)
+        image_blocks, _ = await _prepare_image_attachments(attachments)
 
-        if base64_images:
+        if image_blocks:
             yield status_event("Processing images...")
 
     # Build the last user message with images

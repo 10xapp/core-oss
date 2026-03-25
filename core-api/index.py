@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime
 from api.config import settings
 from api.schemas import HealthResponse, StatusResponse
+from lib.supabase_client import start_supabase_request_scope, reset_supabase_request_scope
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,10 @@ sentry_sdk.init(
 
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from api.rate_limit import limiter
 
-from api.routers import auth, calendar, email, webhooks, cron, sync, documents, files, chat, chat_attachments, search, app_drawer, preferences, workspaces, invitations, messages, users, projects, notifications, init, agents, agent_dispatch, permissions, public, workers, builder
+from api.routers import auth, calendar, email, webhooks, cron, sync, documents, files, chat, chat_attachments, app_drawer, preferences, workspaces, invitations, messages, users, projects, notifications, init, agents, agent_dispatch, permissions, public, workers, builder
 
 # Create FastAPI app - Vercel will auto-detect this
 app = FastAPI(
@@ -53,8 +55,10 @@ app = FastAPI(
     debug=settings.debug
 )
 
-# Rate limiting
+# Rate limiting — middleware runs BEFORE FastAPI validation/dependencies
+# Without this, invalid requests (422) bypass the decorator-based limiter
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
@@ -101,6 +105,15 @@ app.add_middleware(
 
 
 # Security headers middleware
+@app.middleware("http")
+async def supabase_request_scope_middleware(request: Request, call_next):
+    scope_token = start_supabase_request_scope()
+    try:
+        return await call_next(request)
+    finally:
+        reset_supabase_request_scope(scope_token)
+
+
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     try:
@@ -157,7 +170,6 @@ app.include_router(cron.router)
 app.include_router(sync.router)
 app.include_router(chat.router)
 app.include_router(chat_attachments.router)
-app.include_router(search.router)
 app.include_router(app_drawer.router)
 app.include_router(preferences.router)
 app.include_router(messages.router)

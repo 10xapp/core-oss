@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { avatarGradient } from '../../../utils/avatarGradient';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckIcon } from '@heroicons/react/24/outline';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -202,7 +203,7 @@ export default function AssigneePicker({ issueId, boardId, currentAssignees, but
                           className="w-full h-full rounded-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full rounded-full bg-gray-900 flex items-center justify-center">
+                        <div className="w-full h-full rounded-full flex items-center justify-center" style={{ background: avatarGradient(member?.name || member?.email || '?') }}>
                           <span className="text-[8px] font-medium text-white">
                             {member ? getInitials(member) : '?'}
                           </span>
@@ -282,7 +283,7 @@ export default function AssigneePicker({ issueId, boardId, currentAssignees, but
                       className="w-5 h-5 rounded-full object-cover shrink-0"
                     />
                   ) : (
-                    <div className="w-5 h-5 rounded-full bg-gray-900 flex items-center justify-center shrink-0">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: avatarGradient(member.name || member.email || '?') }}>
                       <span className="text-[10px] font-medium text-white">
                         {getInitials(member)}
                       </span>

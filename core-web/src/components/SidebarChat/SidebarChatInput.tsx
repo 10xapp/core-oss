@@ -70,10 +70,10 @@ export default function SidebarChatInput({
     // Detect @ mention trigger
     const cursorPos = e.target.selectionStart ?? 0;
     const textBeforeCursor = newValue.substring(0, cursorPos);
-    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    const mentionMatch = textBeforeCursor.match(/(^|[\s])@(\w*)$/);
 
     if (mentionMatch && workspaceId) {
-      setMentionQuery(mentionMatch[1]);
+      setMentionQuery(mentionMatch[2]);
       setShowMentionAutocomplete(true);
       const coords = getTextareaCursorCoords(e.target);
       setMentionCursorCoords(coords);
@@ -114,12 +114,13 @@ export default function SidebarChatInput({
 
     const cursorPos = textarea.selectionStart ?? 0;
     const textBeforeCursor = value.substring(0, cursorPos);
-    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    const mentionMatch = textBeforeCursor.match(/(^|[\s])@(\w*)$/);
 
     if (mentionMatch) {
       // Remove the @query text — the mention is shown as a pill only
+      const prefix = mentionMatch[1]; // leading whitespace or empty
       const start = cursorPos - mentionMatch[0].length;
-      const newValue = value.substring(0, start) + value.substring(cursorPos);
+      const newValue = value.substring(0, start) + prefix + value.substring(cursorPos);
 
       onChange(newValue);
       onMentionSelect?.(data);
@@ -189,7 +190,7 @@ export default function SidebarChatInput({
 
   return (
     <>
-      <div className="bg-bg-white border border-border-gray rounded-lg" ref={containerRef}>
+      <div className="bg-bg-white border border-border-gray rounded-lg overflow-hidden" ref={containerRef}>
         {/* Attachment previews */}
         {hasAttachments && (
           <div className="flex gap-1.5 px-2.5 pt-2">
@@ -278,7 +279,7 @@ export default function SidebarChatInput({
             onPaste={handlePaste}
             placeholder={placeholder}
             rows={1}
-            className="flex-1 bg-transparent resize-none outline-none text-text-body placeholder-text-tertiary text-sm leading-5 h-5 min-h-[20px] max-h-[120px]"
+            className="flex-1 min-w-0 bg-transparent resize-none outline-none text-text-body placeholder-text-tertiary text-sm leading-5 h-5 min-h-[20px] max-h-[120px]"
           />
           {isStreaming ? (
             <button

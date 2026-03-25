@@ -5,7 +5,9 @@ import {
   syncCalendar,
   updateCalendarEvent,
   deleteCalendarEvent,
+  respondToCalendarEvent,
   type CalendarEvent,
+  type CalendarResponseStatus,
 } from "../api/client";
 import { registerAccountOrder } from "../utils/accountColors";
 import {
@@ -72,6 +74,7 @@ interface CalendarState {
     description?: string;
     location?: string;
     meeting_link?: string;
+    add_google_meet?: boolean;
   } | null;
 
   // Actions
@@ -101,6 +104,7 @@ interface CalendarState {
   updatePendingEventDescription: (description: string) => void;
   updatePendingEventLocation: (location: string) => void;
   updatePendingEventLink: (link: string) => void;
+  togglePendingEventGoogleMeet: (enabled: boolean) => void;
   updatePendingEventRect: (rect: DOMRect) => void;
   cancelCreatingEvent: () => void;
   confirmPendingEvent: () => Promise<void>;
@@ -120,6 +124,7 @@ interface CalendarState {
   replaceEvent: (tempId: string, newEvent: CalendarEvent) => void;
   removeEvent: (eventId: string) => void;
   deleteEvent: (eventId: string) => Promise<void>;
+  respondToEvent: (eventId: string, responseStatus: CalendarResponseStatus) => Promise<void>;
   rescheduleEvent: (
     eventId: string,
     newDate: Date,
@@ -157,16 +162,13 @@ function getLocalDateKey(dateOrIsoString: Date | string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// Check if the current user has declined an event
-function isEventDeclined(event: CalendarEvent): boolean {
-  if (!event.attendees || !event.account_email) return false;
-
-  // Find the attendee matching the account email (the current user)
+// Get the current user's RSVP response status for an event
+export function getUserResponseStatus(event: CalendarEvent): string | null {
+  if (!event.attendees || !event.account_email) return null;
   const userAttendee = event.attendees.find(
     (a) => a.email.toLowerCase() === event.account_email?.toLowerCase(),
   );
-
-  return userAttendee?.response_status === "declined";
+  return userAttendee?.response_status ?? null;
 }
 
 // Parse date for indexing - for all-day events, extract date directly from string
@@ -197,8 +199,6 @@ function buildEventsByDateIndex(
   const index = new Map<string, CalendarEvent[]>();
 
   for (const event of events) {
-    // Skip events the user has declined
-    if (isEventDeclined(event)) continue;
     // Parse start and end dates - handle all-day events specially to avoid timezone shifts
     const isAllDay = event.all_day === true;
     let currentDate = parseDateForIndexing(event.start_time, isAllDay);
@@ -644,6 +644,13 @@ export const useCalendarStore = create<CalendarState>()(
         }
       },
 
+      togglePendingEventGoogleMeet: (enabled) => {
+        const pending = get().pendingEvent;
+        if (pending) {
+          set({ pendingEvent: { ...pending, add_google_meet: enabled, meeting_link: enabled ? undefined : pending.meeting_link } });
+        }
+      },
+
       updatePendingEventRect: (triggerRect) => {
         const pending = get().pendingEvent;
         if (pending) {
@@ -836,6 +843,41 @@ export const useCalendarStore = create<CalendarState>()(
           const currentEvents = get().events;
           set(setEventsWithIndex([...currentEvents, eventToDelete]));
           throw err; // Re-throw so caller can handle (show error message)
+        }
+      },
+
+      respondToEvent: async (eventId, responseStatus) => {
+        const event = get().events.find((e) => e.id === eventId);
+        if (!event) return;
+
+        // Store original attendees for rollback
+        const originalAttendees = event.attendees;
+
+        // Optimistically update the attendee's response status
+        // We update any attendee matching the event's account_email
+        const accountEmail = event.account_email?.toLowerCase();
+        if (accountEmail && event.attendees) {
+          const updatedAttendees = event.attendees.map((att) =>
+            att.email.toLowerCase() === accountEmail
+              ? { ...att, response_status: responseStatus }
+              : att
+          );
+          const newEvents = get().events.map((e) =>
+            e.id === eventId ? { ...e, attendees: updatedAttendees } : e
+          );
+          set(setEventsWithIndex(newEvents));
+        }
+
+        try {
+          await respondToCalendarEvent(eventId, responseStatus);
+        } catch (err) {
+          // Revert on failure
+          console.error("Failed to respond to event:", err);
+          const revertedEvents = get().events.map((e) =>
+            e.id === eventId ? { ...e, attendees: originalAttendees } : e
+          );
+          set(setEventsWithIndex(revertedEvents));
+          throw err;
         }
       },
 

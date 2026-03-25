@@ -362,15 +362,14 @@ def get_gmail_service_for_account(user_id: str, user_jwt: str, account_id: str):
 
         logger.info(f"✅ Found Google connection (ID: {connection_id[:8]}...)")
 
-        # Get valid access token (refresh if needed)
-        access_token = _refresh_google_token_if_needed(connection_data)
+        # Get valid credentials (refresh if needed)
+        credentials = _get_google_credentials(connection_data)
 
-        if not access_token:
-            logger.error(f"❌ Unable to get valid access token for account {account_id}")
+        if not credentials:
+            logger.error(f"❌ Unable to get valid credentials for account {account_id}")
             return None, None
 
         # Build Gmail API client
-        credentials = Credentials(token=access_token)
         service = build('gmail', 'v1', credentials=credentials)
 
         return service, connection_id
@@ -400,15 +399,14 @@ def build_gmail_service_from_connection_data(connection_data: Dict[str, Any]):
             logger.error("❌ No connection_id in connection_data")
             return None
 
-        # Get valid access token (refresh if needed)
-        access_token = _refresh_google_token_if_needed(connection_data)
+        # Get valid credentials (refresh if needed)
+        credentials = _get_google_credentials(connection_data)
 
-        if not access_token:
-            logger.error(f"❌ Unable to get valid access token for connection {connection_id[:8]}...")
+        if not credentials:
+            logger.error(f"❌ Unable to get valid credentials for connection {connection_id[:8]}...")
             return None
 
         # Build Gmail API client
-        credentials = Credentials(token=access_token)
         service = build('gmail', 'v1', credentials=credentials)
 
         return service
@@ -473,18 +471,17 @@ def get_gmail_service(user_id: str, user_jwt: str, account_id: str = None):
         
         logger.info(f"✅ Found Google connection (ID: {connection_id})")
         
-        # Get valid access token (refresh if needed)
-        access_token = _refresh_google_token_if_needed(connection_data)
-        
-        if not access_token:
-            logger.error(f"❌ Unable to get valid access token for user {user_id}")
+        # Get valid credentials (refresh if needed)
+        credentials = _get_google_credentials(connection_data)
+
+        if not credentials:
+            logger.error(f"❌ Unable to get valid credentials for user {user_id}")
             logger.error("💡 Token may be expired or invalid. User should re-authenticate.")
             return None, None
-        
-        logger.info("✅ Got valid access token")
-        
+
+        logger.info("✅ Got valid credentials")
+
         # Build Gmail API client
-        credentials = Credentials(token=access_token)
         service = build('gmail', 'v1', credentials=credentials)
         
         logger.info("✅ Built Gmail API service")
@@ -498,13 +495,39 @@ def get_gmail_service(user_id: str, user_jwt: str, account_id: str = None):
         return None, None
 
 
+def _get_google_credentials(connection_data: Dict[str, Any]) -> Optional[Credentials]:
+    """
+    Build a full Google Credentials object with refresh capability.
+    Refreshes the token first if expired, then returns credentials that
+    the Google API client can auto-refresh if needed during a request.
+    """
+    from api.config import settings
+
+    access_token = _refresh_google_token_if_needed(connection_data)
+    if not access_token:
+        return None
+
+    refresh_token = connection_data.get('refresh_token')
+    metadata = connection_data.get('metadata') or {}
+    client_id = metadata.get('client_id') or settings.google_client_id
+    client_secret = metadata.get('client_secret') or settings.google_client_secret
+
+    return Credentials(
+        token=access_token,
+        refresh_token=refresh_token,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=client_id,
+        client_secret=client_secret,
+    )
+
+
 def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional[str]:
     """
     Check if access token is expired and refresh if needed
     Returns the valid access token
     """
     token_expires_at = connection_data.get('token_expires_at')
-    
+
     # If no expiry time, assume token is still valid
     if not token_expires_at:
         return connection_data.get('access_token')
@@ -599,6 +622,7 @@ def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional
         # Save new refresh_token if Google issued one
         if credentials.refresh_token and credentials.refresh_token != connection_data.get('refresh_token'):
             update_data['refresh_token'] = credentials.refresh_token
+            connection_data['refresh_token'] = credentials.refresh_token
             logger.info("Google issued new refresh token, saving it")
 
         service_supabase = get_service_role_client()

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { CameraIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { avatarGradient } from '../../utils/avatarGradient';
 import { useAuthStore } from '../../stores/authStore';
 import { useEmailAccountsStore } from '../../stores/emailAccountsStore';
 import Modal from '../Modal/Modal';
@@ -196,7 +197,7 @@ export default function SettingsView({ isOpen, onClose }: SettingsViewProps) {
                   ) : (
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-                      style={{ background: 'linear-gradient(135deg, #607E98 0%, #809AB0 100%)' }}
+                      style={{ background: avatarGradient(userProfile?.name || user?.email || '?') }}
                     >
                       {user?.email?.charAt(0).toUpperCase() || '?'}
                     </div>

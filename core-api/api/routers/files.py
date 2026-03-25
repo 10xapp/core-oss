@@ -125,7 +125,7 @@ class FileURLResponse(BaseModel):
 # ============================================================================
 
 @router.post("/upload-url", response_model=PresignedUploadResponse)
-@limiter.limit("30/minute")
+@limiter.limit("30/minute;500/day")
 async def get_presigned_upload_url(
     request: Request,
     response: Response,
@@ -260,7 +260,7 @@ async def confirm_upload(
 
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit("30/minute")
+@limiter.limit("30/minute;500/day")
 async def upload_file_endpoint(
     request: Request,
     response: Response,

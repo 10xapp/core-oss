@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { avatarGradient } from "../../utils/avatarGradient";
 import { motion, AnimatePresence } from "motion/react";
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 import { useViewPrefetch } from "../../hooks/useViewPrefetch";
@@ -23,7 +24,6 @@ import {
   ArtificialIntelligence02Icon,
   SourceCodeIcon,
   LinkSquare02Icon,
-  MagicWand01Icon,
 } from "@hugeicons-pro/core-stroke-standard";
 import {
   Folder01Icon as Folder01IconSolid,
@@ -34,7 +34,6 @@ import {
   Mail01Icon as Mail01IconSolid,
   Calendar04Icon as Calendar04IconSolid,
   ArtificialIntelligence02Icon as ArtificialIntelligence02IconSolid,
-  MagicWand01Icon as MagicWand01IconSolid,
 } from "@hugeicons-pro/core-solid-standard";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useProductStore } from "../../stores/productStore";
@@ -42,7 +41,6 @@ import { useAuthStore } from "../../stores/authStore";
 import { useConversationStore } from "../../stores/conversationStore";
 import { useMessagesStore } from "../../stores/messagesStore";
 import { useEmailStore } from "../../stores/emailStore";
-import { useUIStore } from "../../stores/uiStore";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import Modal from "../Modal/Modal";
 import Dropdown from "../Dropdown/Dropdown";
@@ -93,7 +91,7 @@ const availableAppTypes = [
   },
   {
     type: "dashboard",
-    name: "Dashboard",
+    name: "Personal",
     icon: DashboardSquare01Icon,
   },
   {
@@ -138,25 +136,6 @@ const getAppPath = (workspaceId: string, appType: string) =>
 type ModalType = "createWorkspace" | "workspaceSettings" | "dashboardSettings" | null;
 type WorkspaceSettingsTab = "members" | "apps" | "settings";
 
-const iconBtnBase =
-  "w-10 h-10 flex items-center justify-center rounded-lg transition-all relative outline-none focus:outline-none";
-const iconBtnActiveBase = "bg-black/10 text-text-body";
-const iconBtnInactiveBase = "text-text-tertiary hover:bg-black/5 hover:text-text-body";
-
-function AIChatToggle() {
-  const isSidebarChatOpen = useUIStore((s) => s.isSidebarChatOpen);
-  const toggleSidebarChat = useUIStore((s) => s.toggleSidebarChat);
-
-  return (
-    <button
-      onClick={toggleSidebarChat}
-      title="AI Chat"
-      className={`${iconBtnBase} ${isSidebarChatOpen ? iconBtnActiveBase : iconBtnInactiveBase}`}
-    >
-      <HugeiconsIcon icon={isSidebarChatOpen ? MagicWand01IconSolid : MagicWand01Icon} size={20} />
-    </button>
-  );
-}
 
 function SelfPresenceAvatar({ avatarUrl, name, fallbackLetter, userId }: {
   avatarUrl?: string | null;
@@ -174,7 +153,7 @@ function SelfPresenceAvatar({ avatarUrl, name, fallbackLetter, userId }: {
       ) : (
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center"
-          style={{ background: "linear-gradient(135deg, #607E98 0%, #809AB0 100%)" }}
+          style={{ background: avatarGradient(name) }}
         >
           <span className="text-xs font-medium text-white">{fallbackLetter}</span>
         </div>
@@ -307,8 +286,9 @@ export default function Sidebar() {
   const miniAppsForNav = useMemo(() => {
     if (!targetWorkspaceForNav) return [];
     const topLevel = ['chat', 'email', 'calendar'];
-    return (targetWorkspaceForNav.apps || [])
-      .filter((app) => appIcons[app.type])
+    const pinnedTypes = ['email', 'calendar'];
+    const workspaceApps = (targetWorkspaceForNav.apps || [])
+      .filter((app) => appIcons[app.type] && !pinnedTypes.includes(app.type))
       .map((app) => ({
         id: app.id,
         path: targetWorkspaceForNav.isDefault && topLevel.includes(app.type)
@@ -316,6 +296,12 @@ export default function Sidebar() {
           : getAppPath(targetWorkspaceForNav.id, app.type),
         type: app.type,
       }));
+    const pinnedApps = pinnedTypes.map((type) => ({
+      id: type,
+      path: `/${type}`,
+      type,
+    }));
+    return [...workspaceApps, ...pinnedApps];
   }, [targetWorkspaceForNav]);
 
   // All sidebar nav items come from workspace apps
@@ -809,7 +795,7 @@ export default function Sidebar() {
     "w-10 h-10 flex items-center justify-center rounded-lg transition-all relative outline-none focus:outline-none";
   const iconBtnActive = "bg-black/10 text-text-body";
   const iconBtnInactive =
-    "text-text-tertiary hover:bg-black/5 hover:text-text-body";
+    "text-[#323232] hover:bg-black/5";
 
   return (
     <>
@@ -835,7 +821,7 @@ export default function Sidebar() {
                 : activeProductType === 'website_builder'
                 ? "Website Builder"
                 : selectedView === "dashboard"
-                ? "Dashboard"
+                ? "Personal"
                 : currentWorkspace?.name || "Select workspace"
             }
             className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
@@ -862,7 +848,7 @@ export default function Sidebar() {
                 ) : selectedView === "dashboard" ? (
                   <img
                     src="/CoreLogo.png"
-                    alt="Dashboard"
+                    alt="Personal"
                     className="w-5 h-5"
                   />
                 ) : currentWorkspace?.icon_url ? (
@@ -942,12 +928,10 @@ export default function Sidebar() {
                     : "hover:bg-bg-gray"
                 }`}
               >
-                <img src="/CoreLogo.png" alt="Dashboard" className="w-5 h-5" />
-                <span className="font-semibold">Dashboard</span>
+                <img src="/CoreLogo.png" alt="Personal" className="w-5 h-5" />
+                <span className="font-semibold">Personal</span>
               </button>
-            </div>
-            <div className="mx-1.5 border-t border-border-light" />
-            <div className="p-1.5 flex flex-col gap-0.5">
+              <div className="mx-1 my-0.5 border-t border-border-light" />
               {workspaces
                 .filter((ws) => !ws.isDefault)
                 .map((ws) => {
@@ -982,36 +966,37 @@ export default function Sidebar() {
                         );
                         if (messagesApp) setWorkspaceAppId(messagesApp.id);
 
-                        const sessionApp = getSessionApp(ws.id);
                         const coreApps = ["chat", "email", "calendar"];
 
-                        if (sessionApp) {
-                          // Navigate to the last app used in this workspace
-                          if (coreApps.includes(sessionApp)) {
-                            // Core app - navigate to workspace-scoped URL
-                            navigate(`/workspace/${ws.id}/${sessionApp}`);
+                        // Detect the current app type from the URL
+                        const coreAppMatch = location.pathname.match(/^\/(chat|email|calendar)(?:\/|$)/) ||
+                          location.pathname.match(/^\/workspace\/[^/]+\/(chat|email|calendar)(?:\/|$)/);
+                        const workspaceAppMatch = location.pathname.match(/^\/workspace\/[^/]+\/([^/]+)/);
+                        const currentAppType = coreAppMatch?.[1] || workspaceAppMatch?.[1];
+
+                        if (currentAppType) {
+                          // Stay on the same app type in the new workspace
+                          if (coreApps.includes(currentAppType)) {
+                            navigate(`/workspace/${ws.id}/${currentAppType}`);
                           } else {
-                            // Regular workspace app
-                            navigate(getAppPath(ws.id, sessionApp));
+                            const targetApp = ws.apps?.find((app) => app.type === currentAppType);
+                            if (targetApp) {
+                              navigate(getAppPath(ws.id, targetApp.type));
+                            } else if (ws.apps && ws.apps.length > 0) {
+                              navigate(getAppPath(ws.id, ws.apps[0].type));
+                            }
                           }
                         } else {
-                          // No session app - check if currently on a core app
-                          const coreAppMatch = location.pathname.match(/^\/(chat|email|calendar)(?:\/|$)/) ||
-                            location.pathname.match(/^\/workspace\/[^/]+\/(chat|email|calendar)(?:\/|$)/);
-
-                          if (coreAppMatch) {
-                            // Stay on same core app but switch to new workspace context
-                            const coreAppType = coreAppMatch[1];
-                            navigate(`/workspace/${ws.id}/${coreAppType}`);
+                          // No current app — fall back to session app or first app
+                          const sessionApp = getSessionApp(ws.id);
+                          if (sessionApp) {
+                            if (coreApps.includes(sessionApp)) {
+                              navigate(`/workspace/${ws.id}/${sessionApp}`);
+                            } else {
+                              navigate(getAppPath(ws.id, sessionApp));
+                            }
                           } else if (ws.apps && ws.apps.length > 0) {
-                            // Fall back to current app type or first app
-                            const workspaceAppMatch = location.pathname.match(/^\/workspace\/[^/]+\/([^/]+)/);
-                            const currentAppType = workspaceAppMatch?.[1];
-                            const targetApp = currentAppType
-                              ? ws.apps.find((app) => app.type === currentAppType)
-                              : null;
-                            const appToNavigate = targetApp || ws.apps[0];
-                            navigate(getAppPath(ws.id, appToNavigate.type));
+                            navigate(getAppPath(ws.id, ws.apps[0].type));
                           }
                         }
                         // Focus sidebar for immediate keyboard nav
@@ -1033,7 +1018,7 @@ export default function Sidebar() {
                           className="w-5 h-5 rounded object-cover"
                         />
                       ) : (
-                        <span className="w-5 h-5 flex items-center justify-center text-xs font-medium bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded">
+                        <span className="w-5 h-5 flex items-center justify-center text-xs font-medium bg-blue-600 text-white rounded">
                           {ws.name.charAt(0).toUpperCase()}
                         </span>
                       )}
@@ -1049,7 +1034,6 @@ export default function Sidebar() {
                     </button>
                   );
                 })}
-
             </div>
 
             <div className="mx-1.5 border-t border-border-light" />
@@ -1145,25 +1129,31 @@ export default function Sidebar() {
 
         {/* Bottom section */}
         <div className="flex flex-col items-center gap-2 mt-2">
-          {/* AI Chat toggle */}
-          <AIChatToggle />
-          {/* Pinned: Calendar & Email */}
-          {activeProductType === 'workspace' && displayMiniApps.filter((app) => app.type === 'calendar' || app.type === 'email').map((app) => {
-            const isItemActive = isActivePath(app.path) || (
-              targetWorkspace && location.pathname.match(new RegExp(`/workspace/[^/]+/${app.type}(/|$)`))
-            ) || false;
+          {/* Pinned: Email & Calendar — always visible */}
+          {(() => {
+            const isEmailActive = isActivePath('/email') || !!location.pathname.match(/\/workspace\/[^/]+\/email(\/|$)/);
+            const isCalendarActive = isActivePath('/calendar') || !!location.pathname.match(/\/workspace\/[^/]+\/calendar(\/|$)/);
             return (
-              <button
-                key={app.id}
-                onClick={() => navigate(app.path)}
-                onMouseEnter={() => prefetchView(app.type || app.id, app.id, targetWorkspace?.id)}
-                title={app.name}
-                className={`${iconBtn} ${isItemActive ? iconBtnActive : iconBtnInactive}`}
-              >
-                <HugeiconsIcon icon={isItemActive ? app.iconSolid : app.icon} size={20} />
-              </button>
+              <>
+                <button
+                  onClick={() => navigate(targetWorkspace && !targetWorkspace.isDefault ? `/workspace/${targetWorkspace.id}/email` : '/email')}
+                  onMouseEnter={() => prefetchView('email', 'email', targetWorkspace?.id)}
+                  title="Email"
+                  className={`${iconBtn} ${isEmailActive ? iconBtnActive : iconBtnInactive}`}
+                >
+                  <HugeiconsIcon icon={isEmailActive ? Mail01IconSolid : Mail01Icon} size={20} />
+                </button>
+                <button
+                  onClick={() => navigate(targetWorkspace && !targetWorkspace.isDefault ? `/workspace/${targetWorkspace.id}/calendar` : '/calendar')}
+                  onMouseEnter={() => prefetchView('calendar', 'calendar', targetWorkspace?.id)}
+                  title="Calendar"
+                  className={`${iconBtn} ${isCalendarActive ? iconBtnActive : iconBtnInactive}`}
+                >
+                  <HugeiconsIcon icon={isCalendarActive ? Calendar04IconSolid : Calendar04Icon} size={20} />
+                </button>
+              </>
             );
-          })}
+          })()}
           {/* Settings - workspace only */}
           {activeProductType === 'workspace' && targetWorkspace && (
             <button

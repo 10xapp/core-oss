@@ -14,6 +14,7 @@ from api.services.workspaces import (
     get_workspace_members,
     update_member_role,
     remove_workspace_member,
+    leave_workspace,
     get_user_workspace_role,
     get_workspace_apps,
     create_workspace_app,
@@ -80,14 +81,14 @@ class UpdateMemberRoleRequest(BaseModel):
 
 class CreateAppRequest(BaseModel):
     """Request model for creating a workspace app"""
-    app_type: str = Field(..., description="App type: tasks, files, dashboard, projects, etc.")
+    app_type: str = Field(..., description="App type (chat, files, messages, dashboard, projects, email, calendar, agents)")
     is_public: bool = Field(default=True, description="Whether app is visible to all members")
     position: Optional[int] = Field(None, ge=0, description="Display order position")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "app_type": "tasks",
+                "app_type": "chat",
                 "is_public": True
             }
         }
@@ -154,6 +155,12 @@ class WorkspaceListResponse(BaseModel):
 class WorkspaceSingleResponse(BaseModel):
     """Response wrapping a single workspace."""
     workspace: WorkspaceItemResponse
+
+
+class CreateWorkspaceResponse(BaseModel):
+    """Response for workspace creation, includes optional welcome_note_id."""
+    workspace: WorkspaceItemResponse
+    welcome_note_id: Optional[str] = None
 
 
 class WorkspaceDeleteResponse(BaseModel):
@@ -376,7 +383,7 @@ async def get_workspace_endpoint(
         handle_api_exception(e, "Failed to get workspace", logger)
 
 
-@router.post("", response_model=WorkspaceSingleResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CreateWorkspaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_workspace_endpoint(
     request: CreateWorkspaceRequest,
     user_jwt: str = Depends(get_current_user_jwt),
@@ -386,7 +393,7 @@ async def create_workspace_endpoint(
     Create a new workspace.
 
     The current user becomes the owner of the workspace.
-    By default, creates standard mini-apps (tasks, files, dashboard, projects, etc.).
+    By default, creates the standard set of workspace apps (chat, files, messages, dashboard, projects, email, calendar, agents).
     """
     try:
         logger.info(f"Creating workspace '{request.name}' for user {user_id}")
@@ -396,7 +403,8 @@ async def create_workspace_endpoint(
             name=request.name,
             create_default_apps=request.create_default_apps
         )
-        return {"workspace": workspace}
+        welcome_note_id = workspace.pop("welcome_note_id", None)
+        return {"workspace": workspace, "welcome_note_id": welcome_note_id}
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -573,6 +581,35 @@ async def remove_member_endpoint(
         )
     except Exception as e:
         handle_api_exception(e, "Failed to remove member", logger)
+
+
+@router.post("/{workspace_id}/leave", response_model=MemberRemoveResponse)
+async def leave_workspace_endpoint(
+    workspace_id: str,
+    user_jwt: str = Depends(get_current_user_jwt),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Leave a workspace voluntarily.
+
+    Any non-owner member can leave a workspace.
+    Owners must transfer ownership or delete the workspace instead.
+    """
+    try:
+        logger.info(f"User {user_id} leaving workspace {workspace_id}")
+        await leave_workspace(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            user_jwt=user_jwt
+        )
+        return {"success": True, "message": "Left workspace"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        handle_api_exception(e, "Failed to leave workspace", logger)
 
 
 # ============================================================================

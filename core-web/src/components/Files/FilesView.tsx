@@ -27,7 +27,6 @@ import {
   File02Icon,
   VolumeHighIcon,
   Upload04Icon,
-  Loading03Icon,
   Cancel01Icon,
   Download04Icon,
   Add01Icon,
@@ -108,23 +107,40 @@ function flushAllPendingWithKeepalive(): boolean {
 
   return true;
 }
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import VersionHistoryPanel from "./VersionHistoryPanel";
 import { HeaderButtons } from "../MiniAppHeader";
 import FilesSettingsModal from "./FilesSettingsModal";
 import RequestAccessCard from "../RequestAccessCard";
 import { useUIStore } from "../../stores/uiStore";
 
-const PdfViewer = lazy(() => import("./PdfViewer"));
-const DocxViewer = lazy(() => import("./DocxViewer"));
-const PptxViewer = lazy(() => import("./PptxViewer"));
-const VideoViewer = lazy(() => import("./VideoViewer"));
-const AudioViewer = lazy(() => import("./AudioViewer"));
-const XlsxViewer = lazy(() => import("./XlsxViewer"));
-const NoteEditor = lazy(() => import("./NoteEditor"));
+// Helper to handle chunk load failures (e.g., after deployment with new hashes)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyWithRetry(importFn: () => Promise<any>) {
+  return lazy(() =>
+    importFn().catch(() => {
+      // Chunk failed to load - reload the page to get fresh assets
+      window.location.reload();
+      // Return a placeholder while reloading
+      return { default: () => null };
+    })
+  );
+}
+
+const PdfViewer = lazyWithRetry(() => import("./PdfViewer"));
+const DocxViewer = lazyWithRetry(() => import("./DocxViewer"));
+const PptxViewer = lazyWithRetry(() => import("./PptxViewer"));
+const VideoViewer = lazyWithRetry(() => import("./VideoViewer"));
+const AudioViewer = lazyWithRetry(() => import("./AudioViewer"));
+const XlsxViewer = lazyWithRetry(() => import("./XlsxViewer"));
+const NoteEditor = lazyWithRetry(() => import("./NoteEditor"));
 const NoteToolbar = lazy(async () => {
-  const mod = await import("./NoteEditor");
-  return { default: mod.NoteToolbar };
+  try {
+    const mod = await import("./NoteEditor");
+    return { default: mod.NoteToolbar };
+  } catch {
+    window.location.reload();
+    return { default: () => null };
+  }
 });
 
 // Sortable wrapper for document items - Notion-style (no shifting, just drag handle)
@@ -948,7 +964,7 @@ export default function FilesView() {
   // State for "Move to folder" menu
   const [moveMenuDocId, setMoveMenuDocId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const hasUnsyncedSelectedNote = !!(selectedNoteId && pendingEdits[selectedNoteId]);
   const effectiveSaveStatus: SaveStatus =
     saveStatus === "error"
@@ -1015,11 +1031,10 @@ export default function FilesView() {
   // State for expanded folders in sidebar
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
-  // Sidebar view toggle: "files" (normal file tree) or "shared" (shared with me)
+  // Sidebar section expansion states
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeView, setActiveView] = useState<'files' | 'shared'>(
-    searchParams.get('shared') === 'true' ? 'shared' : 'files'
-  );
+  const [showMyFiles, setShowMyFiles] = useState(true);
+  const [showShared, setShowShared] = useState(true);
 
   // Filter shared items to only show file-type resources
   const sharedFileItems = useMemo(() =>
@@ -1148,12 +1163,6 @@ export default function FilesView() {
     fetchSharedWithMe();
   }, [fetchSharedWithMe]);
 
-  // Refresh when switching to shared view
-  useEffect(() => {
-    if (activeView === 'shared') {
-      fetchSharedWithMe();
-    }
-  }, [activeView, fetchSharedWithMe]);
 
   // Auto-open shared document when arriving via share link (?shared=true)
   const sharedParamHandledRef = useRef(false);
@@ -1510,6 +1519,15 @@ export default function FilesView() {
     },
     [selectedNoteId, saveNote, updateNoteOptimistic],
   );
+
+  // Auto-resize title textarea when content changes
+  useEffect(() => {
+    const ta = titleInputRef.current;
+    if (ta) {
+      ta.style.height = 'auto';
+      ta.style.height = ta.scrollHeight + 'px';
+    }
+  }, [noteTitle]);
 
   // Focus title input when creating a new note
   // Depends on selectedNote so it retries once the note editor renders
@@ -1895,7 +1913,7 @@ export default function FilesView() {
                   setShowNewMenu(false);
                 }}
                 disabled={isCreatingNote}
-                className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
+                className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
                 <HugeiconsIcon icon={Add01Icon} size={14} aria-hidden="true" />
                 New Note
@@ -1905,7 +1923,7 @@ export default function FilesView() {
                   handleCreateFolder();
                   setShowNewMenu(false);
                 }}
-                className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2 focus-visible:bg-bg-gray focus-visible:outline-none"
+                className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
                 <HugeiconsIcon icon={FolderAddIcon} size={14} aria-hidden="true" />
                 New Folder
@@ -1916,7 +1934,7 @@ export default function FilesView() {
                   setShowNewMenu(false);
                 }}
                 disabled={isUploading}
-                className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
+                className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
                 <HugeiconsIcon icon={Upload04Icon} size={14} aria-hidden="true" />
                 Upload File
@@ -1941,42 +1959,30 @@ export default function FilesView() {
             </div>
           )}
 
-          {/* View toggle tabs */}
-          <div className="px-2 flex gap-0.5 mb-1" role="tablist" aria-label="File views">
-            <button
-              role="tab"
-              aria-selected={activeView === 'files'}
-              onClick={() => setActiveView('files')}
-              className={`flex-1 flex items-center justify-center gap-1.5 h-7 px-2.5 text-[13px] font-medium rounded-md transition-colors ${
-                activeView === 'files'
-                  ? 'bg-black/6 text-text-body'
-                  : 'text-text-tertiary hover:text-text-secondary'
-              }`}
+          {/* Scrollable content area */}
+          <div className="flex-1 overflow-y-auto">
+
+          {/* My Files section header */}
+          <div className="space-y-0.5">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setShowMyFiles(!showMyFiles)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowMyFiles(!showMyFiles);
+                }
+              }}
+              aria-expanded={showMyFiles}
+              className="flex items-center gap-1 px-4 py-1.5 text-xs font-medium text-text-tertiary cursor-pointer group"
             >
-              <HugeiconsIcon icon={File02Icon} size={13} aria-hidden="true" />
-              My Files
-            </button>
-            <button
-              role="tab"
-              aria-selected={activeView === 'shared'}
-              onClick={() => setActiveView('shared')}
-              className={`flex-1 flex items-center justify-center gap-1.5 h-7 px-2.5 text-[13px] font-medium rounded-md transition-colors ${
-                activeView === 'shared'
-                  ? 'bg-black/6 text-text-body'
-                  : 'text-text-tertiary hover:text-text-secondary'
-              }`}
-            >
-              <UsersIcon className="w-3.5 h-3.5" aria-hidden="true" />
-              Shared
-              {sharedFileItems.length > 0 && activeView !== 'shared' && (
-                <span className="ml-0.5 px-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full bg-black/10 text-[10px] text-text-secondary">
-                  {sharedFileItems.length}
-                </span>
-              )}
-            </button>
+              <span>My Files</span>
+              <ChevronRightIcon className={`w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all ${showMyFiles ? 'rotate-90' : ''}`} aria-hidden="true" />
+            </div>
           </div>
 
-          {activeView === 'files' && (
+          {showMyFiles && (
           <>
           {/* Sort controls */}
           <div className="px-2 relative">
@@ -1989,7 +1995,7 @@ export default function FilesView() {
             >
               <ChevronUpDownIcon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span className="capitalize">
-                {sortBy === "manual" ? "Manual" : `${sortBy} ${sortDirection === "asc" ? "↑" : "↓"}`}
+                {sortBy === "manual" ? "Manual" : `${sortBy === "size" ? "File size" : sortBy} ${sortDirection === "asc" ? "↑" : "↓"}`}
               </span>
             </button>
             <Dropdown
@@ -1997,6 +2003,7 @@ export default function FilesView() {
               onClose={() => setShowSortMenu(false)}
               trigger={sortButtonRef}
             >
+              <div className="px-1.5 py-1">
               {(["manual", "date", "name", "size"] as const).map((col) => (
                 <button
                   key={col}
@@ -2004,11 +2011,11 @@ export default function FilesView() {
                     handleSortToggle(col);
                     setShowSortMenu(false);
                   }}
-                  className={`w-full px-3 py-1.5 text-left text-sm hover:bg-bg-gray flex items-center justify-between ${
+                  className={`w-full px-3 py-1.5 text-left text-sm rounded-md hover:bg-bg-gray flex items-center justify-between ${
                     sortBy === col ? 'text-text-body font-medium' : 'text-text-secondary'
                   }`}
                 >
-                  <span className="capitalize">{col}</span>
+                  <span className="capitalize">{col === "size" ? "File size" : col}</span>
                   {sortBy === col && col !== "manual" && (
                     <span className="text-xs">
                       {sortDirection === "asc" ? "↑" : "↓"}
@@ -2016,6 +2023,7 @@ export default function FilesView() {
                   )}
                 </button>
               ))}
+              </div>
             </Dropdown>
           </div>
 
@@ -2052,7 +2060,7 @@ export default function FilesView() {
           )}
 
           {/* Document list */}
-          <div className="flex-1 overflow-y-auto">
+          <div>
             <AnimatePresence mode="wait" initial={false}>
               {isLoading ? (
                 <motion.div
@@ -2061,13 +2069,14 @@ export default function FilesView() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.1 }}
-                  className="flex items-center justify-center h-32"
+                  className="px-2 pt-1 space-y-0.5"
                 >
-                  <HugeiconsIcon
-                    icon={Loading03Icon}
-                    size={20}
-                    className="text-text-tertiary animate-spin"
-                  />
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-2 px-2 h-[32px]">
+                      <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+                      <div className="flex-1 h-3 bg-gray-200 rounded animate-pulse" style={{ width: `${55 + (i * 7) % 30}%` }} />
+                    </div>
+                  ))}
                 </motion.div>
               ) : error ? (
                 <motion.div
@@ -2451,16 +2460,37 @@ export default function FilesView() {
           </>
           )}
 
-          {/* Shared with me view */}
-          {activeView === 'shared' && (
-            <div className="flex-1 overflow-y-auto">
+          {/* Shared with me section header */}
+          <div className="space-y-0.5 mt-1">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setShowShared(!showShared)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowShared(!showShared);
+                }
+              }}
+              aria-expanded={showShared}
+              className="flex items-center gap-1 px-4 py-1.5 text-xs font-medium text-text-tertiary cursor-pointer group"
+            >
+              <span>Shared with me</span>
+              <ChevronRightIcon className={`w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all ${showShared ? 'rotate-90' : ''}`} aria-hidden="true" />
+              
+            </div>
+          </div>
+
+          {showShared && (
+            <div>
               {isLoadingSharedWithMe ? (
-                <div className="flex items-center justify-center h-32">
-                  <HugeiconsIcon
-                    icon={Loading03Icon}
-                    size={20}
-                    className="text-text-tertiary animate-spin"
-                  />
+                <div className="px-2 pt-1 space-y-0.5">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-2 px-2 h-[32px]">
+                      <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+                      <div className="flex-1 h-3 bg-gray-200 rounded animate-pulse" style={{ width: `${55 + (i * 7) % 30}%` }} />
+                    </div>
+                  ))}
                 </div>
               ) : sharedFileItems.length === 0 ? (
                 <div className="p-6 text-center text-text-tertiary">
@@ -2517,6 +2547,7 @@ export default function FilesView() {
             </div>
           )}
 
+          </div>
           {/* Drag overlay */}
           {isDragOver && (
             <div className="absolute inset-0 bg-brand-primary/10 flex items-center justify-center pointer-events-none rounded-lg m-1">
@@ -2570,7 +2601,6 @@ export default function FilesView() {
                 ) : (
                   <div className="animate-pulse w-48 h-48 bg-bg-gray rounded-lg" />
                 )}
-                <NotificationsPanel />
               </div>
             </>
           ) : selectedNote ? (
@@ -2624,53 +2654,70 @@ export default function FilesView() {
                 <div className={isNoteFullWidth ? "w-full" : "w-[min(800px,90%)] mx-auto"}>
                   {/* Note title */}
                   <div className="px-6 pt-4 pb-1">
-                    <input
+                    <textarea
                       ref={titleInputRef}
-                      type="text"
+                      rows={1}
                       value={noteTitle}
                       readOnly={!isNoteEditable}
-                      onChange={(e) => isNoteEditable && handleNoteTitleChange(e.target.value)}
+                      onChange={(e) => {
+                        if (!isNoteEditable) return;
+                        handleNoteTitleChange(e.target.value);
+                        // Auto-resize
+                        e.target.style.height = 'auto';
+                        e.target.style.height = e.target.scrollHeight + 'px';
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
                           noteEditor?.commands.focus('start');
                         }
                         if (e.key === "ArrowDown" && noteEditor) {
-                          e.preventDefault();
-                          // Find matching horizontal position in first line of editor
-                          const input = e.currentTarget;
-                          const cursorPos = input.selectionStart ?? 0;
-                          // Measure pixel offset of cursor in title using a hidden span
-                          const measure = document.createElement('span');
-                          measure.style.cssText = window.getComputedStyle(input).cssText;
-                          measure.style.position = 'absolute';
-                          measure.style.visibility = 'hidden';
-                          measure.style.whiteSpace = 'pre';
-                          measure.textContent = input.value.slice(0, cursorPos);
-                          document.body.appendChild(measure);
-                          const targetX = measure.getBoundingClientRect().width;
-                          document.body.removeChild(measure);
-                          // Focus editor then find closest position at that X offset
-                          noteEditor.commands.focus('start');
-                          const view = noteEditor.view;
-                          const firstLine = view.coordsAtPos(1);
-                          const pos = view.posAtCoords({ left: view.dom.getBoundingClientRect().left + targetX, top: firstLine.top + 1 });
-                          if (pos) {
-                            view.dispatch(view.state.tr.setSelection(
-                              (view.state.selection.constructor as typeof import('@tiptap/pm/state').Selection).near(view.state.doc.resolve(pos.pos))
-                            ));
+                          const ta = e.currentTarget;
+                          const cursorPos = ta.selectionStart ?? 0;
+                          // Check if cursor is on the last line
+                          const textBeforeCursor = ta.value.slice(0, cursorPos);
+                          const textAfterCursor = ta.value.slice(cursorPos);
+                          // If there's a newline after cursor position (visual wrap), let default handle it
+                          // We use a canvas to measure if cursor is on the last visual line
+                          const lastLineBreak = textBeforeCursor.lastIndexOf('\n');
+                          const hasLineAfter = textAfterCursor.includes('\n');
+                          // Simple check: if cursor is at the end or no more visual lines below
+                          if (!hasLineAfter) {
+                            e.preventDefault();
+                            // Measure pixel offset of cursor in title using a hidden span
+                            const measure = document.createElement('span');
+                            measure.style.cssText = window.getComputedStyle(ta).cssText;
+                            measure.style.position = 'absolute';
+                            measure.style.visibility = 'hidden';
+                            measure.style.whiteSpace = 'pre';
+                            const lineText = lastLineBreak >= 0 ? textBeforeCursor.slice(lastLineBreak + 1) : textBeforeCursor;
+                            measure.textContent = lineText;
+                            document.body.appendChild(measure);
+                            const targetX = measure.getBoundingClientRect().width;
+                            document.body.removeChild(measure);
+                            // Focus editor then find closest position at that X offset
+                            noteEditor.commands.focus('start');
+                            const view = noteEditor.view;
+                            const firstLine = view.coordsAtPos(1);
+                            const pos = view.posAtCoords({ left: view.dom.getBoundingClientRect().left + targetX, top: firstLine.top + 1 });
+                            if (pos) {
+                              view.dispatch(view.state.tr.setSelection(
+                                (view.state.selection.constructor as typeof import('@tiptap/pm/state').Selection).near(view.state.doc.resolve(pos.pos))
+                              ));
+                            }
                           }
                         }
                         if (e.key === "ArrowRight") {
-                          const input = e.currentTarget;
-                          if (input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+                          const ta = e.currentTarget;
+                          if (ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length) {
                             e.preventDefault();
                             noteEditor?.commands.focus('start');
                           }
                         }
                       }}
-                      className={`w-full text-[28px] font-semibold text-text-body bg-transparent border-0 focus:outline-none placeholder:text-text-tertiary ${!isNoteEditable ? 'cursor-default' : ''}`}
+                      className={`w-full text-[28px] font-semibold text-text-body bg-transparent border-0 focus:outline-none placeholder:text-text-tertiary resize-none overflow-hidden text-balance ${!isNoteEditable ? 'cursor-default' : ''}`}
                       placeholder="Untitled"
+                      style={{ height: 'auto' }}
                     />
                   </div>
 
@@ -2708,7 +2755,7 @@ export default function FilesView() {
                             const len = titleInputRef.current?.value.length ?? 0;
                             titleInputRef.current?.setSelectionRange(len, len);
                           }}
-                          onArrowUpAtStart={(pixelX) => {
+                          onArrowUpAtStart={(pixelX: number) => {
                             const input = titleInputRef.current;
                             if (!input) return;
                             input.focus();
@@ -2742,7 +2789,6 @@ export default function FilesView() {
                   </div>
                 </div>
               </div>
-              <NotificationsPanel />
               </div>
             </>
           ) : (
@@ -2792,7 +2838,6 @@ export default function FilesView() {
                     </button>
                   </div>
                 )}
-                <NotificationsPanel />
               </div>
             </div>
           )}

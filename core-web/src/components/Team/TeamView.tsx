@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { PlusIcon, HashtagIcon, XMarkIcon, ChevronRightIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import NotificationsPanel from '../NotificationsPanel/NotificationsPanel';
 import { SIDEBAR } from '../../lib/sidebar';
 
 interface Channel {
@@ -324,7 +323,6 @@ export default function TeamView() {
         </div>
       )}
         </div>
-        <NotificationsPanel />
       </div>
 
       {/* Create Channel Modal */}

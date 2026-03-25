@@ -112,7 +112,7 @@ async def resolve_resource_context(
 
     Returns:
         Dict with: resource_type, resource_id, workspace_id, workspace_app_id,
-        title, owner_id, file_id, is_folder.
+        title, owner_id, file_id, document_id, is_folder.
     """
     normalized_type = normalize_resource_type(resource_type)
     client = await get_async_service_role_client()
@@ -137,10 +137,17 @@ async def resolve_resource_context(
             "title": doc.get("title"),
             "owner_id": doc.get("user_id"),
             "file_id": doc.get("file_id"),
+            "document_id": doc.get("id") or resource_id,
             "is_folder": bool(doc.get("is_folder")),
         }
 
     if normalized_type == "file":
+        document_result = await client.table("documents") \
+            .select("id") \
+            .eq("file_id", resource_id) \
+            .limit(1) \
+            .execute()
+
         result = await client.table("files") \
             .select("id, filename, workspace_id, workspace_app_id, user_id") \
             .eq("id", resource_id) \
@@ -159,6 +166,7 @@ async def resolve_resource_context(
             "title": file_row.get("filename"),
             "owner_id": file_row.get("user_id"),
             "file_id": None,
+            "document_id": (document_result.data or [{}])[0].get("id"),
             "is_folder": False,
         }
 
@@ -181,6 +189,7 @@ async def resolve_resource_context(
             "title": board.get("name"),
             "owner_id": board.get("created_by"),
             "file_id": None,
+            "document_id": None,
             "is_folder": False,
         }
 
@@ -213,6 +222,7 @@ async def resolve_resource_context(
             "title": channel.get("name"),
             "owner_id": channel.get("created_by"),
             "file_id": None,
+            "document_id": None,
             "is_folder": False,
         }
 
@@ -235,6 +245,7 @@ async def resolve_resource_context(
             "title": app.get("app_type"),
             "owner_id": None,
             "file_id": None,
+            "document_id": None,
             "is_folder": False,
         }
 

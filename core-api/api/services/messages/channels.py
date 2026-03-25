@@ -573,6 +573,43 @@ async def get_user_dms(
 
         dms = result.data or []
 
+        if not dms:
+            return dms
+
+        # Get workspace_id from workspace_app to check membership
+        app_result = await (
+            supabase.table("workspace_apps")
+            .select("workspace_id")
+            .eq("id", workspace_app_id)
+            .limit(1)
+            .execute()
+        )
+        workspace_id = (app_result.data[0]["workspace_id"]) if app_result.data else None
+
+        # Get current workspace member IDs to filter out DMs with departed members
+        active_member_ids: set = set()
+        if workspace_id:
+            members_result = await (
+                supabase.table("workspace_members")
+                .select("user_id")
+                .eq("workspace_id", workspace_id)
+                .execute()
+            )
+            active_member_ids = {m["user_id"] for m in (members_result.data or [])}
+
+        # Filter DMs: only keep those where ALL other participants are still workspace members
+        if active_member_ids:
+            filtered_dms = []
+            for dm in dms:
+                other_participants = [
+                    pid for pid in (dm.get("dm_participants") or [])
+                    if pid != user_id
+                ]
+                # Keep DM if all other participants are still active members
+                if all(pid in active_member_ids for pid in other_participants):
+                    filtered_dms.append(dm)
+            dms = filtered_dms
+
         # Fetch participant info for all DMs
         all_participant_ids = set()
         for dm in dms:

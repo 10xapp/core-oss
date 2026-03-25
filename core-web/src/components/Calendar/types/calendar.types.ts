@@ -32,9 +32,7 @@ export interface WeekViewProps extends CalendarViewProps {
   onWeekIndexChange: (index: number) => void;
 }
 
-export interface MonthViewProps extends CalendarViewProps {
-  onSwitchToDayView: (date: Date) => void;
-}
+export interface MonthViewProps extends CalendarViewProps {}
 
 export interface EventBlockProps {
   event: CalendarEvent;

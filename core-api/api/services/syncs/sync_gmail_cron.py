@@ -7,6 +7,10 @@ import logging
 from googleapiclient.errors import HttpError
 
 from lib.batch_utils import batch_upsert, get_existing_external_ids
+from api.services.syncs.connection_state import (
+    batch_has_orphaned_user_error,
+    deactivate_connection_with_subscriptions,
+)
 from api.services.syncs.google_error_utils import is_permanent_google_api_error
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ def sync_gmail_cron(
     updated_count = 0
     error_count = 0
     total_processed = 0
+    connection_deactivated = False
 
     try:
         # Get last sync time from connection
@@ -144,6 +149,13 @@ def sync_gmail_cron(
                 logger.warning(f"⚠️ Some batch errors: {result['errors'][:3]}")
                 batch_had_errors = True
                 error_count += result['error_count']
+                if batch_has_orphaned_user_error(result['errors']):
+                    deactivate_connection_with_subscriptions(
+                        service_supabase,
+                        connection_id,
+                        reason="orphaned user detected during Gmail sync",
+                    )
+                    connection_deactivated = True
 
         # Update last synced timestamp only if no errors occurred
         if not batch_had_errors and error_count == 0:
@@ -153,6 +165,16 @@ def sync_gmail_cron(
                 .execute()
         else:
             logger.warning(f"⚠️ Skipping last_synced update due to {error_count} errors")
+
+        if connection_deactivated:
+            return {
+                "status": "quarantined",
+                "message": "Connection deactivated because its user no longer exists",
+                "new_emails": synced_count,
+                "updated_emails": updated_count,
+                "error_count": error_count,
+                "total_processed": total_processed,
+            }
 
         logger.info(f"✅ Gmail sync complete: {synced_count} new, {updated_count} updated, {error_count} errors")
 

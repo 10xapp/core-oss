@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from unittest.mock import MagicMock, AsyncMock
 
 from tests.conftest import MockAPIResponse, _create_async_query_builder
@@ -69,3 +70,44 @@ async def test_get_document_by_id_owner_updates_last_opened(monkeypatch):
     assert doc and doc["id"] == "d1"
     # Ensure update() was invoked to set last_opened_at for owner docs
     assert update_called["v"] is True
+
+
+@pytest.mark.asyncio
+async def test_assert_document_access_raises_forbidden_when_rls_blocks(monkeypatch):
+    import importlib
+    mod = importlib.import_module("api.services.documents.get_documents")
+
+    auth_client = MagicMock()
+    auth_qb = _create_async_query_builder(MockAPIResponse(data=[]))
+    auth_client.table.return_value = auth_qb
+
+    service_client = MagicMock()
+    service_qb = _create_async_query_builder(MockAPIResponse(data={"id": "d1"}))
+    service_client.table.return_value = service_qb
+
+    monkeypatch.setattr(mod, "get_authenticated_async_client", AsyncMock(return_value=auth_client))
+    monkeypatch.setattr(mod, "get_async_service_role_client", AsyncMock(return_value=service_client))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await mod.assert_document_access("u1", "jwt", "d1")
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assert_document_access_returns_when_document_visible(monkeypatch):
+    import importlib
+    mod = importlib.import_module("api.services.documents.get_documents")
+
+    auth_client = MagicMock()
+    auth_qb = _create_async_query_builder(MockAPIResponse(data=[{"id": "d1"}]))
+    auth_client.table.return_value = auth_qb
+
+    service_client = MagicMock()
+
+    monkeypatch.setattr(mod, "get_authenticated_async_client", AsyncMock(return_value=auth_client))
+    monkeypatch.setattr(mod, "get_async_service_role_client", AsyncMock(return_value=service_client))
+
+    await mod.assert_document_access("u1", "jwt", "d1")
+
+    service_client.table.assert_not_called()

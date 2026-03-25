@@ -1,6 +1,6 @@
 """
 Workspace app management
-Handles workspace mini-apps (tasks, files, messages, dashboard, projects, etc.).
+Handles workspace mini-apps (files, messages, projects, etc.).
 
 Uses async Supabase client for non-blocking I/O.
 """
@@ -95,7 +95,7 @@ async def get_workspace_app_by_type(
 
     Args:
         workspace_id: Workspace ID
-        app_type: App type (tasks, files, dashboard, projects, etc.)
+        app_type: App type (chat, files, messages, dashboard, projects, email, calendar, agents)
         user_jwt: User's Supabase JWT
 
     Returns:
@@ -299,7 +299,7 @@ async def create_workspace_app(
 
     Args:
         workspace_id: Workspace ID
-        app_type: App type (tasks, files, dashboard, projects, etc.)
+        app_type: App type (chat, files, messages, dashboard, projects, email, calendar, agents)
         user_jwt: User's Supabase JWT
         is_public: Whether app is visible to all workspace members
         position: Display order position (defaults to end)

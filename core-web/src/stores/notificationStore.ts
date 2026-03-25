@@ -15,6 +15,7 @@ export interface Notification {
   body: string | null;
   resource_type: string | null;
   resource_id: string | null;
+  group_key?: string | null;
   actor_id: string | null;
   read: boolean;
   seen: boolean;
@@ -22,6 +23,8 @@ export interface Notification {
   data: Record<string, any>;
   created_at: string;
 }
+
+type NotificationSnapshot = Pick<Notification, 'id' | 'read' | 'archived'> & Partial<Notification>;
 
 interface NotificationState {
   // Data
@@ -44,6 +47,10 @@ interface NotificationState {
   markAllAsRead: (workspaceId?: string) => Promise<void>;
   archiveNotification: (notificationId: string) => Promise<void>;
   handleRealtimeInsert: (notification: Notification) => void;
+  handleRealtimeUpdate: (
+    notification: Notification,
+    previousNotification?: NotificationSnapshot | null,
+  ) => void;
   setOpen: (open: boolean) => void;
   toggleOpen: () => void;
   preload: () => Promise<void>;
@@ -52,6 +59,30 @@ interface NotificationState {
 
 const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 const PAGE_SIZE = 30;
+
+function sortNotifications(notifications: Notification[]): Notification[] {
+  return [...notifications].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+function isNotificationUnread(notification: Pick<Notification, 'read' | 'archived'>): boolean {
+  return !notification.read && !notification.archived;
+}
+
+function upsertNotification(
+  notifications: Notification[],
+  notification: Notification,
+): Notification[] {
+  const existingIndex = notifications.findIndex((item) => item.id === notification.id);
+  if (existingIndex === -1) {
+    return sortNotifications([notification, ...notifications]);
+  }
+
+  const next = notifications.slice();
+  next[existingIndex] = { ...next[existingIndex], ...notification };
+  return sortNotifications(next);
+}
 
 export const useNotificationStore = create<NotificationState>()(
   persist(
@@ -196,10 +227,48 @@ export const useNotificationStore = create<NotificationState>()(
       },
 
       handleRealtimeInsert: (notification: Notification) => {
-        set((s) => ({
-          notifications: [notification, ...s.notifications],
-          unreadCount: s.unreadCount + 1,
-        }));
+        set((s) => {
+          const existing = s.notifications.find((item) => item.id === notification.id);
+          const wasUnread = existing ? isNotificationUnread(existing) : false;
+          const isUnread = isNotificationUnread(notification);
+
+          return {
+            notifications: upsertNotification(s.notifications, notification),
+            unreadCount: Math.max(
+              0,
+              s.unreadCount + (existing ? Number(isUnread) - Number(wasUnread) : isUnread ? 1 : 0)
+            ),
+          };
+        });
+      },
+
+      handleRealtimeUpdate: (
+        notification: Notification,
+        previousNotification?: NotificationSnapshot | null,
+      ) => {
+        set((s) => {
+          const existing = s.notifications.find((item) => item.id === notification.id);
+          const previousUnread = existing
+            ? isNotificationUnread(existing)
+            : previousNotification
+              && typeof previousNotification.read === 'boolean'
+              && typeof previousNotification.archived === 'boolean'
+                ? isNotificationUnread(previousNotification)
+                : null;
+          const nextUnread = isNotificationUnread(notification);
+
+          let unreadCount = s.unreadCount;
+          if (previousUnread !== null && previousUnread !== nextUnread) {
+            unreadCount += nextUnread ? 1 : -1;
+          }
+
+          return {
+            notifications: notification.archived
+              ? s.notifications.filter((item) => item.id !== notification.id)
+              : upsertNotification(s.notifications, notification),
+            unreadCount: Math.max(0, unreadCount),
+          };
+        });
       },
 
       setOpen: (open: boolean) => set({ isOpen: open }),

@@ -1,0 +1,14 @@
+-r requirements.txt
+
+# Test dependencies
+pytest==8.3.3
+pytest-asyncio>=0.24.0
+freezegun>=1.4.0
+
+# Type checking
+mypy>=1.13.0
+types-requests>=2.32.0
+types-python-dateutil>=2.9.0
+
+# Linting & formatting
+ruff>=0.8.0

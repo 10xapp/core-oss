@@ -268,7 +268,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
                           setShowMenu(false);
                           handleDelete();
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-red-500 hover:bg-red-50 transition-colors"
+                        className="w-[calc(100%-8px)] mx-1 flex items-center gap-2 px-2 py-1.5 text-[12px] text-red-500 hover:bg-red-50 rounded-md transition-colors"
                       >
                         <TrashIcon className="w-4 h-4" />
                         Delete
@@ -277,7 +277,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
                       <button
                         disabled
                         title="Only the card creator or workspace admins can delete"
-                        className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-gray-300 cursor-not-allowed"
+                        className="w-[calc(100%-8px)] mx-1 flex items-center gap-2 px-2 py-1.5 text-[12px] text-gray-300 cursor-not-allowed rounded-md"
                       >
                         <TrashIcon className="w-4 h-4" />
                         Delete

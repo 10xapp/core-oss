@@ -9,7 +9,6 @@ import {
   type AgentInstance,
 } from "../../api/client";
 import { useAgentStatusRealtime } from "../../hooks/useAgentRealtime";
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import TemplateStore from "./TemplateStore";
 import AgentChat from "./AgentChat";
 import AgentConfigPanel from "./AgentConfigPanel";
@@ -205,7 +204,6 @@ export default function AgentsView() {
             </div>
           )}
         </div>
-        <NotificationsPanel />
       </div>
 
       {/* Template Store modal */}

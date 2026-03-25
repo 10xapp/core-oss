@@ -179,17 +179,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           <Sidebar />
         </Suspense>
         {/* Content area - inset with spacing to show sidebar bg */}
-        <div className="flex-1 flex min-h-0 overflow-hidden pt-2 pr-2 pb-2 gap-2">
-          {/* AI Chat Panel - standalone element */}
-          <ChatPanel />
+        <div className="flex-1 flex min-w-0 min-h-0 pt-2 pr-2 pb-2 gap-2">
           {/* Main content */}
-          <main className="flex-1 flex overflow-hidden rounded-lg bg-[#FCFCFC]">
+          <main className="flex-1 flex min-w-0 overflow-hidden rounded-lg bg-[#FCFCFC] border border-border-light shadow-[0_0_1px_rgba(0,0,0,0.25)]">
             {authLoading ? (
               <RouteLoading />
             ) : (
               <Suspense fallback={<RouteLoading />}>{children}</Suspense>
             )}
           </main>
+          {/* AI Chat Panel - right side */}
+          <ChatPanel />
         </div>
       </div>
     </KeyboardNavigationProvider>
@@ -213,6 +213,7 @@ function AppContent() {
   const initBootstrappedUserRef = useRef<string | null>(null);
   const postSignupResolvedUserRef = useRef<string | null>(null);
   const inviteRedirectInProgressRef = useRef(false);
+  const previousUserIdRef = useRef<string | null>(null);
   const currentUserId = user?.id ?? null;
 
   // Initialize auth on mount
@@ -236,6 +237,14 @@ function AppContent() {
       inviteRedirectInProgressRef.current = false;
     }
   }, [isInviteRoute]);
+
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    if (previousUserId !== null && previousUserId !== currentUserId) {
+      useNotificationStore.getState().reset();
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [currentUserId]);
 
   useEffect(() => {
     if (currentUserId) return;

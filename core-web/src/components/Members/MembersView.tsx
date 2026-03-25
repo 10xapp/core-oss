@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import { useAuthStore } from "../../stores/authStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useMessagesStore } from "../../stores/messagesStore";
@@ -391,7 +390,6 @@ export default function MembersView() {
           </div>
         </div>
 
-        <NotificationsPanel />
       </div>
     </div>
   );

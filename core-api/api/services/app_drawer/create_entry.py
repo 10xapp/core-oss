@@ -3,7 +3,6 @@ Entry creation orchestrator for app drawer.
 Classifies input and creates the appropriate entry type.
 """
 import logging
-from datetime import datetime
 from typing import Dict, Any
 from fastapi import HTTPException
 
@@ -29,7 +28,7 @@ async def classify_and_create_entry(
 
     Returns:
         Dict with:
-        - tool: "task" or "calendar"
+        - tool: "calendar" or "email"
         - created: Created entry details
         - message: User-facing success message
     """
@@ -44,14 +43,7 @@ async def classify_and_create_entry(
         logger.info(f"Classified as '{tool}': '{title}'")
 
         # Step 2: Create the appropriate entry
-        if tool == "task":
-            return await _create_task_entry(
-                classification=classification,
-                user_id=user_id,
-                user_jwt=user_jwt
-            )
-
-        elif tool == "calendar":
+        if tool == "calendar":
             return await _create_calendar_entry(
                 classification=classification,
                 user_id=user_id,
@@ -66,10 +58,10 @@ async def classify_and_create_entry(
             )
 
         else:
-            # Fallback to task
-            logger.warning(f"Unknown tool type '{tool}', falling back to task")
-            classification["tool"] = "task"
-            return await _create_task_entry(
+            # Fallback to calendar
+            logger.warning(f"Unknown tool type '{tool}', falling back to calendar")
+            classification["tool"] = "calendar"
+            return await _create_calendar_entry(
                 classification=classification,
                 user_id=user_id,
                 user_jwt=user_jwt
@@ -83,15 +75,6 @@ async def classify_and_create_entry(
             status_code=500,
             detail=f"Failed to create entry: {str(e)}"
         )
-
-
-async def _create_task_entry(
-    classification: Dict[str, Any],
-    user_id: str,
-    user_jwt: str
-) -> Dict[str, Any]:
-    """Task creation is not available."""
-    raise HTTPException(status_code=501, detail="Task creation is not available")
 
 
 async def _create_calendar_entry(

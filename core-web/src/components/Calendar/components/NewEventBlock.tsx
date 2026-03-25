@@ -10,7 +10,6 @@ interface NewEventBlockProps {
   endHour?: number;
   endMinute?: number;
   containerWidth: number;
-  dayIndex?: number;
   isWeekView?: boolean;
   hourHeight?: number;
   timeColumnWidth?: number;
@@ -25,7 +24,6 @@ export default function NewEventBlock({
   endHour,
   endMinute = 0,
   containerWidth,
-  dayIndex = 0,
   isWeekView = false,
   hourHeight = 60,
   timeColumnWidth = 53,
@@ -65,7 +63,7 @@ export default function NewEventBlock({
     const dayColumnWidth = (containerWidth - timeLabelWidth) / 7;
     position = {
       top: ((hour * 60 + minute) / 60) * hourHeight,
-      left: timeLabelWidth + dayIndex * dayColumnWidth + 2,
+      left: 2,
       width: dayColumnWidth - 4,
       height: (durationMinutes / 60) * hourHeight - 2,
     };
@@ -141,7 +139,7 @@ export default function NewEventBlock({
   return (
     <div
       ref={blockRef}
-      className="absolute text-left bg-[#D6EFF8] rounded-md ring-2 ring-[#35A9DD] overflow-hidden"
+      className="absolute pointer-events-auto text-left bg-[#D6EFF8] rounded-md ring-2 ring-[#35A9DD] overflow-hidden"
       style={style}
     >
       <div

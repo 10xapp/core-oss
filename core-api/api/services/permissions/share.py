@@ -19,6 +19,66 @@ from api.services.permissions.helpers import (
 
 logger = logging.getLogger(__name__)
 
+FILE_SHARED_RESOURCE_TYPES = {"document", "file"}
+PERMISSION_LABELS = {
+    "read": "Can view",
+    "write": "Can edit",
+    "admin": "Full access",
+}
+
+
+def _get_share_notification_type(resource_type: str) -> str:
+    return (
+        NotificationType.FILE_SHARED
+        if resource_type in FILE_SHARED_RESOURCE_TYPES
+        else NotificationType.PERMISSION_GRANTED
+    )
+
+
+def _format_shared_resource_label(resource_title: str | None, resource_type: str) -> str:
+    if resource_title:
+        return f'"{resource_title}"'
+    if resource_type == "document":
+        return "a document"
+    if resource_type == "file":
+        return "a file"
+    return "a resource"
+
+
+async def _notify_share_granted(
+    *,
+    actor_user_id: str,
+    recipient_ids: List[str],
+    permission: str,
+    context: Dict[str, Any],
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    actor = await get_actor_info(actor_user_id)
+    resource_label = _format_shared_resource_label(context.get("title"), resource_type)
+    notification_type = _get_share_notification_type(resource_type)
+
+    title = f"{actor['actor_name']} shared {resource_label} with you"
+    body = PERMISSION_LABELS.get(permission, "Access granted")
+
+    await create_notification(
+        recipients=recipient_ids,
+        type=notification_type,
+        title=title,
+        body=body,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        actor_id=actor_user_id,
+        workspace_id=context.get("workspace_id"),
+        data={
+            "permission": permission,
+            "resource_title": context.get("title"),
+            "workspace_id": context.get("workspace_id"),
+            "document_id": context.get("document_id"),
+            **actor,
+        },
+    )
+
 
 async def share_resource(
     user_id: str,
@@ -68,21 +128,13 @@ async def share_resource(
     permission_row = result.data[0]
 
     try:
-        actor = await get_actor_info(user_id)
-        title = f"{actor['actor_name']} shared {context.get('title') or 'a resource'} with you"
-        await create_notification(
-            recipients=[grantee_id],
-            type=NotificationType.PERMISSION_GRANTED,
-            title=title,
+        await _notify_share_granted(
+            actor_user_id=user_id,
+            recipient_ids=[grantee_id],
+            permission=normalized_permission,
+            context=context,
             resource_type=normalized_resource_type,
             resource_id=resource_id,
-            actor_id=user_id,
-            workspace_id=context.get("workspace_id"),
-            data={
-                "permission": normalized_permission,
-                "resource_title": context.get("title"),
-                **actor,
-            },
         )
     except Exception as e:
         logger.warning(f"Permission granted notification failed: {e}")
@@ -140,21 +192,13 @@ async def batch_share_resource(
             created.append(created_row)
 
             try:
-                actor = await get_actor_info(user_id)
-                title = f"{actor['actor_name']} shared {context.get('title') or 'a resource'} with you"
-                await create_notification(
-                    recipients=[grantee_id],
-                    type=NotificationType.PERMISSION_GRANTED,
-                    title=title,
+                await _notify_share_granted(
+                    actor_user_id=user_id,
+                    recipient_ids=[grantee_id],
+                    permission=permission,
+                    context=context,
                     resource_type=normalized_resource_type,
                     resource_id=resource_id,
-                    actor_id=user_id,
-                    workspace_id=context.get("workspace_id"),
-                    data={
-                        "permission": permission,
-                        "resource_title": context.get("title"),
-                        **actor,
-                    },
                 )
             except Exception as e:
                 logger.warning(f"Permission granted notification failed: {e}")

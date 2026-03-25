@@ -171,6 +171,10 @@ interface MessagesState {
   // Per-channel message cache for instant switching
   messagesCache: Record<string, ChannelMessage[]>;
 
+  // Pagination state for infinite scroll
+  hasMoreMessages: Record<string, boolean>;
+  isLoadingOlderMessages: boolean;
+
   // Recently visited channels (for keeping them mounted)
   visitedChannelIds: string[];
 
@@ -223,6 +227,7 @@ interface MessagesState {
 
   // Message operations
   fetchMessages: (channelId?: string, background?: boolean) => Promise<void>;
+  fetchOlderMessages: (channelId?: string) => Promise<void>;
   sendMessage: (blocks: ContentBlock[], threadParentId?: string) => Promise<ChannelMessage | null>;
   addOptimisticMessage: (blocks: ContentBlock[], threadParentId?: string) => string;
   finalizeOptimisticMessage: (tempId: string, blocks: ContentBlock[], threadParentId?: string) => Promise<ChannelMessage | null>;
@@ -277,6 +282,8 @@ export const useMessagesStore = create<MessagesState>()(
       threadReplies: [],
       unreadCounts: {},
       messagesCache: {},
+      hasMoreMessages: {},
+      isLoadingOlderMessages: false,
       visitedChannelIds: [],
       threadParticipants: {},
       workspaceCache: {},
@@ -403,8 +410,6 @@ export const useMessagesStore = create<MessagesState>()(
         if (channelId) {
           // Fetch messages in background (don't show loading if we have cache)
           get().fetchMessages(channelId, hasCache);
-          // Mark channel as read when viewing
-          get().markAsRead(channelId);
         }
       },
 
@@ -788,6 +793,10 @@ export const useMessagesStore = create<MessagesState>()(
             ...state.messagesCache,
             [targetChannelId]: messagesToCache,
           },
+          hasMoreMessages: {
+            ...state.hasMoreMessages,
+            [targetChannelId]: result.has_more ?? result.messages.length === 50,
+          },
           ...(shouldUpdateMessages ? { messages: mergedMessages } : {}),
           isLoadingMessages: shouldUpdateMessages || !background ? false : state.isLoadingMessages,
         };
@@ -799,6 +808,60 @@ export const useMessagesStore = create<MessagesState>()(
           isLoadingMessages: false,
         });
       }
+    }
+  },
+
+  fetchOlderMessages: async (channelId) => {
+    const targetChannelId = channelId || get().activeChannelId;
+    if (!targetChannelId) return;
+
+    const { hasMoreMessages, isLoadingOlderMessages } = get();
+    if (!hasMoreMessages[targetChannelId] || isLoadingOlderMessages) return;
+
+    set({ isLoadingOlderMessages: true });
+
+    try {
+      // Get the oldest message currently loaded
+      const currentMessages = get().messagesCache[targetChannelId] || get().messages;
+      const oldestMessage = currentMessages[0];
+      if (!oldestMessage) {
+        set({ isLoadingOlderMessages: false });
+        return;
+      }
+
+      const result = await getChannelMessages(targetChannelId, {
+        limit: 50,
+        beforeId: oldestMessage.id,
+      });
+
+      set((state) => {
+        const existing = targetChannelId === state.activeChannelId
+          ? state.messages
+          : (state.messagesCache[targetChannelId] || []);
+
+        // Deduplicate
+        const existingIds = new Set(existing.map((m) => m.id));
+        const newMessages = result.messages.filter((m) => !existingIds.has(m.id));
+
+        const mergedMessages = [...newMessages, ...existing];
+        const shouldUpdateMessages = targetChannelId === state.activeChannelId;
+
+        return {
+          messagesCache: {
+            ...state.messagesCache,
+            [targetChannelId]: shouldUpdateMessages ? mergedMessages : stripFileBlocks(mergedMessages),
+          },
+          hasMoreMessages: {
+            ...state.hasMoreMessages,
+            [targetChannelId]: result.has_more ?? result.messages.length === 50,
+          },
+          ...(shouldUpdateMessages ? { messages: mergedMessages } : {}),
+          isLoadingOlderMessages: false,
+        };
+      });
+    } catch (err) {
+      console.error('Failed to fetch older messages:', err);
+      set({ isLoadingOlderMessages: false });
     }
   },
 

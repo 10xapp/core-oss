@@ -23,8 +23,8 @@ API runs at `http://localhost:8000`
 # Install uv if you haven't already
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install dependencies using uv
-uv pip install -r requirements.txt
+# Install runtime + dev dependencies using uv
+uv pip install -r requirements-dev.txt
 
 # Create .env file
 cp .env.example .env
@@ -68,10 +68,10 @@ RESEND_API_KEY=your_resend_api_key
 RESEND_FROM_DOMAIN=yourdomain.com
 # Optional explicit sender (overrides RESEND_FROM_DOMAIN)
 # RESEND_FROM_EMAIL=Core <invites@yourdomain.com>
-# Local dev (must match core-web Vite dev server port):
-FRONTEND_URL=http://localhost:5173
+# Local dev:
+FRONTEND_URL=http://localhost:3000
 # Production:
-# FRONTEND_URL=https://yourdomain.com
+# FRONTEND_URL=https://core.so
 
 # CORS (comma-separated for additional origins)
 # ALLOWED_ORIGINS_ENV=https://yourapp.vercel.app
@@ -87,11 +87,23 @@ core-api/
 │   ├── routers/          # HTTP endpoints (routing only)
 │   │   ├── auth.py       # Auth endpoints
 │   │   ├── calendar.py   # Calendar endpoints
+│   │   ├── tasks.py      # Tasks (Todoist-style, legacy)
+│   │   ├── todos.py      # Todos (Reminders-style, new)
 │   │   ├── email.py      # Email/Gmail endpoints
 │   │   ├── chat.py       # AI chat endpoints (streaming)
 │   │   └── ...
 │   └── services/         # Business logic (functional code)
 │       ├── calendar/     # Calendar operations
+│       ├── tasks/        # Task operations (legacy)
+│       ├── todos/        # Todo operations (new)
+│       │   ├── get_todos.py
+│       │   ├── create_todo.py
+│       │   ├── update_todo.py
+│       │   ├── delete_todo.py
+│       │   ├── complete_todo.py
+│       │   ├── reorder_todos.py
+│       │   ├── habit_helpers.py
+│       │   └── calendar_sync.py
 │       ├── chat/         # Chat/AI operations
 │       │   ├── agent.py          # LLM agent with tools
 │       │   ├── content_builder.py # Content parts builder
@@ -105,7 +117,8 @@ core-api/
 ├── docs/
 │   └── CONTENT_PARTS_SCHEMA.md  # Content parts documentation
 ├── index.py              # Main FastAPI app (Vercel entry)
-├── requirements.txt
+├── requirements.txt      # Runtime deps for Vercel
+├── requirements-dev.txt  # Local/CI dev deps layered on top
 └── vercel.json
 ```
 
@@ -137,8 +150,8 @@ Messages contain a `content_parts` array with typed parts:
 [
   {"type": "text", "data": {"content": "Here are your emails:\n\n"}},
   {"type": "display", "data": {"display_type": "emails", "items": [...], "total_count": 5}},
-  {"type": "text", "data": {"content": "\nAnd your upcoming events:\n\n"}},
-  {"type": "display", "data": {"display_type": "calendar_events", "items": [...], "total_count": 3}}
+  {"type": "text", "data": {"content": "\nAnd your todos:\n\n"}},
+  {"type": "display", "data": {"display_type": "todos", "items": [...], "total_count": 3}}
 ]
 ```
 
@@ -146,7 +159,7 @@ Messages contain a `content_parts` array with typed parts:
 
 1. **Emit display event** from your tool handler:
    ```python
-   yield display_event(display_type="projects", items=[...], total_count=10)
+   yield display_event(display_type="workouts", items=[...], total_count=10)
    ```
 
 2. **Add iOS renderer case** in `ContentPartsRenderer.swift`
@@ -170,6 +183,23 @@ See the full guide in [`docs/CONTENT_PARTS_SCHEMA.md`](docs/CONTENT_PARTS_SCHEMA
 - `GET /api/calendar/events` - Get calendar events
 - `POST /api/calendar/sync` - Sync from Google Calendar
 
+### Tasks (Legacy - Todoist-style)
+- `GET /api/tasks/` - List tasks
+- `POST /api/tasks/` - Create task
+- `PUT /api/tasks/{id}` - Update task
+- `DELETE /api/tasks/{id}` - Delete task
+
+### Todos (New - Reminders-style)
+- `GET /api/todos` - List all todos (running list)
+- `GET /api/todos/today` - Get todos due today + habits due today
+- `GET /api/todos/habits` - List habits only
+- `GET /api/todos/{id}` - Get single todo
+- `POST /api/todos` - Create todo (201)
+- `POST /api/todos/habit` - Create habit (201)
+- `PATCH /api/todos/{id}` - Update todo
+- `DELETE /api/todos/{id}` - Delete todo
+- `PATCH /api/todos/{id}/complete` - Toggle completion (handles habit streaks)
+- `POST /api/todos/reorder` - Reorder todos (atomic batch update)
 
 ### Chat (AI Assistant)
 - `GET /api/chat/conversations` - List conversations
@@ -192,8 +222,15 @@ psql $DATABASE_URL -f supabase/migrations/XXXXXX_migration_name.sql
 ```
 
 Key tables:
+- `todos` - Reminders-style todos with habit support
+- `habit_completions` - Tracks habit completion dates for streaks
 - `conversations` - Chat conversations
 - `messages` - Chat messages with `content` (text) and `content_parts` (structured) columns
+
+RPC functions:
+- `calculate_habit_streak(todo_id)` - Efficient streak calculation
+- `reorder_todos(positions_json)` - Atomic batch reorder
+- `batch_get_habit_streaks(todo_ids[])` - Batch streak lookup
 
 ### Content Parts Schema
 
@@ -239,7 +276,7 @@ Set environment variables in Vercel dashboard:
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_PUBSUB_TOPIC` (for Gmail push notifications)
-- `WEBHOOK_BASE_URL` (set to your deployed API URL, e.g., https://your-api.vercel.app)
+- `WEBHOOK_BASE_URL` (set to https://your-api.vercel.app for production)
 - `CRON_SECRET`
 - `GROQ_API_KEY` (for AI email analysis)
 

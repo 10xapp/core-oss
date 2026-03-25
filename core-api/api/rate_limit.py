@@ -1,4 +1,6 @@
 """Rate limiting configuration using slowapi with Upstash Redis backend."""
+import base64
+import json
 import hashlib
 import logging
 from typing import Optional
@@ -17,16 +19,41 @@ def _get_client_ip(request: Request) -> str:
     return get_ipaddr(request)
 
 
+def _extract_user_id_from_jwt(token: str) -> Optional[str]:
+    """Extract the 'sub' (user ID) from a JWT without verifying signature.
+
+    This is safe for rate limiting because:
+    - We only use it as a rate-limit key, not for authorization
+    - An attacker forging a JWT with a different 'sub' would fail auth anyway
+    - The key stays stable across token refreshes for the same user
+    """
+    try:
+        # Decode the payload (second segment) without verification
+        payload_b64 = token.split(".")[1]
+        # Add padding if needed
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 def _get_user_or_ip(request: Request) -> str:
     """Rate-limit key for authenticated endpoints.
 
-    Hashes the raw bearer token (NOT decoded JWT claims) to prevent
-    rotating 'sub' claims to bypass limits. Falls back to proxy-aware
-    IP for requests without a bearer token.
+    Uses the stable user ID (sub claim) from the JWT so that rate limits
+    persist across token refreshes. Falls back to proxy-aware IP for
+    requests without a bearer token.
     """
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer ") and len(auth_header) > 40:
         token = auth_header[7:]
+        user_id = _extract_user_id_from_jwt(token)
+        if user_id:
+            return f"uid:{user_id}"
+        # Fallback: hash the token if we can't extract sub
         token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
         return f"tok:{token_hash}"
     return _get_client_ip(request)

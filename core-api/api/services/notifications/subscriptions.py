@@ -43,6 +43,37 @@ async def subscribe(
     return result.data[0] if result.data else {}
 
 
+async def ensure_subscription(
+    user_id: str,
+    resource_type: str,
+    resource_id: str,
+    reason: str = "manual",
+) -> Dict[str, Any]:
+    """Create a subscription only when one does not already exist.
+
+    Unlike ``subscribe()``, this preserves an existing row's reason so manual
+    watches do not get overwritten by auto-subscription flows.
+    """
+    client = await get_async_service_role_client()
+    existing = await client.table("notification_subscriptions") \
+        .select("*") \
+        .eq("user_id", user_id) \
+        .eq("resource_type", resource_type) \
+        .eq("resource_id", resource_id) \
+        .maybe_single() \
+        .execute()
+
+    if existing is not None and existing.data:
+        return existing.data
+
+    return await subscribe(
+        user_id=user_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        reason=reason,
+    )
+
+
 async def unsubscribe(
     user_id: str,
     resource_type: str,

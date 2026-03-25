@@ -80,11 +80,6 @@ BEGIN
     SELECT id, user_id, 'email', created_at FROM emails
     ON CONFLICT (id) DO NOTHING;
 
-    -- Backfill todos
-    INSERT INTO entities (id, user_id, entity_type, created_at)
-    SELECT id, user_id, 'todo', created_at FROM todos
-    ON CONFLICT (id) DO NOTHING;
-
     -- Backfill documents
     INSERT INTO entities (id, user_id, entity_type, created_at)
     SELECT id, user_id, 'document', created_at FROM documents
@@ -299,7 +294,7 @@ $$;
 ALTER FUNCTION "public"."search_with_relationships"("query_embedding" "public"."vector", "p_user_id" "uuid", "p_entity_types" "text"[], "p_limit" integer, "similarity_threshold" double precision, "include_related" boolean) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."full_text_search"("search_query" "text", "search_types" "text"[] DEFAULT ARRAY['emails'::"text", 'calendar'::"text", 'todos'::"text", 'documents'::"text"], "result_limit" integer DEFAULT 50, "p_user_id" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id" "uuid", "type" "text", "title" "text", "content" "text", "rank" double precision, "metadata" "jsonb")
+CREATE OR REPLACE FUNCTION "public"."full_text_search"("search_query" "text", "search_types" "text"[] DEFAULT ARRAY['emails'::"text", 'calendar'::"text", 'documents'::"text"], "result_limit" integer DEFAULT 50, "p_user_id" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id" "uuid", "type" "text", "title" "text", "content" "text", "rank" double precision, "metadata" "jsonb")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
     AS $$
@@ -358,25 +353,6 @@ BEGIN
     UNION ALL
 
     SELECT
-      t.id,
-      'todo'::text as type,
-      t.title,
-      t.notes as content,
-      ts_rank(t.search_vector, ts_query)::float as rank,
-      jsonb_build_object(
-        'due_at', t.due_at,
-        'is_completed', t.is_completed,
-        'priority', t.priority,
-        'is_habit', t.is_habit
-      ) as metadata
-    FROM todos t
-    WHERE 'todos' = ANY(search_types)
-      AND t.user_id = actual_user_id
-      AND t.search_vector @@ ts_query
-
-    UNION ALL
-
-    SELECT
       d.id,
       'document'::text as type,
       d.title,
@@ -401,7 +377,7 @@ $$;
 ALTER FUNCTION "public"."full_text_search"("search_query" "text", "search_types" "text"[], "result_limit" integer, "p_user_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."semantic_search"("query_embedding" "public"."vector", "search_types" "text"[] DEFAULT ARRAY['emails'::"text", 'messages'::"text", 'documents'::"text", 'calendar'::"text", 'todos'::"text"], "match_threshold" double precision DEFAULT 0.3, "result_limit" integer DEFAULT 10, "p_user_id" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id" "uuid", "type" "text", "title" "text", "content" "text", "similarity" double precision, "metadata" "jsonb", "created_at" timestamp with time zone)
+CREATE OR REPLACE FUNCTION "public"."semantic_search"("query_embedding" "public"."vector", "search_types" "text"[] DEFAULT ARRAY['emails'::"text", 'messages'::"text", 'documents'::"text", 'calendar'::"text"], "match_threshold" double precision DEFAULT 0.3, "result_limit" integer DEFAULT 10, "p_user_id" "uuid" DEFAULT NULL::"uuid") RETURNS TABLE("id" "uuid", "type" "text", "title" "text", "content" "text", "similarity" double precision, "metadata" "jsonb", "created_at" timestamp with time zone)
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 DECLARE
@@ -503,28 +479,6 @@ BEGIN
       AND c.user_id = actual_user_id
       AND c.embedding IS NOT NULL
       AND (1 - (c.embedding <=> query_embedding)) > match_threshold
-
-    UNION ALL
-
-    -- Todos
-    SELECT
-      t.id,
-      'todo'::text as type,
-      t.title,
-      t.notes as content,
-      (1 - (t.embedding <=> query_embedding))::float as similarity,
-      jsonb_build_object(
-        'due_at', t.due_at,
-        'is_completed', t.is_completed,
-        'priority', t.priority,
-        'is_habit', t.is_habit
-      ) as metadata,
-      t.created_at
-    FROM todos t
-    WHERE 'todos' = ANY(search_types)
-      AND t.user_id = actual_user_id
-      AND t.embedding IS NOT NULL
-      AND (1 - (t.embedding <=> query_embedding)) > match_threshold
   ) results
   ORDER BY similarity DESC
   LIMIT result_limit;
@@ -667,8 +621,6 @@ END;
 $$;
 
 ALTER FUNCTION "public"."semantic_search_memory"("query_embedding" "public"."vector", "p_user_id" "uuid", "p_limit" integer, "similarity_threshold" double precision) OWNER TO "postgres";
-
-
 
 
 CREATE OR REPLACE FUNCTION "public"."get_active_memory_facts"("p_user_id" "uuid") RETURNS TABLE("id" "uuid", "category" "text", "key" "text", "value" "text", "confidence" double precision, "created_at" timestamp with time zone)
@@ -1082,7 +1034,6 @@ GRANT ALL ON FUNCTION "public"."semantic_search_episodes"("query_embedding" "pub
 GRANT ALL ON FUNCTION "public"."semantic_search_memory"("query_embedding" "public"."vector", "p_user_id" "uuid", "p_limit" integer, "similarity_threshold" double precision) TO "anon";
 GRANT ALL ON FUNCTION "public"."semantic_search_memory"("query_embedding" "public"."vector", "p_user_id" "uuid", "p_limit" integer, "similarity_threshold" double precision) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."semantic_search_memory"("query_embedding" "public"."vector", "p_user_id" "uuid", "p_limit" integer, "similarity_threshold" double precision) TO "service_role";
-
 
 GRANT ALL ON FUNCTION "public"."get_active_memory_facts"("p_user_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_active_memory_facts"("p_user_id" "uuid") TO "authenticated";

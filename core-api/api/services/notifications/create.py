@@ -26,6 +26,11 @@ class NotificationType:
     ACCESS_REQUESTED = "access_requested"
     ACCESS_APPROVED = "access_approved"
     ACCESS_DENIED = "access_denied"
+    MESSAGE_RECEIVED = "message_received"
+    EMAIL_RECEIVED = "email_received"
+    FILE_SHARED = "file_shared"
+    FILE_EDITED = "file_edited"
+    CALENDAR_INVITE = "calendar_invite"
 
 
 # Map notification types to preference categories
@@ -41,6 +46,11 @@ TYPE_TO_CATEGORY: Dict[str, str] = {
     "access_requested": "sharing",
     "access_approved": "sharing",
     "access_denied": "sharing",
+    "message_received": "messages",
+    "email_received": "email",
+    "file_shared": "files",
+    "file_edited": "files",
+    "calendar_invite": "calendar",
 }
 
 

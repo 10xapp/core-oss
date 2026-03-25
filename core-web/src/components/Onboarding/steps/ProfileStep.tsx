@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { motion } from "motion/react";
+import { avatarGradient } from "../../../utils/avatarGradient";
 import { uploadAvatar } from "../../../api/client";
 import { useAuthStore } from "../../../stores/authStore";
 import OnboardingProgress from "../OnboardingProgress";
@@ -97,7 +98,7 @@ export default function ProfileStep({
               className="w-12 h-12 rounded-lg object-cover"
             />
           ) : (
-            <div className="w-12 h-12 rounded-lg bg-[#5BA4A4] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: avatarGradient(name || "?") }}>
               <span className="text-xl font-semibold text-white">
                 {initial}
               </span>

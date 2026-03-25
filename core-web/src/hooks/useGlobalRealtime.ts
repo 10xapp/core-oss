@@ -11,6 +11,7 @@ import { usePermissionStore } from '../stores/permissionStore';
 import { getChannelMessage, getChannel } from '../api/client';
 import { playMessageNotification } from '../lib/notificationSound';
 import { showMessageNotification } from '../lib/messageNotification';
+import { getCachedChannelMetadata } from '../lib/messageChannelMetadata';
 import { showNotificationToast } from '../lib/notificationToast';
 import { shouldSuppressDocumentRealtime } from '../lib/documentRealtimeGuard';
 import {
@@ -65,19 +66,16 @@ export function useGlobalRealtime(enabled = true) {
   const queryClient = useQueryClient();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const setActiveChannel = useMessagesStore((s) => s.setActiveChannel);
 
   // Stable refs — avoids re-subscribing on navigation or store updates
   const navigateRef = useRef(navigate);
   const queryClientRef = useRef(queryClient);
   const workspacesRef = useRef(workspaces);
-  const setActiveChannelRef = useRef(setActiveChannel);
   const currentUserIdRef = useRef(currentUserId);
 
   navigateRef.current = navigate;
   queryClientRef.current = queryClient;
   workspacesRef.current = workspaces;
-  setActiveChannelRef.current = setActiveChannel;
   currentUserIdRef.current = currentUserId;
 
   useEffect(() => {
@@ -208,6 +206,11 @@ export function useGlobalRealtime(enabled = true) {
               }
             } catch (err) {
               console.error('[GlobalRealtime] Failed to fetch thread reply:', err);
+              showMessageNotification({
+                senderName: 'Someone',
+                content: typeof newMessage.content === 'string' ? newMessage.content : '',
+                isThreadReply: true,
+              });
             }
           } else {
             // --- Main message ---
@@ -262,46 +265,62 @@ export function useGlobalRealtime(enabled = true) {
                 };
               });
 
-              const isActiveChannelNow = window.location.pathname.includes('/messages')
-                && useMessagesStore.getState().activeChannelId === newMessage.channel_id;
-
-              if (isActiveChannelNow) {
-                // User is viewing this channel — mark as read so unread
-                // counts stay accurate when they navigate away
-                useMessagesStore.getState().markAsRead(newMessage.channel_id);
-              }
-
               // 2) Notification (can fail without affecting message display)
+              const cachedChannel = getCachedChannelMetadata(newMessage.channel_id);
+              let channelName = cachedChannel?.channelName;
+              let workspaceAppId = cachedChannel?.workspaceAppId;
+
               try {
                 const channelResult = await getChannel(newMessage.channel_id);
                 const ch = channelResult.channel;
-
-                const workspace = workspacesRef.current.find((ws) =>
-                  ws.apps?.some((app) => app.id === ch.workspace_app_id)
-                );
-
-                // Sound already played above (before async calls)
-                showMessageNotification({
-                  senderName: message.user?.name || message.user?.email || 'Someone',
-                  senderAvatar: message.user?.avatar_url,
-                  content: message.content || '',
-                  channelName: ch.name,
-                  onClick: workspace
-                    ? () => {
-                        // Store the message for MessagesView to read after navigation
-                        setPendingNotificationMessage(ch.id, message);
-
-                        // Navigate to the channel
-                        navigateRef.current(`/workspace/${workspace.id}/messages/${ch.id}`);
-                      }
-                    : undefined,
-                });
+                channelName = ch.name;
+                workspaceAppId = ch.workspace_app_id;
               } catch (notifErr) {
                 // Notification failed but message is already in the store
                 console.error('[GlobalRealtime] Notification failed:', notifErr);
               }
+
+              const workspace = workspaceAppId
+                ? workspacesRef.current.find((ws) =>
+                    ws.apps?.some((app) => app.id === workspaceAppId)
+                  )
+                : undefined;
+
+              // Sound already played above (before async calls)
+              showMessageNotification({
+                senderName: message.user?.name || message.user?.email || 'Someone',
+                senderAvatar: message.user?.avatar_url,
+                content: message.content || '',
+                channelName,
+                onClick: workspace
+                  ? () => {
+                      // Store the message for MessagesView to read after navigation
+                      setPendingNotificationMessage(newMessage.channel_id, message);
+
+                      // Navigate to the channel
+                      navigateRef.current(`/workspace/${workspace.id}/messages/${newMessage.channel_id}`);
+                    }
+                  : undefined,
+              });
             } catch (err) {
               console.error('[GlobalRealtime] Failed to fetch message:', err);
+              const cachedChannel = getCachedChannelMetadata(newMessage.channel_id);
+              const workspace = cachedChannel?.workspaceAppId
+                ? workspacesRef.current.find((ws) =>
+                    ws.apps?.some((app) => app.id === cachedChannel.workspaceAppId)
+                  )
+                : undefined;
+
+              showMessageNotification({
+                senderName: 'Someone',
+                content: typeof newMessage.content === 'string' ? newMessage.content : '',
+                channelName: cachedChannel?.channelName,
+                onClick: workspace
+                  ? () => {
+                      navigateRef.current(`/workspace/${workspace.id}/messages/${newMessage.channel_id}`);
+                    }
+                  : undefined,
+              });
             }
           }
         }
@@ -840,6 +859,33 @@ export function useGlobalRealtime(enabled = true) {
 
           // Show toast
           showNotificationToast(notification);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          recordRealtimeEvent();
+          const notification = payload.new as any;
+          const previousNotification = payload.old as any;
+          const notificationStore = useNotificationStore.getState();
+          const hadLocalRow = notificationStore.notifications.some((item) => item.id === notification.id);
+          const hasPreviousState =
+            typeof previousNotification?.read === 'boolean'
+            && typeof previousNotification?.archived === 'boolean';
+
+          notificationStore.handleRealtimeUpdate(notification, previousNotification);
+
+          // Reconcile unread badge when the row was off-screen and the payload
+          // does not include enough prior state to compute a safe delta locally.
+          if (!hadLocalRow && !hasPreviousState) {
+            void notificationStore.fetchUnreadCount();
+          }
         }
       )
 

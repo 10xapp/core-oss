@@ -17,6 +17,7 @@ class ToolCategory(str, Enum):
     WEB = "web"
     MESSAGES = "messages"
     SEARCH = "search"
+    PROJECTS = "projects"
 
 
 @dataclass
@@ -102,6 +103,11 @@ class ToolResult:
             result["action"] = self.data.get("action", "")
             result["data"] = self.data
             result["description"] = self.description or ""
+            result["note"] = (
+                "This action is STAGED, NOT executed. "
+                "The user will see a confirmation card and must tap to confirm. "
+                "Do NOT say the action is done. Say it's ready for them to confirm."
+            )
         else:
             result["data"] = self.data
             if self.display_type:

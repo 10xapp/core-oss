@@ -11,8 +11,10 @@ supabase/
 │   ├── 00003_workspaces.sql              # workspaces, members, apps, app_members + RLS helpers
 │   ├── 00004_email_system.sql            # emails + thread RPCs + FTS
 │   ├── 00005_calendar_system.sql         # calendar_events
+│   ├── 00006_todos_system.sql            # todos, habit_completions + streak RPCs
 │   ├── 00007_files_and_documents.sql     # files, documents, note_attachments, document_versions
 │   ├── 00008_chat_system.sql             # conversations, messages, chat_attachments
+│   ├── 00009_sounds_system.sql           # sounds, playlists, user_listens
 │   ├── 00010_agents.sql                  # agent_templates/instances/tasks/steps/conversations
 │   ├── 00011_channels_and_messaging.sql  # channels, members, messages, reactions, read_status
 │   ├── 00012_projects.sql                # boards, states, issues, labels, assignees, comments
@@ -20,22 +22,52 @@ supabase/
 │   ├── 00014_sharing_permissions.sql     # permissions, access_requests + RLS updates
 │   ├── 00015_search_and_embeddings.sql   # entities, memory_*, semantic_search RPCs
 │   ├── 00016_sites_and_builder.sql       # builder_projects/conversations/versions/messages
+│   ├── 00017_workouts.sql                # workouts + RPCs
 │   ├── 00018_signup_trigger.sql          # auth.users trigger -> create_default_workspace
 │   ├── 00019_realtime_config.sql         # ALTER PUBLICATION for realtime-enabled tables
 │   ├── 00020_seed_data.sql               # Brand influencer agent template
 │   └── 00021_storage_config.sql          # agent-data bucket + storage RLS
+├── baseline/                    # Canonical schema dumps from prod
+│   ├── canonical_baseline.sql   # pg_dump of public schema
+│   └── canonical_storage.sql    # pg_dump of storage schema
 └── README.md                    # This file
 ```
 
-## Migration Consolidation
+## Migration Consolidation (2026-03-16)
 
-The migrations are organized into 21 domain-organized files, split into logical domains respecting FK dependency order.
+The original 133 incremental migration files were consolidated into 21 domain-organized files. The canonical schema was pulled from prod using `supabase db dump`, then mechanically split into logical domains respecting FK dependency order.
 
-## Setting Up the Database
+**Rollback**: Original 133 files are in git history on `main` (one commit before this merge).
+
+## Cutover: Applying to Existing Environments
+
+After the consolidation, existing environments (prod/staging) have the old 133 migrations in their `supabase_migrations` history table. You **cannot** just `db push` — that would try to replay the consolidated files against an already-populated schema.
+
+**Per-environment cutover sequence:**
 
 ```bash
-# Fresh install — replays all 21 migrations from scratch
-supabase db reset
+# 1. Revoke all old migration versions from the history table
+#    (repeat for every old timestamp — the full list is in migrations_archive/)
+supabase migration repair --status reverted 20251121000000
+supabase migration repair --status reverted 20251121000001
+# ... all 133 old timestamps ...
+
+# 2. Mark the new consolidated migrations as already applied
+supabase migration repair --status applied 20260316000001
+supabase migration repair --status applied 20260316000002
+# ... all 21 new timestamps ...
+
+# 3. Verify — should show all 21 as Applied, zero pending
+supabase migration list
+
+# 4. Confirm no schema drift
+supabase db diff --linked
+# Must produce zero output
+```
+
+**For fresh installs** (new dev environments, CI):
+```bash
+supabase db reset   # replays all 21 migrations from scratch
 ```
 
 ## Quick Reference

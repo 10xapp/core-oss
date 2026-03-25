@@ -291,9 +291,8 @@ async def stream_chat_response(
 
     # If attachments present, modify the last user message for Vision API
     if attachments and recent_messages:
-        recent_messages, _base64_images = await _add_images_to_last_message(recent_messages, attachments)
-        if _base64_images:
-            yield status_event("Processing images...")
+        recent_messages, _ = await _add_images_to_last_message(recent_messages, attachments)
+        yield status_event("Processing images...")
 
     current_messages = [system_message] + recent_messages
     pending_actions = []
@@ -391,9 +390,9 @@ async def stream_chat_response(
 
             # Emit status indicator (dynamic for smart_search based on types)
             if function_name == "smart_search":
-                types_str = function_args.get("types", "emails,calendar,documents")
+                types_str = function_args.get("types", "emails,calendar,todos,documents")
                 types = [t.strip() for t in types_str.split(",")] if isinstance(types_str, str) else types_str
-                type_names = {'emails': 'Emails', 'calendar': 'Calendar', 'documents': 'Notes'}
+                type_names = {'emails': 'Emails', 'calendar': 'Calendar', 'todos': 'Tasks', 'documents': 'Notes'}
                 names = [type_names.get(t, t.title()) for t in types[:2] if t in type_names]
                 status_msg = ", ".join(names) + ("..." if len(types) > 2 else "") if names else "Searching..."
             else:

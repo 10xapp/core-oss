@@ -293,14 +293,14 @@ export default function EventDetailModal({
 
               {event.meeting_link && (
                 <div className="flex items-start gap-3">
-                  <HugeiconsIcon icon={Video01Icon} size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <HugeiconsIcon icon={Video01Icon} size={20} className={`mt-0.5 shrink-0 ${event.meeting_link.includes('meet.google.com') ? 'text-blue-600' : 'text-gray-400'}`} />
                   <a
                     href={event.meeting_link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                    className={`text-sm hover:underline ${event.meeting_link.includes('meet.google.com') ? 'text-blue-600 font-medium hover:text-blue-700' : 'text-blue-600 hover:text-blue-700'}`}
                   >
-                    Join Meeting
+                    {event.meeting_link.includes('meet.google.com') ? 'Join with Google Meet' : 'Join Meeting'}
                   </a>
                 </div>
               )}

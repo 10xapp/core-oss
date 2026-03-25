@@ -11,7 +11,6 @@ interface DisplayMessage {
 
 interface UseChatStreamParams {
   activeConversationRef: React.MutableRefObject<string | null>;
-  messages: DisplayMessage[];
   setMessages: React.Dispatch<React.SetStateAction<DisplayMessage[]>>;
   selectedWorkspaceIds: string[];
   workspaceId?: string;
@@ -38,12 +37,148 @@ function processStreamEvents(
   mark: (label: string) => void,
 ) {
   return (async () => {
-    const builder = new WebContentBuilder();
-    builderRef.current = builder;
+    // storageBuilder: exact stream payload for final persisted assistant message
+    const storageBuilder = new WebContentBuilder();
+    // displayBuilder: what the user sees progressively during streaming
+    const displayBuilder = new WebContentBuilder();
+    builderRef.current = displayBuilder;
 
-    let fullContent = '';
     let firstEvent = true;
     let firstToken = true;
+    let revealedText = '';
+    let pendingTextSegments: string[] = [];
+    let pendingChars = 0;
+    let doneReceived = false;
+    let doneEventMessageId: string | undefined;
+    let didFinalize = false;
+
+    let flushScheduled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const splitIntoSegments = (input: string): string[] => {
+      // Split into whitespace and non-whitespace segments.
+      // Preserves all whitespace including leading spaces from API deltas.
+      return input.match(/\s+|[^\s]+/g) ?? [];
+    };
+
+    const clearScheduledFlush = () => {
+      flushScheduled = false;
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const flushSnapshot = () => {
+      setStreamingContent(revealedText);
+      setStreamingParts(displayBuilder.getSnapshot());
+    };
+
+    // How many word-segments to reveal per tick.
+    // During normal streaming: 1 word per ~35ms for a smooth per-word animation.
+    // When draining after stream ends or buffer is large: reveal faster to catch up.
+    const getRevealWordCount = (): number => {
+      if (doneReceived) {
+        if (pendingTextSegments.length > 80) return 12;
+        if (pendingTextSegments.length > 40) return 8;
+        if (pendingTextSegments.length > 20) return 4;
+        return 2;
+      }
+      // When buffer is building up, reveal slightly faster to keep pace
+      if (pendingTextSegments.length > 60) return 4;
+      if (pendingTextSegments.length > 30) return 2;
+      return 1;
+    };
+
+    const drainQueuedText = (maxWords: number | null): boolean => {
+      if (!pendingTextSegments.length) return false;
+
+      let wordsRevealed = 0;
+      const limit = maxWords ?? Number.MAX_SAFE_INTEGER;
+      let drained = '';
+
+      while (pendingTextSegments.length > 0 && wordsRevealed < limit) {
+        const next = pendingTextSegments.shift()!;
+        drained += next;
+        pendingChars = Math.max(0, pendingChars - next.length);
+        // Only count non-whitespace segments as words
+        if (next.trim()) wordsRevealed++;
+      }
+
+      if (!drained) return false;
+      displayBuilder.appendText(drained);
+      revealedText += drained;
+      return true;
+    };
+
+    const finalizeStream = (messageId?: string) => {
+      if (didFinalize) return;
+      didFinalize = true;
+      clearScheduledFlush();
+      pendingTextSegments = [];
+      pendingChars = 0;
+
+      const finalParts = storageBuilder.finalize();
+      const finalText = storageBuilder.getFullText();
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: messageId || `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: finalText,
+          content_parts: finalParts.length > 0 ? finalParts : undefined,
+        },
+      ]);
+      builderRef.current = null;
+      setStreamingContent('');
+      setStreamingParts([]);
+      setStreamStatus(null);
+      setIsWaitingForResponse(false);
+
+      if (streamingConversationRef.current === convId) {
+        streamingConversationRef.current = null;
+      }
+    };
+
+    const flushAllQueuedText = () => {
+      clearScheduledFlush();
+      const changed = drainQueuedText(null);
+      if (changed) {
+        flushSnapshot();
+      }
+    };
+
+    const runRevealFrame = () => {
+      timeoutId = null;
+      flushScheduled = false;
+
+      // Stream was cancelled/switched.
+      if (streamingConversationRef.current !== convId) {
+        clearScheduledFlush();
+        return;
+      }
+
+      const changed = drainQueuedText(getRevealWordCount());
+      if (changed) {
+        flushSnapshot();
+      }
+      if (pendingTextSegments.length > 0) {
+        scheduleSnapshotFlush();
+        return;
+      }
+
+      if (doneReceived) {
+        finalizeStream(doneEventMessageId);
+      }
+    };
+
+    // Throttle state updates to ~35ms (~28 updates/sec) for smooth per-word animation
+    const scheduleSnapshotFlush = () => {
+      if (flushScheduled) return;
+      flushScheduled = true;
+      timeoutId = setTimeout(runRevealFrame, 35);
+    };
 
     for await (const event of stream) {
       // Check if we're still streaming for this conversation
@@ -55,14 +190,17 @@ function processStreamEvents(
 
       switch (event.type) {
         case 'tool_call':
+          flushAllQueuedText();
           if (event.name) {
             if (event.phase === 'start') {
-              builder.addToolCallStart(event.name, event.args);
-              setStreamingParts(builder.getSnapshot());
+              storageBuilder.addToolCallStart(event.name, event.args);
+              displayBuilder.addToolCallStart(event.name, event.args);
+              flushSnapshot();
               setIsWaitingForResponse(false);
             } else if (event.phase === 'end') {
-              builder.updateToolCallEnd(event.name, event.duration_ms, event.status);
-              setStreamingParts(builder.getSnapshot());
+              storageBuilder.updateToolCallEnd(event.name, event.duration_ms, event.status);
+              displayBuilder.updateToolCallEnd(event.name, event.duration_ms, event.status);
+              flushSnapshot();
             }
           }
           break;
@@ -70,30 +208,41 @@ function processStreamEvents(
         case 'content':
           if (event.delta) {
             if (firstToken) { mark('first_token'); firstToken = false; }
-            builder.appendText(event.delta);
-            fullContent += event.delta;
-            setStreamingContent(fullContent);
-            setStreamingParts(builder.getSnapshot());
+            storageBuilder.appendText(event.delta);
+            const nextSegments = splitIntoSegments(event.delta);
+            if (nextSegments.length > 0) {
+              pendingTextSegments.push(...nextSegments);
+              for (const segment of nextSegments) {
+                pendingChars += segment.length;
+              }
+              scheduleSnapshotFlush();
+            }
             setIsWaitingForResponse(false);
           }
           break;
 
         case 'display':
-          builder.addDisplay(event);
-          setStreamingParts(builder.getSnapshot());
+          flushAllQueuedText();
+          storageBuilder.addDisplay(event);
+          displayBuilder.addDisplay(event);
+          flushSnapshot();
           setIsWaitingForResponse(false);
           break;
 
         case 'action':
-          builder.addAction(event);
-          setStreamingParts(builder.getSnapshot());
+          flushAllQueuedText();
+          storageBuilder.addAction(event);
+          displayBuilder.addAction(event);
+          flushSnapshot();
           setIsWaitingForResponse(false);
           break;
 
         case 'sources':
+          flushAllQueuedText();
           if (event.sources) {
-            builder.addSources(event.sources);
-            setStreamingParts(builder.getSnapshot());
+            storageBuilder.addSources(event.sources);
+            displayBuilder.addSources(event.sources);
+            flushSnapshot();
           }
           break;
 
@@ -103,29 +252,26 @@ function processStreamEvents(
 
         case 'done': {
           mark('done');
-          const finalParts = builder.finalize();
-          const finalText = builder.getFullText();
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: event.message_id || `assistant-${Date.now()}`,
-              role: 'assistant',
-              content: finalText || fullContent,
-              content_parts: finalParts.length > 0 ? finalParts : undefined,
-            },
-          ]);
-          builderRef.current = null;
-          setStreamingContent('');
-          setStreamingParts([]);
-          setStreamStatus(null);
+          doneReceived = true;
+          doneEventMessageId = typeof event.message_id === 'string' ? event.message_id : undefined;
           setIsWaitingForResponse(false);
+
+          if (pendingTextSegments.length > 0) {
+            scheduleSnapshotFlush();
+          } else {
+            finalizeStream(doneEventMessageId);
+          }
           break;
         }
 
         case 'error': {
           const errorMsg = event.error || event.message || 'Sorry, there was an error processing your request.';
           console.error('Stream error:', errorMsg);
+          pendingTextSegments = [];
+          pendingChars = 0;
+          doneReceived = false;
+          didFinalize = true;
+          clearScheduledFlush();
           streamingConversationRef.current = null;
           builderRef.current = null;
           setStreamingContent('');
@@ -147,7 +293,31 @@ function processStreamEvents(
       }
     }
 
-    // Clear streaming ref when done
+    if (doneReceived && !didFinalize) {
+      if (streamingConversationRef.current === convId) {
+        if (pendingTextSegments.length > 0) {
+          scheduleSnapshotFlush();
+        } else {
+          finalizeStream(doneEventMessageId);
+        }
+      } else {
+        pendingTextSegments = [];
+        pendingChars = 0;
+        clearScheduledFlush();
+        builderRef.current = null;
+        setStreamingContent('');
+        setStreamingParts([]);
+        setStreamStatus(null);
+        setIsWaitingForResponse(false);
+      }
+      return;
+    }
+
+    pendingTextSegments = [];
+    pendingChars = 0;
+    clearScheduledFlush();
+
+    // Clear streaming ref when stream ends without a done event (cancel/switch).
     if (streamingConversationRef.current === convId) {
       streamingConversationRef.current = null;
     }
@@ -156,7 +326,6 @@ function processStreamEvents(
 
 export function useChatStream({
   activeConversationRef,
-  messages: _messages,
   setMessages,
   selectedWorkspaceIds,
   workspaceId,

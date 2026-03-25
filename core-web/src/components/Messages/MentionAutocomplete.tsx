@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { avatarGradient } from '../../utils/avatarGradient';
 import { motion, AnimatePresence } from 'motion/react';
 import type { ChannelMember } from '../../api/client';
 
@@ -120,9 +121,11 @@ export function MentionAutocomplete({
                 />
               ) : (
                 <div
-                  className="w-6 h-6 rounded-full flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #5A7864 0%, #607E98 100%)' }}
-                />
+                  className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white font-semibold text-[10px]"
+                  style={{ background: avatarGradient(member.name || member.user_id) }}
+                >
+                  {(member.name || "?").charAt(0).toUpperCase()}
+                </div>
               )}
               <span className="text-text-body font-medium truncate">{member.name}</span>
             </button>

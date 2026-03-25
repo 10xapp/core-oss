@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -6,6 +6,9 @@ import { Calendar03Icon, Location01Icon, Video01Icon, Delete02Icon, PencilEdit01
 import type { CalendarEvent } from '../../../api/client';
 import { updateCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
+import { useWorkspaceStore } from '../../../stores/workspaceStore';
+import { useProjectMembers } from '../../../hooks/queries/useProjects';
+import { avatarGradient } from '../../../utils/avatarGradient';
 import EditEventModal from './EditEventModal';
 import DatePicker from '../../ui/DatePicker';
 
@@ -37,6 +40,22 @@ export default function EventPopover({
 
   const deleteEvent = useCalendarStore((state) => state.deleteEvent);
   const updateEventInStore = useCalendarStore((state) => state.updateEvent);
+  const respondToEvent = useCalendarStore((state) => state.respondToEvent);
+
+  // Get workspace members for attendee profile pictures
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const { data: members = [] } = useProjectMembers(activeWorkspaceId);
+
+  // Create a map of email -> member for quick lookup
+  const membersByEmail = useMemo(() => {
+    const map = new Map<string, typeof members[0]>();
+    for (const member of members) {
+      if (member.email) {
+        map.set(member.email.toLowerCase(), member);
+      }
+    }
+    return map;
+  }, [members]);
 
   // Subscribe to store changes for this specific event
   // This ensures we always display the latest data (including optimistic updates)
@@ -632,10 +651,37 @@ export default function EventPopover({
               </div>
 
               {/* Meeting Link field - positioned after time */}
-              <div className="flex items-start gap-2.5 mb-3">
-                <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
-                <div className="flex-1">
-                  {editingField === 'link' ? (
+              {storeEvent?.meeting_link ? (
+                <div className="flex items-start gap-2.5 mb-3">
+                  <HugeiconsIcon icon={Video01Icon} size={16} className={`mt-0.5 shrink-0 ${storeEvent.meeting_link.includes('meet.google.com') ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <div className="flex-1">
+                    {storeEvent.meeting_link.includes('meet.google.com') ? (
+                      <a
+                        href={storeEvent.meeting_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium hover:text-blue-700 hover:underline"
+                      >
+                        Join with Google Meet
+                      </a>
+                    ) : (
+                      <a
+                        href={storeEvent.meeting_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-sm text-blue-600 hover:underline break-all"
+                      >
+                        {storeEvent.meeting_link}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : editingField === 'link' ? (
+                <div className="flex items-start gap-2.5 mb-3">
+                  <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div className="flex-1">
                     <input
                       type="url"
                       value={editLink}
@@ -647,26 +693,9 @@ export default function EventPopover({
                       className="w-full px-2 py-1 text-sm bg-gray-50 border border-gray-200 rounded text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
                       disabled={isSaving}
                     />
-                  ) : storeEvent?.meeting_link ? (
-                    <a
-                      href={storeEvent.meeting_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-sm text-blue-600 hover:underline break-all"
-                    >
-                      {storeEvent.meeting_link}
-                    </a>
-                  ) : (
-                    <p
-                      onClick={() => setEditingField('link')}
-                      className="text-sm text-gray-400 cursor-pointer hover:text-gray-600 hover:bg-gray-100 hover:rounded px-1"
-                    >
-                      Add Meeting Link
-                    </p>
-                  )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* Location */}
               {storeEvent.location || editingField === 'location' ? (
@@ -748,18 +777,112 @@ export default function EventPopover({
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
                     Attendees
                   </p>
-                  <div className="space-y-1">
-                    {storeEvent.attendees.map((attendee, i) => (
-                      <p key={i} className="text-sm text-gray-700">
-                        {attendee.display_name || attendee.email}
-                        {attendee.response_status && (
-                          <span className="text-gray-400 text-xs ml-1.5">({attendee.response_status})</span>
-                        )}
-                      </p>
-                    ))}
+                  <div className="space-y-1.5">
+                    {storeEvent.attendees.map((attendee, i) => {
+                      const member = membersByEmail.get(attendee.email.toLowerCase());
+                      const displayName = attendee.display_name || member?.name || attendee.email;
+                      const initials = displayName
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .toUpperCase()
+                        .slice(0, 2) || '?';
+
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <div
+                            className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 overflow-hidden"
+                            style={!member?.avatar_url ? { background: avatarGradient(displayName) } : undefined}
+                          >
+                            {member?.avatar_url ? (
+                              <img
+                                src={member.avatar_url}
+                                alt={displayName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-[8px] font-medium text-white">
+                                {initials}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm text-gray-700">
+                            {displayName}
+                            {attendee.response_status && (
+                              <span className="text-gray-400 text-xs ml-1.5">({attendee.response_status})</span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
+
+              {/* RSVP buttons - show if user is an attendee (not organizer) */}
+              {(() => {
+                if (storeEvent.is_organizer) return null;
+
+                const accountEmail = storeEvent.account_email?.toLowerCase();
+                const userAttendee = storeEvent.attendees?.find(
+                  (att) => att.email.toLowerCase() === accountEmail
+                );
+                const currentStatus = userAttendee?.response_status;
+                const canRespond = userAttendee && currentStatus !== undefined;
+
+                if (!canRespond) return null;
+
+                const handleRSVP = async (status: 'accepted' | 'declined' | 'tentative') => {
+                  try {
+                    await respondToEvent(storeEvent.id, status);
+                  } catch (err) {
+                    console.error('Failed to respond to event:', err);
+                  }
+                };
+
+                return (
+                  <div className="pt-3 mt-3 border-t border-gray-100">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Your Response
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleRSVP('accepted')}
+                        disabled={isSaving}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                          currentStatus === 'accepted'
+                            ? 'bg-green-100 text-green-700 border border-green-300'
+                            : 'bg-gray-100 text-gray-600 hover:bg-green-50 hover:text-green-700'
+                        }`}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => handleRSVP('tentative')}
+                        disabled={isSaving}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                          currentStatus === 'tentative'
+                            ? 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                            : 'bg-gray-100 text-gray-600 hover:bg-yellow-50 hover:text-yellow-700'
+                        }`}
+                      >
+                        Maybe
+                      </button>
+                      <button
+                        onClick={() => handleRSVP('declined')}
+                        disabled={isSaving}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                          currentStatus === 'declined'
+                            ? 'bg-red-100 text-red-700 border border-red-300'
+                            : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-700'
+                        }`}
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

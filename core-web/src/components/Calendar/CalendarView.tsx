@@ -11,6 +11,7 @@ import {
   PointerSensor,
   useDndMonitor,
 } from "@dnd-kit/core";
+import { useSearchParams } from "react-router-dom";
 // Removed restrictToVerticalAxis to allow cross-day dragging
 import type { CalendarEvent } from "../../api/client";
 import { useCalendarStore } from "../../stores/calendarStore";
@@ -26,8 +27,8 @@ import NewEventPopover from "./components/NewEventPopover";
 import { EventBlockOverlay } from "./components/DraggableEventBlock";
 import { eventCreationFlags } from "./utils/eventCreationFlags";
 import { getAccountAccentColor, registerAccountOrder } from "../../utils/accountColors";
-import NotificationsPanel from "../NotificationsPanel/NotificationsPanel";
 import { SIDEBAR } from "../../lib/sidebar";
+import { HeaderButtons } from "../MiniAppHeader/MiniAppHeader";
 
 // Keep sync functionality available via keyboard shortcut (S key)
 
@@ -86,31 +87,30 @@ function CalendarContent({
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
-      {/* Clean header: date on left, view selector on right */}
-      <div className="shrink-0">
-        <div className="flex items-center justify-between px-8 py-5">
-          {/* Left side: date header with navigation */}
-          <div className="flex items-center gap-1">
-            <CalendarHeader
-              date={selectedDate}
-              viewMode={viewMode}
-              onPrevious={handlePrevious}
-              onNext={handleNext}
-              onToday={handleToday}
+      {/* Header: matches mini app h-12 pattern */}
+      <div className="h-12 flex items-center justify-between pl-4 pr-2 shrink-0 border-b border-border-gray">
+        {/* Left side: date header with navigation */}
+        <div className="flex items-center gap-1">
+          <CalendarHeader
+            date={selectedDate}
+            viewMode={viewMode}
+            onPrevious={handlePrevious}
+            onNext={handleNext}
+            onToday={handleToday}
+          />
+          {isSyncing && (
+            <HugeiconsIcon
+              icon={Loading03Icon}
+              size={14}
+              className="animate-spin text-gray-400 ml-1.5"
             />
-            {isSyncing && (
-              <HugeiconsIcon
-                icon={Loading03Icon}
-                size={16}
-                className="animate-spin text-gray-400 ml-2"
-              />
-            )}
-          </div>
+          )}
+        </div>
 
-          {/* Right side: view mode selector */}
-          <div className="flex items-center gap-3">
-            <ViewModeSelector value={viewMode} onChange={setViewMode} />
-          </div>
+        {/* Right side: view mode selector + header buttons */}
+        <div className="flex items-center gap-2">
+          <ViewModeSelector value={viewMode} onChange={setViewMode} />
+          <HeaderButtons />
         </div>
       </div>
 
@@ -162,7 +162,6 @@ function CalendarContent({
                 selectedDate={selectedDate}
                 onDateSelect={setSelectedDate}
                 onEventClick={handleEventClick}
-                onSwitchToDayView={handleSwitchToDayView}
                 onVisibleMonthChange={setSelectedDate}
               />
             )}
@@ -230,6 +229,7 @@ export default function CalendarView() {
     setViewMode,
     selectedDate,
     setSelectedDate,
+    events,
     dayIndex,
     setDayIndex,
     swipeableDays,
@@ -239,16 +239,18 @@ export default function CalendarView() {
     pendingEvent,
     navigate,
     goToToday,
-    fetchEvents,
     syncEvents,
     startCreatingEvent,
     cancelCreatingEvent,
     rescheduleEvent,
     accountsStatus,
     selectedAccountIds,
+    setSelectedAccounts,
     accountSelectionInitialized,
     toggleAccountSelection,
   } = useCalendarStore();
+  const [searchParams] = useSearchParams();
+  const handledNotificationTargetRef = useRef<string | null>(null);
 
   // Drag state
   const [activeEvent, setActiveEvent] = useState<CalendarEvent | null>(null);
@@ -295,6 +297,84 @@ export default function CalendarView() {
     cancelCreatingEvent();
   }, [viewMode, cancelCreatingEvent]);
 
+  useEffect(() => {
+    const targetEventId = searchParams.get("event_id");
+    const targetDate = searchParams.get("date");
+    const targetAccountEmail = searchParams.get("account_email");
+    const focusToken = searchParams.get("focus");
+
+    if (!targetEventId && !targetDate) {
+      handledNotificationTargetRef.current = null;
+      return;
+    }
+
+    const targetKey = `${targetEventId ?? ""}|${targetDate ?? ""}|${targetAccountEmail ?? ""}|${focusToken ?? ""}`;
+    if (handledNotificationTargetRef.current === targetKey) {
+      return;
+    }
+
+    // Mark as handled immediately to prevent re-entry from state changes below
+    handledNotificationTargetRef.current = targetKey;
+
+    if (targetDate) {
+      const nextDate = new Date(targetDate);
+      if (!Number.isNaN(nextDate.getTime())) {
+        setSelectedDate(nextDate);
+      }
+    }
+
+    if (
+      targetAccountEmail
+      && accountSelectionInitialized
+      && !selectedAccountIds.includes(targetAccountEmail)
+    ) {
+      setSelectedAccounts([...selectedAccountIds, targetAccountEmail]);
+      return;
+    }
+
+    if (!targetEventId) {
+      return;
+    }
+
+    const targetEvent = events.find((event) => event.id === targetEventId);
+    if (!targetEvent) {
+      return;
+    }
+
+    if (
+      targetEvent.account_email
+      && accountSelectionInitialized
+      && !selectedAccountIds.includes(targetEvent.account_email)
+    ) {
+      setSelectedAccounts([...selectedAccountIds, targetEvent.account_email]);
+      return;
+    }
+
+    setViewMode("day");
+    const animationFrame = window.requestAnimationFrame(() => {
+      const targetElement = document.querySelector(`[data-event-id="${targetEventId}"]`);
+      if (!(targetElement instanceof HTMLElement)) {
+        return;
+      }
+
+      setSelectedEventData({
+        event: targetEvent,
+        rect: targetElement.getBoundingClientRect(),
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [
+    accountSelectionInitialized,
+    events,
+    searchParams,
+    selectedAccountIds,
+    setSelectedAccounts,
+    setSelectedDate,
+    setSelectedEventData,
+    setViewMode,
+  ]);
+
   // Configure drag sensors with distance threshold to prevent accidental drags on click
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -303,11 +383,6 @@ export default function CalendarView() {
       },
     }),
   );
-
-  // Fetch events on mount only - empty dependency prevents refetching during event creation
-  useEffect(() => {
-    fetchEvents();
-  }, []);
 
   // Register account order for consistent color assignment (first account = blue, etc.)
   useEffect(() => {
@@ -759,7 +834,6 @@ export default function CalendarView() {
         </DndContext>
           </div>
         </div>
-        <NotificationsPanel />
       </div>
     </div>
   );

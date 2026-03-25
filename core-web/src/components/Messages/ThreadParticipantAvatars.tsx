@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useMessagesStore } from '../../stores/messagesStore';
+import { avatarGradient } from '../../utils/avatarGradient';
 
 interface ThreadParticipantAvatarsProps {
   messageId: string;
@@ -42,7 +43,7 @@ export function ThreadParticipantAvatars({ messageId, replyCount }: ThreadPartic
           ) : (
             <div
               className="w-6 h-6 rounded-lg ring-2 ring-white flex-shrink-0 flex items-center justify-center text-xs font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg, #5A7864 0%, #607E98 100%)' }}
+              style={{ background: avatarGradient(participant.name || participant.email || participant.id) }}
             >
               {participant.name?.charAt(0) || participant.email?.charAt(0) || '?'}
             </div>

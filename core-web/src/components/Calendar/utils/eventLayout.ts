@@ -280,9 +280,9 @@ export function calculateWeekEventPosition(
   event: CalendarEvent,
   layout: EventLayoutInfo,
   dayColumnWidth: number,
-  dayIndex: number,
+  _dayIndex: number,
   hourHeight: number = 60,
-  timeColumnWidth: number = 53,
+  _timeColumnWidth: number = 53,
   viewDate?: Date
 ): {
   top: number;
@@ -306,8 +306,7 @@ export function calculateWeekEventPosition(
 
   const duration = Math.max(endMinutes - startMinutes, MIN_EVENT_DURATION);
 
-  const dayLeft = timeColumnWidth + (dayIndex * dayColumnWidth);
-
+  // Left is relative to the day column container (events are rendered inside flex columns)
   let left: number;
   let width: number;
 
@@ -316,11 +315,11 @@ export function calculateWeekEventPosition(
   if (layout.shouldDivideWidth) {
     const availableWidth = dayColumnWidth - rightPadding;
     const eventWidth = availableWidth / layout.totalColumns;
-    left = dayLeft + (layout.columnIndex * eventWidth);
+    left = layout.columnIndex * eventWidth;
     width = eventWidth - 2; // 2px gap between columns
   } else {
     const indent = Math.min(layout.indentLevel * 8, dayColumnWidth * 0.3); // Smaller indent for week view
-    left = dayLeft + indent;
+    left = indent;
     width = dayColumnWidth - rightPadding - indent;
   }
 

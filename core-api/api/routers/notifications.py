@@ -16,6 +16,8 @@ from api.services.notifications import (
     unsubscribe,
     is_subscribed,
 )
+from api.services.documents import assert_document_access
+from api.services.permissions.helpers import normalize_resource_type
 from api.dependencies import get_current_user_jwt, get_current_user_id
 from api.exceptions import handle_api_exception
 import logging
@@ -57,6 +59,7 @@ class NotificationResponse(BaseModel):
     body: Optional[str] = None
     resource_type: Optional[str] = None
     resource_id: Optional[str] = None
+    group_key: Optional[str] = None
     actor_id: Optional[str] = None
     read: bool = False
     seen: bool = False
@@ -257,13 +260,21 @@ async def update_preference_endpoint(
 async def subscribe_endpoint(
     resource_type: str,
     resource_id: str,
+    user_jwt: str = Depends(get_current_user_jwt),
     user_id: str = Depends(get_current_user_id),
 ):
     """Manually subscribe to notifications for a resource."""
     try:
+        normalized_resource_type = normalize_resource_type(resource_type)
+        if normalized_resource_type in {"document", "folder"}:
+            await assert_document_access(
+                user_id=user_id,
+                user_jwt=user_jwt,
+                document_id=resource_id,
+            )
         await subscribe(
             user_id=user_id,
-            resource_type=resource_type,
+            resource_type=normalized_resource_type,
             resource_id=resource_id,
             reason="manual",
         )

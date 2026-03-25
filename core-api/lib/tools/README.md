@@ -16,7 +16,7 @@ from lib.tools.registry import tool
         "optional_param": "Description of optional param"
     },
     required=["required_param"],
-    category=ToolCategory.CALENDAR,  # CALENDAR, EMAIL, DOCUMENTS, FILES, MEMORY, WEB, MESSAGES, SEARCH
+    category=ToolCategory.CALENDAR,  # CALENDAR, EMAIL, TODOS, DOCUMENTS, FILES, MEMORY, WEB
     connection="google",              # Omit if no OAuth needed
     staged=False,                     # True = requires user confirmation
     status="Working..."               # Shown during execution (optional)
@@ -53,6 +53,7 @@ Parameter types are auto-inferred from names:
 class ToolCategory(str, Enum):
     CALENDAR = "calendar"
     EMAIL = "email"
+    TODOS = "todos"
     DOCUMENTS = "documents"
     FILES = "files"
     MEMORY = "memory"

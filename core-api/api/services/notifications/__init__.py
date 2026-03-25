@@ -10,6 +10,17 @@ from .create import (
     NotificationType,
     TYPE_TO_CATEGORY,
 )
+from .grouped import (
+    GroupedNotificationResolution,
+    GROUPED_NOTIFICATION_RESOLUTION_BY_TYPE,
+    get_grouped_resolution,
+    upsert_grouped_notification,
+    resolve_grouped_notification,
+)
+from .file_edits import (
+    get_file_edit_group_key,
+    emit_document_edited_notification,
+)
 from .fetch import (
     get_notifications,
     get_unread_count,
@@ -21,6 +32,7 @@ from .update import (
 )
 from .subscriptions import (
     subscribe,
+    ensure_subscription,
     unsubscribe,
     get_subscribers,
     is_subscribed,
@@ -38,6 +50,13 @@ __all__ = [
     'notify_subscribers',
     'NotificationType',
     'TYPE_TO_CATEGORY',
+    'GroupedNotificationResolution',
+    'GROUPED_NOTIFICATION_RESOLUTION_BY_TYPE',
+    'get_grouped_resolution',
+    'upsert_grouped_notification',
+    'resolve_grouped_notification',
+    'get_file_edit_group_key',
+    'emit_document_edited_notification',
 
     # Fetch
     'get_notifications',
@@ -50,6 +69,7 @@ __all__ = [
 
     # Subscriptions
     'subscribe',
+    'ensure_subscription',
     'unsubscribe',
     'get_subscribers',
     'is_subscribed',

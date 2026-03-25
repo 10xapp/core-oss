@@ -182,6 +182,22 @@ async def _assert_invitation_not_for_personal_workspace(
         )
 
 
+def _invitation_notification_matches(
+    notification: Optional[Dict[str, Any]],
+    desired_notification: Dict[str, Any],
+) -> bool:
+    if not notification:
+        return False
+
+    return (
+        notification.get("workspace_id") == desired_notification["workspace_id"]
+        and notification.get("title") == desired_notification["title"]
+        and notification.get("body") == desired_notification["body"]
+        and notification.get("actor_id") == desired_notification["actor_id"]
+        and notification.get("data") == desired_notification["data"]
+    )
+
+
 async def _ensure_invitation_notification(
     invitation: Dict[str, Any],
     recipient_user_id: str,
@@ -190,9 +206,14 @@ async def _ensure_invitation_notification(
 ) -> None:
     """Create or refresh a notification for a workspace invitation.
 
-    Race-safe: tries to update an existing active row first, then inserts.
-    The DB unique partial index (uq_notifications_workspace_invite_active)
-    prevents duplicates, so we just ignore duplicate-key conflicts on insert.
+    Idempotent on bootstrap: unchanged active rows are left alone so a read
+    invite does not become unread again on every app load. If invite details
+    change, the active row is refreshed in place and reopened as unread.
+
+    Race-safe: checks for an existing active row first, then inserts when
+    missing. The DB unique partial index (uq_notifications_workspace_invite_active)
+    prevents duplicates, and duplicate-key insert races are reconciled against
+    the row that won.
     """
     client = await get_async_service_role_client()
 
@@ -206,25 +227,41 @@ async def _ensure_invitation_notification(
         "role": invitation.get("role", "member"),
         "status": invitation.get("status", "pending"),
     }
+    desired_notification = {
+        "workspace_id": invitation["workspace_id"],
+        "type": INVITE_NOTIFICATION_TYPE,
+        "title": title,
+        "body": body,
+        "resource_type": INVITE_NOTIFICATION_RESOURCE_TYPE,
+        "resource_id": invitation["id"],
+        "actor_id": invitation.get("invited_by_user_id"),
+        "data": data,
+    }
 
-    # Try updating existing active notification first (1 query, common path on re-invite)
-    updated = await client.table("notifications") \
-        .update({
-            "title": title,
-            "body": body,
-            "read": False,
-            "seen": False,
-            "archived": False,
-            "actor_id": invitation.get("invited_by_user_id"),
-            "data": data,
-        }) \
+    existing_result = await client.table("notifications") \
+        .select("*") \
         .eq("user_id", recipient_user_id) \
+        .eq("type", INVITE_NOTIFICATION_TYPE) \
         .eq("resource_type", INVITE_NOTIFICATION_RESOURCE_TYPE) \
         .eq("resource_id", invitation["id"]) \
         .eq("archived", False) \
+        .limit(1) \
         .execute()
+    existing_notification = (existing_result.data or [None])[0]
 
-    if updated.data:
+    if existing_notification:
+        if _invitation_notification_matches(existing_notification, desired_notification):
+            return
+
+        await client.table("notifications") \
+            .update({
+                **desired_notification,
+                "read": False,
+                "seen": False,
+                "archived": False,
+            }) \
+            .eq("id", existing_notification["id"]) \
+            .execute()
         return
 
     # No active notification exists — insert a new one.
@@ -233,19 +270,38 @@ async def _ensure_invitation_notification(
         await client.table("notifications") \
             .insert({
                 "user_id": recipient_user_id,
-                "workspace_id": invitation["workspace_id"],
-                "type": INVITE_NOTIFICATION_TYPE,
-                "title": title,
-                "body": body,
-                "resource_type": INVITE_NOTIFICATION_RESOURCE_TYPE,
-                "resource_id": invitation["id"],
-                "actor_id": invitation.get("invited_by_user_id"),
-                "data": data,
+                **desired_notification,
             }) \
             .execute()
     except Exception as err:
         if "duplicate key value" not in str(err).lower():
             raise
+
+        raced_result = await client.table("notifications") \
+            .select("*") \
+            .eq("user_id", recipient_user_id) \
+            .eq("type", INVITE_NOTIFICATION_TYPE) \
+            .eq("resource_type", INVITE_NOTIFICATION_RESOURCE_TYPE) \
+            .eq("resource_id", invitation["id"]) \
+            .eq("archived", False) \
+            .limit(1) \
+            .execute()
+        raced_notification = (raced_result.data or [None])[0]
+        if not raced_notification:
+            return
+
+        if _invitation_notification_matches(raced_notification, desired_notification):
+            return
+
+        await client.table("notifications") \
+            .update({
+                **desired_notification,
+                "read": False,
+                "seen": False,
+                "archived": False,
+            }) \
+            .eq("id", raced_notification["id"]) \
+            .execute()
 
 
 async def _expire_if_needed(invitation: Dict[str, Any]) -> Dict[str, Any]:

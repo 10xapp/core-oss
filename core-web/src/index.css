@@ -8,6 +8,12 @@ p {
   text-wrap: pretty;
 }
 
+/* Override flowtoken's inline-block (causes text alignment issues) */
+.streaming-text span {
+  display: inline !important;
+  white-space: normal !important;
+}
+
 /* Landing page smooth scroll */
 .landing-scroll-root {
   scroll-behavior: smooth;
@@ -317,6 +323,7 @@ html {
 .tiptap a {
   color: var(--color-blue-600);
   text-decoration: underline;
+  cursor: pointer;
 }
 
 .tiptap hr {
@@ -351,9 +358,15 @@ html {
 }
 
 .tiptap table th {
-  font-weight: 600;
-  background: var(--color-bg-gray);
+  font-weight: normal;
   text-align: left;
+}
+
+/* Only the first row should be shaded and bold */
+.tiptap table tr:first-child td,
+.tiptap table tr:first-child th {
+  background: var(--color-bg-gray);
+  font-weight: 600;
 }
 
 .tiptap table td > *,
@@ -435,10 +448,13 @@ html {
 
 /* Highlight */
 .tiptap mark {
-  background-color: #fef08a;
   border-radius: 2px;
   padding: 0.1em 0.15em;
   box-decoration-break: clone;
+}
+
+.tiptap mark:not([data-color]) {
+  background-color: #fef08a;
 }
 
 /* Underline */
@@ -574,3 +590,19 @@ html {
     transform: translateX(100%);
   }
 }
+
+/* Thinking dot: faster opacity + subtle scale pulse */
+@keyframes thinking-dot {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.animate-thinking-dot {
+  animation: thinking-dot 0.6s ease-in-out infinite;
+}
+
+/* Streaming text smooth rendering */
+.streaming-content {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+

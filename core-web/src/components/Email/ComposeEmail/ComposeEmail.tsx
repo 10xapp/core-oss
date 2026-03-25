@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -12,11 +12,13 @@ import {
   MinusIcon,
   ChevronUpIcon,
   PaperAirplaneIcon,
+  PaperClipIcon,
   LinkIcon,
   ListBulletIcon,
 } from "@heroicons/react/24/outline";
 import { useEmailStore } from "../../../stores/emailStore";
 import { emailKeys } from "../../../hooks/queries/keys";
+import { type EmailAttachmentUpload } from "../../../api/client";
 import ChipInput, { type ChipInputRef } from "./ChipInput";
 
 const COMPOSE_WIDTH = 520;
@@ -37,7 +39,18 @@ export default function ComposeEmail() {
 
   // Refs for Tab navigation between fields
   const ccInputRef = useRef<ChipInputRef>(null);
+  const bccInputRef = useRef<ChipInputRef>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // CC/BCC field visibility - auto-show if draft already has values
+  const [showCc, setShowCc] = useState(draft.cc.length > 0);
+  const [showBcc, setShowBcc] = useState(draft.bcc.length > 0);
+
+  // Attachment state
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const addFilesRef = useRef<(files: FileList | File[]) => void>(() => {});
 
   // Track if the editor itself triggered the update to avoid sync loops
   const isEditorUpdateRef = useRef(false);
@@ -70,11 +83,25 @@ export default function ComposeEmail() {
       attributes: {
         class: "prose prose-sm max-w-none focus:outline-none min-h-[200px] px-4 py-2 text-sm",
       },
+      handleDrop: (_view, event) => {
+        if (event.dataTransfer?.files?.length) {
+          event.preventDefault();
+          addFilesRef.current(event.dataTransfer.files);
+          return true;
+        }
+        return false;
+      },
+      handlePaste: (_view, event) => {
+        if (event.clipboardData?.files?.length) {
+          event.preventDefault();
+          addFilesRef.current(event.clipboardData.files);
+          return true;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor }) => {
-      // Mark that this update came from the editor to prevent sync loop
       isEditorUpdateRef.current = true;
-      // Use batched update to avoid double re-renders
       updateComposeBody(editor.getHTML(), editor.getText());
     },
   });
@@ -91,33 +118,8 @@ export default function ComposeEmail() {
     }
   }, [draft.bodyHtml, editor]);
 
-  const handleSend = useCallback(() => {
-    if (isSending) return;
-
-    // Validate before closing
-    if (draft.to.length === 0) {
-      toast.error("Please add at least one recipient");
-      return;
-    }
-
-    // Use toast.promise - compose closes immediately, toast handles lifecycle
-    toast.promise(
-      sendComposedEmail().then(() => {
-        // Invalidate all folder queries + counts after successful send
-        queryClient.invalidateQueries({ queryKey: emailKeys.folders() });
-        queryClient.invalidateQueries({ queryKey: [...emailKeys.all, 'counts'] });
-      }),
-      {
-        loading: "Sending...",
-        success: "Email sent",
-        error: (err) => err?.message || "Failed to send email",
-      }
-    );
-  }, [sendComposedEmail, draft.to.length, isSending, queryClient]);
-
   const handleClose = useCallback(async () => {
     await closeCompose();
-    // Invalidate DRAFT folder + counts so sidebar reflects new/updated draft
     queryClient.invalidateQueries({ queryKey: emailKeys.folders() });
     queryClient.invalidateQueries({ queryKey: [...emailKeys.all, 'counts'] });
   }, [closeCompose, queryClient]);
@@ -129,6 +131,109 @@ export default function ComposeEmail() {
       editor.chain().focus().setLink({ href: url }).run();
     }
   }, [editor]);
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const MAX_SIZE = 25 * 1024 * 1024;
+    const newFiles = Array.from(files).filter((file) => {
+      if (file.size > MAX_SIZE) {
+        toast.error(`"${file.name}" exceeds 25 MB limit`);
+        return false;
+      }
+      return true;
+    });
+    if (newFiles.length > 0) {
+      setAttachments((prev) => [...prev, ...newFiles]);
+    }
+  }, []);
+  addFilesRef.current = addFiles;
+
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const filesToBase64 = useCallback(
+    async (files: File[]): Promise<EmailAttachmentUpload[]> => {
+      return Promise.all(
+        files.map(
+          (file) =>
+            new Promise<EmailAttachmentUpload>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const dataUrl = reader.result as string;
+                const base64 = dataUrl.split(",")[1];
+                resolve({
+                  filename: file.name,
+                  content: base64,
+                  mime_type: file.type || "application/octet-stream",
+                });
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            })
+        )
+      );
+    },
+    []
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      const alreadyHandled = e.defaultPrevented;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      if (!alreadyHandled && e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files);
+      }
+    },
+    [addFiles]
+  );
+
+  const handleSend = useCallback(async () => {
+    if (isSending) return;
+
+    if (draft.to.length === 0) {
+      toast.error("Please add at least one recipient");
+      return;
+    }
+
+    let uploadAttachments: EmailAttachmentUpload[] | undefined;
+    if (attachments.length > 0) {
+      try {
+        uploadAttachments = await filesToBase64(attachments);
+      } catch {
+        toast.error("Failed to read attachment files");
+        return;
+      }
+    }
+
+    toast.promise(
+      sendComposedEmail(uploadAttachments).then(() => {
+        setAttachments([]);
+        queryClient.invalidateQueries({ queryKey: emailKeys.folders() });
+        queryClient.invalidateQueries({ queryKey: [...emailKeys.all, 'counts'] });
+      }),
+      {
+        loading: "Sending...",
+        success: "Email sent",
+        error: (err) => err?.message || "Failed to send email",
+      }
+    );
+  }, [sendComposedEmail, draft.to.length, isSending, attachments, filesToBase64, queryClient]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -152,11 +257,11 @@ export default function ComposeEmail() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, isMinimized, handleSend, toggleComposeMinimize]);
 
-  if (!isOpen) return null;
-
   return createPortal(
     <AnimatePresence>
+      {isOpen && (
       <motion.div
+        key="compose-modal"
         initial={{ opacity: 0, y: 100, scale: 0.95 }}
         animate={{
           opacity: 1,
@@ -164,7 +269,7 @@ export default function ComposeEmail() {
           scale: 1,
           height: isMinimized ? 48 : "auto",
         }}
-        exit={{ opacity: 0, y: 100, scale: 0.95 }}
+        exit={{ opacity: 0, y: 40, scale: 0.97 }}
         transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
         style={{
           position: "fixed",
@@ -218,20 +323,84 @@ export default function ComposeEmail() {
 
             {/* Recipients */}
             <div>
-              <ChipInput
-                value={draft.to}
-                onChange={(value) => updateComposeDraft("to", value)}
-                placeholder="Recipients"
-                onTabToNext={() => ccInputRef.current?.focus()}
-              />
-              <div className="mx-4 border-t border-border-gray" />
-              <ChipInput
-                ref={ccInputRef}
-                value={draft.cc}
-                onChange={(value) => updateComposeDraft("cc", value)}
-                placeholder="CC"
-                onTabToNext={() => subjectInputRef.current?.focus()}
-              />
+              <div className="flex items-start">
+                <div className="flex-1 min-w-0">
+                  <ChipInput
+                    label="To"
+                    value={draft.to}
+                    onChange={(value) => updateComposeDraft("to", value)}
+                    placeholder=""
+                    onTabToNext={() => {
+                      if (showCc) ccInputRef.current?.focus();
+                      else if (showBcc) bccInputRef.current?.focus();
+                      else subjectInputRef.current?.focus();
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-1 pr-4 pt-2 shrink-0">
+                  {!showCc && (
+                    <button
+                      onClick={() => { setShowCc(true); setTimeout(() => ccInputRef.current?.focus(), 50); }}
+                      className="text-sm text-text-secondary hover:text-text-body transition-colors"
+                    >
+                      Cc
+                    </button>
+                  )}
+                  {!showBcc && (
+                    <button
+                      onClick={() => { setShowBcc(true); setTimeout(() => bccInputRef.current?.focus(), 50); }}
+                      className="text-sm text-text-secondary hover:text-text-body transition-colors"
+                    >
+                      Bcc
+                    </button>
+                  )}
+                </div>
+              </div>
+              <AnimatePresence initial={false}>
+                {showCc && (
+                  <motion.div
+                    key="cc-field"
+                    initial={{ height: 0 }}
+                    animate={{ height: "auto" }}
+                    exit={{ height: 0 }}
+                    transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mx-4 border-t border-border-gray" />
+                    <ChipInput
+                      ref={ccInputRef}
+                      label="Cc"
+                      value={draft.cc}
+                      onChange={(value) => updateComposeDraft("cc", value)}
+                      placeholder=""
+                      onTabToNext={() => {
+                        if (showBcc) bccInputRef.current?.focus();
+                        else subjectInputRef.current?.focus();
+                      }}
+                    />
+                  </motion.div>
+                )}
+                {showBcc && (
+                  <motion.div
+                    key="bcc-field"
+                    initial={{ height: 0 }}
+                    animate={{ height: "auto" }}
+                    exit={{ height: 0 }}
+                    transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mx-4 border-t border-border-gray" />
+                    <ChipInput
+                      ref={bccInputRef}
+                      label="Bcc"
+                      value={draft.bcc}
+                      onChange={(value) => updateComposeDraft("bcc", value)}
+                      placeholder=""
+                      onTabToNext={() => subjectInputRef.current?.focus()}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <div className="mx-4 border-t border-border-gray" />
 
@@ -254,10 +423,60 @@ export default function ComposeEmail() {
             </div>
             <div className="mx-4 border-t border-border-gray" />
 
-            {/* Editor */}
-            <div className="flex-1 overflow-y-auto min-h-[200px] max-h-[300px]">
+            {/* Editor with drag-and-drop */}
+            <div
+              className={`flex-1 overflow-y-auto min-h-[200px] max-h-[300px] relative ${isDragOver ? "ring-2 ring-inset ring-brand-primary/40 bg-brand-primary/5" : ""}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <EditorContent editor={editor} />
+              {isDragOver && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="flex items-center gap-2 px-4 py-2 bg-white/90 rounded-lg shadow-sm border border-brand-primary/30">
+                    <PaperClipIcon className="w-4 h-4 text-brand-primary" />
+                    <span className="text-sm font-medium text-brand-primary">Drop files to attach</span>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Attachment list */}
+            {attachments.length > 0 && (
+              <div className="px-4 py-2 border-t border-border-gray flex flex-wrap gap-2">
+                {attachments.map((file, idx) => (
+                  <div
+                    key={`${file.name}-${idx}`}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-bg-gray-dark/50 rounded-md text-sm group"
+                  >
+                    <PaperClipIcon className="w-3.5 h-3.5 text-text-tertiary shrink-0" />
+                    <span className="text-text-body truncate max-w-[160px]">{file.name}</span>
+                    <span className="text-text-tertiary text-xs shrink-0">
+                      {file.size < 1024 ? `${file.size} B` : file.size < 1024 * 1024 ? `${(file.size / 1024).toFixed(0)} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                    </span>
+                    <button
+                      onClick={() => removeAttachment(idx)}
+                      className="p-0.5 text-text-tertiary hover:text-red-500 rounded transition-colors opacity-0 group-hover:opacity-100"
+                      title="Remove attachment"
+                    >
+                      <XMarkIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
 
             {/* Formatting toolbar */}
             <div className="flex items-center gap-1 px-3 py-1.5 bg-white">
@@ -334,17 +553,27 @@ export default function ComposeEmail() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-4 py-3  bg-brand-secondary">
-              <button
-                onClick={handleSend}
-                disabled={isSending}
-                className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-text-light rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                <PaperAirplaneIcon className="w-4 h-4" />
-                {isSending ? 'Sending...' : 'Send'}
-              </button>
+            <div className="flex items-center justify-between px-4 py-3 bg-brand-secondary">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSend}
+                  disabled={isSending}
+                  className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-text-light rounded-lg text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  <PaperAirplaneIcon className="w-4 h-4" />
+                  {isSending ? 'Sending...' : 'Send'}
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 text-text-secondary hover:text-text-body hover:bg-black/5 rounded-lg transition-colors"
+                  title="Attach files"
+                >
+                  <PaperClipIcon className="w-4.5 h-4.5" />
+                </button>
+              </div>
               <button
                 onClick={() => {
+                  setAttachments([]);
                   discardCompose();
                   queryClient.invalidateQueries({ queryKey: emailKeys.folders() });
                   queryClient.invalidateQueries({ queryKey: [...emailKeys.all, 'counts'] });
@@ -357,6 +586,7 @@ export default function ComposeEmail() {
           </>
         )}
       </motion.div>
+      )}
     </AnimatePresence>,
     document.body,
   );

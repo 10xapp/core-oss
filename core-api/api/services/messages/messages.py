@@ -78,9 +78,9 @@ async def get_messages(
         else:
             query = query.is_("thread_parent_id", "null")
 
-        # Pagination
+        # Pagination — use composite (created_at, id) cursor to avoid
+        # skipping messages that share the same timestamp as the boundary.
         if before_id:
-            # Get the created_at of the before message
             before_result = await (
                 supabase.table("channel_messages")
                 .select("created_at")
@@ -89,11 +89,17 @@ async def get_messages(
                 .execute()
             )
             if before_result.data and len(before_result.data) > 0:
-                query = query.lt("created_at", before_result.data[0]["created_at"])
+                before_ts = before_result.data[0]["created_at"]
+                # Messages strictly older, OR same timestamp but with a smaller id
+                query = query.or_(
+                    f"created_at.lt.{before_ts},"
+                    f"and(created_at.eq.{before_ts},id.lt.{before_id})"
+                )
 
         result = await (
             query
             .order("created_at", desc=True)
+            .order("id", desc=True)
             .range(offset, offset + limit - 1)
             .execute()
         )

@@ -101,7 +101,31 @@ BAD responses (NEVER DO THIS):
 RULES:
 1. State the count and a brief summary ONLY
 2. NEVER list individual items - the cards handle that
-3. Only give details if user asks about a SPECIFIC item""")
+3. Only give details if user asks about a SPECIFIC item
+
+=== INLINE REFERENCES (EMAILS & CALENDAR) ===
+Use {E1}, {E2} for emails and {C1}, {C2} for calendar events to create linked cards.
+The index matches the order items appear in the tool result (1-based).
+
+PLACEMENT: Place ALL reference tags together on their OWN LINE at the END of the relevant paragraph.
+Do NOT put them mid-sentence — let the text flow naturally, then attach the references below.
+
+GOOD example:
+"You have a few actionable emails — PayPal needs you to confirm your email, and there's a security alert from Google worth checking.
+{E1} {E3}
+
+Your schedule today has 3 events: a sync at 10am, gym at 11:30, and an Apple appointment at 2:40pm.
+{C1} {C2} {C3}"
+
+BAD example (do NOT do this):
+"PayPal {E1} needs you to confirm and Google {E3} sent an alert."
+
+Rules:
+- Place tags on their own line AFTER the paragraph that discusses them
+- Group multiple tags together: {E1} {E2} {E3} or {C1} {C2}
+- The number = the item's position in the tool results (1st email = {E1}, 2nd = {E2})
+- Do NOT use tags when talking generally ("you have 5 emails") — only for specific items
+- You can mix types if a paragraph covers both: {E1} {C2}""")
     else:
         instructions.append("""
 === RESPONSE FORMAT ===
@@ -213,7 +237,7 @@ async def build_system_prompt(
     behavior_instructions = build_behavior_instructions(preferences)
 
     # Build the base system prompt (consolidated — avoid repeating the same rules)
-    base_prompt = f"""You are a helpful AI assistant for a productivity app with access to the user's calendar, emails, documents, files, and workspace messages.
+    base_prompt = f"""You are a helpful AI assistant for a productivity app with access to the user's calendar, emails, documents, files, project boards, and workspace messages.
 
 === DATE & TIME ===
 Timezone: {dt_ctx['timezone']} (UTC{dt_ctx['utc_offset']})
@@ -229,7 +253,21 @@ Example: "3pm" → {dt_ctx['date']}T15:00:00
 Use "smart_search" for all search queries (emails, calendar, documents). It uses Gmail/Outlook native search when connected.
 - Use Gmail operators for precision: from:name, subject:keyword
 - For email threads: use get_email_thread with thread_id from search results
-- For channel messages: use search_messages
+
+Channel messages:
+- Use search_messages to find relevant messages by keyword
+- Use get_channel_history to read a batch of messages in context:
+  - Pass "around_message_id" from a search hit to read surrounding conversation
+  - Omit to get the most recent messages; pass "before" timestamp to page back
+- Always prefer reading context around a search hit over returning isolated matches
+
+Project boards:
+- Use list_project_boards to discover boards in the current workspace scope
+- Use get_project_board to read a board's states and issue summaries
+- Use get_project_issue to inspect one specific card in full detail
+- If the user message includes markers like [User referenced: Name (project_board, id: ...)] or
+  [User referenced: Name (project_issue, id: ...)], use the provided ID directly in the project tool call
+- When the user asks about a mentioned board's cards, blockers, owners, or progress, call get_project_board first instead of guessing from the board name alone
 
 Calendar operations:
 - View: smart_search(types="calendar") or get_calendar_events with today_only/start_date/end_date
@@ -237,6 +275,12 @@ Calendar operations:
 - Update/Delete: FIRST smart_search to get event_id, THEN update_calendar_event or delete_calendar_event
 
 When you need multiple tools, call them ALL at once — they execute in parallel.
+
+=== STAGED ACTIONS (CRITICAL) ===
+Some tools return status "staged" — this means the action is NOT done yet. It creates a confirmation card the user must tap to execute.
+Staged tools: create_calendar_event, update_calendar_event, delete_calendar_event, send_email, create_todo, create_document, update_memory.
+When a tool result says "staged", NEVER say the action is done/completed/added/created/sent.
+Instead say something like "Here's the event ready to add" or "Tap to confirm" — keep it natural and brief.
 {behavior_instructions}"""
 
     # Add workspace scope context
@@ -246,7 +290,7 @@ When you need multiple tools, call them ALL at once — they execute in parallel
 
 === WORKSPACE CONTEXT ===
 You are operating within the "{workspace_names[0]}" workspace. When searching or listing data
-(documents, files), scope your results to this workspace context.
+(documents, files, project boards), scope your results to this workspace context.
 When creating items (documents), associate them with this workspace."""
         else:
             names_list = ", ".join(f'"{n}"' for n in workspace_names)
@@ -254,7 +298,7 @@ When creating items (documents), associate them with this workspace."""
 
 === WORKSPACE CONTEXT ===
 You are operating across these workspaces: {names_list}. When searching or listing data
-(documents, files), scope your results to these workspaces.
+(documents, files, project boards), scope your results to these workspaces.
 When creating items (documents), associate them with the most relevant workspace."""
 
     # Add user-provided context if any

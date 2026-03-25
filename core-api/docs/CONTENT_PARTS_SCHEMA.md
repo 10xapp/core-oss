@@ -273,6 +273,7 @@ struct EmbeddedWorkout: Identifiable {
     let id: String
     let type: String
     let duration: Int
+    let calories: Int
     // ...
 
     init(from dict: [String: AnyCodableValue]) {

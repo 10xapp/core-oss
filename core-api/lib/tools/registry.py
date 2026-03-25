@@ -42,7 +42,7 @@ def tool(
         description: What the tool does (shown to LLM)
         params: Dict of param_name -> description (types auto-inferred)
         required: List of required parameter names
-        category: Tool category (CALENDAR, EMAIL, etc.)
+        category: Tool category (CALENDAR, EMAIL, TODOS, etc.)
         connection: Required OAuth connection (e.g., "google")
         staged: True if requires user confirmation
         status: Message shown during execution
@@ -57,13 +57,13 @@ def tool(
 
     Example:
         @tool(
-            name="get_events",
-            description="Get user's calendar events",
-            params={"days_ahead": "Number of days to look ahead"},
-            category=ToolCategory.CALENDAR,
-            status="Checking your calendar..."
+            name="get_todos",
+            description="Get user's todo list",
+            params={"include_completed": "Include completed todos"},
+            category=ToolCategory.TODOS,
+            status="Checking your tasks..."
         )
-        async def get_events(args: Dict, ctx: ToolContext) -> ToolResult:
+        async def get_todos(args: Dict, ctx: ToolContext) -> ToolResult:
             ...
     """
     def decorator(handler: ToolHandler):

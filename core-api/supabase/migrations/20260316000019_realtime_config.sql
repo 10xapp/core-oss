@@ -30,6 +30,20 @@ BEGIN
 END $$;
 
 -- ============================================================================
+-- todos
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'todos'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.todos;
+  END IF;
+END $$;
+
+-- ============================================================================
 -- documents
 -- ============================================================================
 
@@ -110,5 +124,75 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'agent_conversations'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.agent_conversations;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- channels (dropped during migration consolidation 9f25acc)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'channels'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.channels;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- channel_messages (dropped during migration consolidation 9f25acc)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'channel_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.channel_messages;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- channel_members (dropped during migration consolidation 9f25acc)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'channel_members'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.channel_members;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- message_reactions (dropped during migration consolidation 9f25acc)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'message_reactions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.message_reactions;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- notifications (dropped during migration consolidation 9f25acc)
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'notifications'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
   END IF;
 END $$;

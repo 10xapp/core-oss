@@ -13,6 +13,7 @@ import {
   type Email,
   type EmailAccountStatus,
   type EmailWithAttachments,
+  type EmailAttachmentUpload,
 } from '../api/client';
 
 export type EmailFolder = 'INBOX' | 'SENT' | 'DRAFT' | 'TRASH' | 'STARRED';
@@ -43,6 +44,7 @@ export interface ComposeDraft {
   id?: string;  // Gmail draft ID (or legacy message ID resolvable by backend)
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   bodyHtml: string;
   bodyText: string;
@@ -60,6 +62,7 @@ interface ComposeState {
 const createEmptyComposeDraft = (): ComposeDraft => ({
   to: [],
   cc: [],
+  bcc: [],
   subject: '',
   bodyHtml: '',
   bodyText: ''
@@ -78,6 +81,7 @@ const createEmptyComposeState = (): ComposeState => ({
 export interface InlineReplyDraft {
   to: string[];
   cc: string[];
+  bcc: string[];
   subject: string;
   bodyHtml: string;
   bodyText: string;
@@ -159,7 +163,7 @@ interface EmailState {
   toggleComposeMinimize: () => void;
   updateComposeDraft: (field: keyof ComposeDraft, value: string | string[]) => void;
   updateComposeBody: (bodyHtml: string, bodyText: string) => void;
-  sendComposedEmail: () => Promise<boolean>;
+  sendComposedEmail: (attachments?: EmailAttachmentUpload[]) => Promise<boolean>;
   discardCompose: () => void;
 
   // Inline reply/forward actions
@@ -168,7 +172,7 @@ interface EmailState {
   closeInlineReply: () => void;
   updateInlineReplyDraft: (field: keyof InlineReplyDraft, value: string | string[]) => void;
   updateInlineReplyBody: (bodyHtml: string, bodyText: string) => void;
-  sendInlineReply: () => Promise<boolean>;
+  sendInlineReply: (attachments?: EmailAttachmentUpload[]) => Promise<boolean>;
   discardInlineReply: () => void;
 
   // Search actions
@@ -334,6 +338,7 @@ export const useEmailStore = create<EmailState>()(
               id: draftIdentifier,
               to: details.to_emails || [],
               cc: details.cc_emails || [],
+              bcc: [],
               subject: details.subject || '',
               bodyHtml: details.body_html || '',
               bodyText: details.body_text || '',
@@ -361,6 +366,7 @@ export const useEmailStore = create<EmailState>()(
               await updateDraftApi(draft.id, {
                 to: draft.to.length > 0 ? draft.to : undefined,
                 cc: draft.cc.length > 0 ? draft.cc : undefined,
+                bcc: draft.bcc.length > 0 ? draft.bcc : undefined,
                 subject: draft.subject || undefined,
                 body_html: draft.bodyHtml || undefined,
                 body_text: draft.bodyText || undefined
@@ -370,6 +376,7 @@ export const useEmailStore = create<EmailState>()(
               await saveDraftApi({
                 to: draft.to.length > 0 ? draft.to : undefined,
                 cc: draft.cc.length > 0 ? draft.cc : undefined,
+                bcc: draft.bcc.length > 0 ? draft.bcc : undefined,
                 subject: draft.subject || undefined,
                 body_html: draft.bodyHtml || undefined,
                 body_text: draft.bodyText || undefined
@@ -420,7 +427,7 @@ export const useEmailStore = create<EmailState>()(
         }));
       },
 
-      sendComposedEmail: async () => {
+      sendComposedEmail: async (attachments) => {
         const { compose } = get();
         const { draft } = compose;
 
@@ -445,9 +452,11 @@ export const useEmailStore = create<EmailState>()(
             await sendEmailApi({
               to: draft.to,
               cc: draft.cc.length > 0 ? draft.cc : undefined,
+              bcc: draft.bcc.length > 0 ? draft.bcc : undefined,
               subject: draft.subject || '(No Subject)',
               body: draft.bodyText || '',
               body_html: draft.bodyHtml || undefined,
+              attachments: attachments?.length ? attachments : undefined,
             });
           }
 
@@ -547,6 +556,7 @@ export const useEmailStore = create<EmailState>()(
         const draft: InlineReplyDraft = {
           to: toRecipients,
           cc: ccRecipients,
+          bcc: [],
           subject,
           bodyHtml: '',
           bodyText: '',
@@ -645,6 +655,7 @@ export const useEmailStore = create<EmailState>()(
         const draft: InlineReplyDraft = {
           to: [], // Forward starts with empty recipients
           cc: [],
+          bcc: [],
           subject,
           bodyHtml: `<p></p>${forwardedContent}`,
           bodyText: '',
@@ -692,7 +703,7 @@ export const useEmailStore = create<EmailState>()(
         }));
       },
 
-      sendInlineReply: async () => {
+      sendInlineReply: async (attachments) => {
         const { inlineReply } = get();
         const { draft, isSending } = inlineReply;
 
@@ -731,7 +742,7 @@ export const useEmailStore = create<EmailState>()(
           is_read: true,
           is_starred: false,
           label_ids: ['SENT'],
-          has_attachments: false,
+          has_attachments: !!attachments?.length,
         };
 
         // Keep reply open while sending; close only on success to avoid data loss on failure.
@@ -748,11 +759,13 @@ export const useEmailStore = create<EmailState>()(
           await sendEmailApi({
             to: draft.to,
             cc: draft.cc.length > 0 ? draft.cc : undefined,
+            bcc: draft.bcc.length > 0 ? draft.bcc : undefined,
             subject: draft.subject,
             body: draft.bodyText || '',
             body_html: draft.bodyHtml || undefined,
             thread_id: draft.threadId,
             account_id: draft.accountId,
+            attachments: attachments?.length ? attachments : undefined,
           });
 
           set({ inlineReply: createEmptyInlineReplyState() });

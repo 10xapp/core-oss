@@ -1,7 +1,7 @@
 """Service for retrieving documents."""
 from typing import Optional, List, Literal
 from fastapi import HTTPException, status
-from lib.supabase_client import get_authenticated_async_client
+from lib.supabase_client import get_authenticated_async_client, get_async_service_role_client
 from lib.image_proxy import generate_file_url, is_image_type
 from api.config import settings
 import logging
@@ -216,4 +216,47 @@ async def get_document_by_id(user_id: str, user_jwt: str, document_id: str) -> O
         
     except Exception as e:
         logger.error(f"Error retrieving document {document_id}: {str(e)}")
+        raise
+
+
+async def assert_document_access(
+    user_id: str,
+    user_jwt: str,
+    document_id: str,
+) -> None:
+    """Raise if the user cannot read the target document row.
+
+    This is the same access contract as ``get_document_by_id`` but without the
+    ``last_opened_at`` side effect, so it is safe for authorization-only checks
+    such as notification subscription gating.
+    """
+    auth_supabase = await get_authenticated_async_client(user_jwt)
+
+    try:
+        result = await (
+            auth_supabase.table("documents")
+            .select("id")
+            .eq("id", document_id)
+            .limit(1)
+            .execute()
+        )
+
+        if result.data:
+            return
+
+        sr = await get_async_service_role_client()
+        exists = await sr.table("documents").select("id").eq("id", document_id).maybe_single().execute()
+        if exists.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this document",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking access for document {document_id}: {str(e)}")
         raise

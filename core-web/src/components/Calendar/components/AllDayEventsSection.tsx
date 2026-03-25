@@ -1,5 +1,6 @@
 import type { CalendarEvent } from "../../../api/client";
 import { getAccountPalette } from "../../../utils/accountColors";
+import { getUserResponseStatus } from "../../../stores/calendarStore";
 
 interface AllDayEventsSectionProps {
   events: CalendarEvent[];
@@ -22,6 +23,9 @@ export default function AllDayEventsSection({
       <div className="flex flex-wrap gap-1.5">
         {visibleEvents.map((event) => {
           const palette = getAccountPalette(event.account_email);
+          const rsvp = getUserResponseStatus(event);
+          const isOutlined = rsvp === 'tentative' || rsvp === 'needsAction' || rsvp === 'declined';
+          const isDeclined = rsvp === 'declined';
           return (
             <button
               key={event.id}
@@ -30,8 +34,10 @@ export default function AllDayEventsSection({
               }
               className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80 focus:outline-none focus:ring-2"
               style={{
-                backgroundColor: palette.bg,
+                backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
                 color: palette.title,
+                border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
+                textDecoration: isDeclined ? 'line-through' : undefined,
                 // @ts-expect-error CSS custom property for focus ring
                 '--tw-ring-color': `${palette.accent}66`,
               }}

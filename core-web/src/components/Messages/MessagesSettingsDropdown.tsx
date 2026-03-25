@@ -14,6 +14,7 @@ interface MessagesSettingsDropdownProps {
   trigger: React.RefObject<HTMLElement | null>;
   onRename?: () => void;
   onMembers?: () => void;
+  memberCount?: number;
   onAppSettings?: () => void;
   onLeave?: () => void;
   onDelete?: () => void;
@@ -25,6 +26,7 @@ export default function MessagesSettingsDropdown({
   trigger,
   onRename,
   onMembers,
+  memberCount,
   onAppSettings,
   onLeave,
   onDelete,
@@ -59,7 +61,10 @@ export default function MessagesSettingsDropdown({
             className={itemClass}
           >
             <HugeiconsIcon icon={UserGroup03Icon} size={16} className="text-text-secondary" />
-            <span>Members</span>
+            <span className="flex-1">Members</span>
+            {memberCount != null && memberCount > 0 && (
+              <span className="text-xs text-text-tertiary">{memberCount > 99 ? '99+' : memberCount}</span>
+            )}
           </button>
         )}
 

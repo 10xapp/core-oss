@@ -2,16 +2,16 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   XMarkIcon,
   ArrowDownIcon,
-  PlusIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
-import { streamMessage, createConversation, getMessages } from "../../api/client";
+import { motion, AnimatePresence } from "motion/react";
+import { streamMessage, createConversation } from "../../api/client";
 import { useConversationStore } from "../../stores/conversationStore";
 import { useUIStore } from "../../stores/uiStore";
-import { useSidebarChatStore, type TabId, createNewTabId, isNewTab } from "../../stores/sidebarChatStore";
+import { useSidebarChatStore } from "../../stores/sidebarChatStore";
 import { useChatAttachments } from "../../hooks/useChatAttachments";
 import { usePageContext } from "../../hooks/usePageContext";
 import type { MentionData } from "../../types/mention";
-import ChatTabBar from "./ChatTabBar";
 import ChatMessage from "./SidebarChatMessage";
 import SidebarChatInput from "./SidebarChatInput";
 
@@ -24,20 +24,17 @@ export default function SidebarChat() {
   // Persisted state from store
   const messages = useSidebarChatStore((s) => s.messages);
   const activeConversationId = useSidebarChatStore((s) => s.activeConversationId);
-  const activeTabId = useSidebarChatStore((s) => s.activeTabId);
-  const showTabBar = useSidebarChatStore((s) => s.showTabBar);
   const addMessage = useSidebarChatStore((s) => s.addMessage);
-  const setMessages = useSidebarChatStore((s) => s.setMessages);
   const setActiveConversationId = useSidebarChatStore((s) => s.setActiveConversationId);
   const setStreamingConversationId = useSidebarChatStore((s) => s.setStreamingConversationId);
-  const addTab = useSidebarChatStore((s) => s.addTab);
-  const replaceTab = useSidebarChatStore((s) => s.replaceTab);
+  const clearChat = useSidebarChatStore((s) => s.clearChat);
 
   // Local state (transient, doesn't need to persist)
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   // Mentions
   const [mentions, setMentions] = useState<MentionData[]>([]);
@@ -113,43 +110,15 @@ export default function SidebarChat() {
     return () => container.removeEventListener("scroll", checkScrollPosition);
   }, [checkScrollPosition, messages, streamingContent]);
 
-  // Auto-scroll when new content arrives
+  // Auto-scroll when new content arrives (use instant scroll during streaming to avoid jitter)
   useEffect(() => {
     if (hasStreamingContent) {
-      scrollToBottom();
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
-  }, [streamingContent, hasStreamingContent, scrollToBottom]);
-
-  // Load messages when tab changes
-  const handleTabChange = useCallback(async (tabId: TabId) => {
-    // Clear streaming state
-    setStreamingContent("");
-    setIsWaitingForResponse(false);
-    setLoading(false);
-
-    // If it's a new empty tab, messages are already cleared by the store
-    if (isNewTab(tabId) || !tabId) return;
-
-    // Load messages for the conversation
-    try {
-      const fetchedMessages = await getMessages(tabId);
-      // Map API messages to DisplayMessage format
-      const displayMessages = fetchedMessages.map((msg) => ({
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant',
-        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-      }));
-      setMessages(displayMessages);
-    } catch (err) {
-      console.error("Failed to load messages:", err);
-    }
-  }, [setMessages]);
-
-  // Handle new tab from header button (when tab bar is hidden)
-  const handleNewTab = useCallback(() => {
-    const newTabId = createNewTabId();
-    addTab(newTabId);
-  }, [addTab]);
+  }, [streamingContent, hasStreamingContent]);
 
   // Handle stop streaming
   const handleStopStreaming = useCallback(() => {
@@ -199,8 +168,6 @@ export default function SidebarChat() {
         convId = conversation.id;
         setActiveConversationId(convId);
         addConversation(conversation);
-        // Replace the temp tab with the new conversation ID
-        replaceTab(activeTabId, convId);
       }
 
       // Upload attachments if any
@@ -218,8 +185,108 @@ export default function SidebarChat() {
 
       setStreamingConversationId(convId);
 
-      // Stream response
-      let fullContent = "";
+      // Stream response — word-based reveal matching main chat timing
+      let storedContent = "";
+      let revealedContent = "";
+      let pendingSegments: string[] = [];
+      let doneReceived = false;
+      let doneMessageId: string | undefined;
+      let didFinalize = false;
+      let flushScheduled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+      const splitIntoSegments = (input: string): string[] => input.match(/\s+|[^\s]+/g) ?? [];
+
+      const clearScheduledFlush = () => {
+        flushScheduled = false;
+        if (timeoutId != null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      // Word-based reveal count (matches main chat approach)
+      const getRevealWordCount = (): number => {
+        if (doneReceived) {
+          if (pendingSegments.length > 80) return 12;
+          if (pendingSegments.length > 40) return 8;
+          if (pendingSegments.length > 20) return 4;
+          return 2;
+        }
+        if (pendingSegments.length > 60) return 4;
+        if (pendingSegments.length > 30) return 2;
+        return 1;
+      };
+
+      const drainQueuedText = (maxWords: number | null): string => {
+        if (!pendingSegments.length) return "";
+
+        let wordsRevealed = 0;
+        const limit = maxWords ?? Number.MAX_SAFE_INTEGER;
+        let drained = "";
+
+        while (pendingSegments.length > 0 && wordsRevealed < limit) {
+          const next = pendingSegments.shift()!;
+          drained += next;
+          if (next.trim()) wordsRevealed++;
+        }
+
+        return drained;
+      };
+
+      const finalizeAssistantMessage = () => {
+        if (didFinalize) return;
+        didFinalize = true;
+        clearScheduledFlush();
+        pendingSegments = [];
+
+        addMessage({
+          id: doneMessageId || `assistant-${Date.now()}`,
+          role: "assistant",
+          content: storedContent,
+        });
+        setStreamingContent("");
+        setIsWaitingForResponse(false);
+
+        const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
+        if (currentStreamingId === convId) {
+          setStreamingConversationId(null);
+        }
+      };
+
+      const runRevealFrame = () => {
+        timeoutId = null;
+        flushScheduled = false;
+
+        const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
+        if (currentStreamingId !== convId) {
+          clearScheduledFlush();
+          return;
+        }
+
+        const drained = drainQueuedText(getRevealWordCount());
+        if (drained) {
+          revealedContent += drained;
+          setStreamingContent(revealedContent);
+        }
+
+        if (pendingSegments.length > 0) {
+          scheduleSnapshotFlush();
+          return;
+        }
+
+        if (doneReceived) {
+          finalizeAssistantMessage();
+        }
+      };
+
+      // 35ms interval (~28 updates/sec) for smooth per-word animation
+      const scheduleSnapshotFlush = () => {
+        if (flushScheduled) return;
+        flushScheduled = true;
+        timeoutId = setTimeout(runRevealFrame, 35);
+      };
+
       for await (const event of streamMessage(convId, apiMessage, { attachmentIds, workspaceIds: workspaceId ? [workspaceId] : undefined })) {
         // Check if streaming was cancelled
         const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
@@ -228,21 +295,34 @@ export default function SidebarChat() {
         }
 
         if (event.type === "content" && event.delta) {
-          fullContent += event.delta;
-          setStreamingContent(fullContent);
+          storedContent += event.delta;
+          const segments = splitIntoSegments(event.delta);
+          if (segments.length > 0) {
+            pendingSegments.push(...segments);
+            scheduleSnapshotFlush();
+          }
           setIsWaitingForResponse(false);
         } else if (event.type === "done") {
-          addMessage({
-            id: event.message_id || `assistant-${Date.now()}`,
-            role: "assistant",
-            content: fullContent,
-          });
-          setStreamingContent("");
+          doneReceived = true;
+          doneMessageId = typeof event.message_id === "string" ? event.message_id : undefined;
           setIsWaitingForResponse(false);
+          if (pendingSegments.length > 0) {
+            scheduleSnapshotFlush();
+          } else {
+            finalizeAssistantMessage();
+          }
         } else if (event.type === "error") {
           console.error("Stream error:", event.error);
+          clearScheduledFlush();
+          pendingSegments = [];
+          didFinalize = true;
+          doneReceived = false;
           setStreamingContent("");
           setIsWaitingForResponse(false);
+          const latestStreamingId = useSidebarChatStore.getState().streamingConversationId;
+          if (latestStreamingId === convId) {
+            setStreamingConversationId(null);
+          }
           addMessage({
             id: `error-${Date.now()}`,
             role: "assistant",
@@ -251,9 +331,28 @@ export default function SidebarChat() {
         }
       }
 
-      const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
-      if (currentStreamingId === convId) {
-        setStreamingConversationId(null);
+      if (doneReceived && !didFinalize) {
+        const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
+        if (currentStreamingId === convId) {
+          if (pendingSegments.length > 0) {
+            scheduleSnapshotFlush();
+          } else {
+            finalizeAssistantMessage();
+          }
+        } else {
+          clearScheduledFlush();
+          pendingSegments = [];
+          setStreamingContent("");
+          setIsWaitingForResponse(false);
+        }
+      } else {
+        clearScheduledFlush();
+        pendingSegments = [];
+
+        const currentStreamingId = useSidebarChatStore.getState().streamingConversationId;
+        if (currentStreamingId === convId) {
+          setStreamingConversationId(null);
+        }
       }
     } catch (err) {
       console.error("Failed to send message:", err);
@@ -270,24 +369,25 @@ export default function SidebarChat() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white overflow-hidden">
+    <div className="h-full flex flex-col bg-white overflow-hidden min-w-[340px]">
       {/* Header */}
       <div className="shrink-0">
         <div className="h-12 flex items-center justify-between pl-4 pr-2">
           <h2 className="text-base font-semibold text-text-body">Chat</h2>
           <div className="flex items-center gap-0.5">
-            {/* Show + button when tab bar is hidden (only 1 tab) */}
             <button
-              onClick={handleNewTab}
-              className={`p-1.5 text-text-tertiary hover:text-text-body hover:bg-bg-gray rounded-lg transition-all duration-200 overflow-hidden ${
-                !showTabBar
-                  ? 'w-7 opacity-100'
-                  : 'w-0 opacity-0 p-0'
-              }`}
-              title="New chat"
-              aria-label="New chat"
+              onClick={() => {
+                if (isEmpty || isClearing) return;
+                setStreamingContent("");
+                setIsWaitingForResponse(false);
+                setLoading(false);
+                setIsClearing(true);
+              }}
+              className="p-1.5 text-text-tertiary hover:text-text-body hover:bg-bg-gray rounded-lg transition-colors"
+              title="Reset chat"
+              aria-label="Reset chat"
             >
-              <PlusIcon className="w-4 h-4 stroke-2" />
+              <ArrowPathIcon className="w-4 h-4 stroke-2" />
             </button>
             <button
               onClick={() => setSidebarChatOpen(false)}
@@ -299,47 +399,65 @@ export default function SidebarChat() {
             </button>
           </div>
         </div>
-        <ChatTabBar onTabChange={handleTabChange} />
       </div>
 
       {/* Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {/* Empty state - takes up space when no messages */}
-        {isEmpty && (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-text-tertiary">Ask anything</p>
-          </div>
-        )}
+        <AnimatePresence
+          onExitComplete={() => {
+            if (isClearing) {
+              clearChat();
+              setIsClearing(false);
+            }
+          }}
+        >
+          {/* Empty state */}
+          {isEmpty && !isClearing && (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex-1 flex items-center justify-center"
+            >
+              <p className="text-sm text-text-tertiary">Ask anything</p>
+            </motion.div>
+          )}
 
-        {/* Messages */}
-        {!isEmpty && (
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-            <div className="py-4">
-              {messages.map((message) => (
-                <div key={message.id}>
-                  <ChatMessage role={message.role} content={message.content} />
-                </div>
-              ))}
+          {/* Messages */}
+          {!isEmpty && !isClearing && (
+            <motion.div
+              key="messages"
+              exit={{ opacity: 0, y: -30, transition: { duration: 0.12, ease: [0.4, 0, 1, 1] } }}
+              ref={scrollContainerRef}
+              className="flex-1 overflow-y-auto"
+            >
+              <div className="py-4">
+                {messages.map((message) => (
+                  <div key={message.id}>
+                    <ChatMessage role={message.role} content={message.content} />
+                  </div>
+                ))}
 
-              {/* Streaming content */}
-              {hasStreamingContent && (
-                <div>
-                  {isWaitingForResponse ? (
-                    <div className="py-2 px-4">
-                      <span className="inline-block w-2.5 h-2.5 bg-text-body rounded-full animate-pulse" />
-                    </div>
-                  ) : (
-                    <ChatMessage
-                      role="assistant"
-                      content={streamingContent}
-                      isStreaming
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                {/* Streaming content */}
+                {hasStreamingContent && (
+                  <div>
+                    {isWaitingForResponse ? (
+                      <div className="py-2 px-4">
+                        <span className="inline-block w-2.5 h-2.5 bg-text-body rounded-full animate-pulse" />
+                      </div>
+                    ) : (
+                      <ChatMessage
+                        role="assistant"
+                        content={streamingContent}
+                        isStreaming
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Scroll to bottom button */}
         {showScrollButton && !isEmpty && (
@@ -353,7 +471,7 @@ export default function SidebarChat() {
         )}
 
         {/* Input */}
-        <div className="px-3 pb-4 pt-2">
+        <div className="px-3 pb-6 pt-2">
           <SidebarChatInput
             value={input}
             onChange={setInput}

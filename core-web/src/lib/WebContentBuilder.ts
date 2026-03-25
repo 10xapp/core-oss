@@ -12,6 +12,54 @@ function nextPartId(): string {
   return `part-${++partCounter}-${Date.now()}`;
 }
 
+/**
+ * Parse text with [N] source citations, {EN} email references, and {CN} calendar
+ * references into content parts. Mirrors backend parse_text_to_parts() logic.
+ */
+const ALL_REF_PATTERN = /(\[(\d+)\]|\{E(\d+)\}|\{C(\d+)\})/g;
+
+function parseTextToParts(text: string): ContentPart[] {
+  if (!text) return [];
+
+  const parts: ContentPart[] = [];
+  let lastEnd = 0;
+
+  for (const match of text.matchAll(ALL_REF_PATTERN)) {
+    // Text before the reference
+    if (match.index! > lastEnd) {
+      const before = text.slice(lastEnd, match.index!);
+      if (before) {
+        parts.push({ id: nextPartId(), type: 'text', data: { content: before } });
+      }
+    }
+
+    if (match[2] !== undefined) {
+      // Source citation: [N]
+      parts.push({ id: nextPartId(), type: 'source_ref', data: { source_index: parseInt(match[2]) } });
+    } else if (match[3] !== undefined) {
+      // Email reference: {EN}
+      parts.push({ id: nextPartId(), type: 'email_ref', data: { email_index: parseInt(match[3]) } });
+    } else if (match[4] !== undefined) {
+      // Calendar reference: {CN}
+      parts.push({ id: nextPartId(), type: 'cal_ref', data: { cal_index: parseInt(match[4]) } });
+    }
+
+    lastEnd = match.index! + match[0].length;
+  }
+
+  // Remaining text
+  if (lastEnd < text.length) {
+    parts.push({ id: nextPartId(), type: 'text', data: { content: text.slice(lastEnd) } });
+  }
+
+  // No refs found — return single text part
+  if (parts.length === 0 && text) {
+    parts.push({ id: nextPartId(), type: 'text', data: { content: text } });
+  }
+
+  return parts;
+}
+
 export class WebContentBuilder {
   private parts: ContentPart[] = [];
   private textBuffer = '';
@@ -21,14 +69,10 @@ export class WebContentBuilder {
     this.textBuffer += delta;
   }
 
-  /** Flush any buffered text into a text ContentPart. */
+  /** Flush any buffered text into content parts (parses [N] and {EN} references). */
   flushText(): void {
     if (this.textBuffer) {
-      this.parts.push({
-        id: nextPartId(),
-        type: 'text',
-        data: { content: this.textBuffer },
-      });
+      this.parts.push(...parseTextToParts(this.textBuffer));
       this.textBuffer = '';
     }
   }
@@ -96,23 +140,47 @@ export class WebContentBuilder {
     }
   }
 
+  /** Add a nutrition display part from a 'nutrition' stream event. */
+  addNutrition(event: StreamEvent): void {
+    this.flushText();
+    this.parts.push({
+      id: event.id || nextPartId(),
+      type: 'display',
+      data: {
+        display_type: 'nutrition',
+        items: event.nutrition_items || [{
+          food_name: event.food_name,
+          calories: event.calories,
+          protein_g: event.protein_g,
+          carbs_g: event.carbs_g,
+          fat_g: event.fat_g,
+          fiber_g: event.fiber_g,
+          serving_size: event.serving_size,
+        }],
+        total_count: event.nutrition_items?.length || 1,
+      },
+    });
+  }
 
   /**
    * Get a snapshot of current parts + any buffered text (for live rendering).
    * Does NOT consume the buffer — safe to call repeatedly during streaming.
+   * Parses [N] and {EN} references in the buffer for inline rendering.
    */
   getSnapshot(): ContentPart[] {
     if (!this.textBuffer) {
       return [...this.parts];
     }
-    return [
-      ...this.parts,
-      {
-        id: 'streaming-text',
-        type: 'text',
-        data: { content: this.textBuffer },
-      },
-    ];
+    // Parse references in the streaming buffer so they render inline during streaming
+    const bufferParts = parseTextToParts(this.textBuffer);
+    // Mark the last text part with the streaming ID for animation continuity
+    for (let i = bufferParts.length - 1; i >= 0; i--) {
+      if (bufferParts[i].type === 'text') {
+        bufferParts[i].id = 'streaming-text';
+        break;
+      }
+    }
+    return [...this.parts, ...bufferParts];
   }
 
   /** Flush remaining text and return the final parts array. */

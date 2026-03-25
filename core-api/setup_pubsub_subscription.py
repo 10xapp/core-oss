@@ -21,17 +21,8 @@ def setup_pubsub_push_subscription():
     Create a Pub/Sub push subscription for Gmail webhooks
     """
     # Get configuration from environment
-    pubsub_topic = os.getenv('GOOGLE_PUBSUB_TOPIC', '')
-    webhook_url = os.getenv('WEBHOOK_BASE_URL', '')
-
-    if not pubsub_topic:
-        print("❌ GOOGLE_PUBSUB_TOPIC environment variable is required")
-        print("   Format: projects/YOUR_PROJECT_ID/topics/YOUR_TOPIC_NAME")
-        sys.exit(1)
-    if not webhook_url:
-        print("❌ WEBHOOK_BASE_URL environment variable is required")
-        print("   Example: https://your-api.vercel.app")
-        sys.exit(1)
+    pubsub_topic = os.getenv('GOOGLE_PUBSUB_TOPIC', 'projects/YOUR_PROJECT_ID/topics/gmail-sync-topic')
+    webhook_url = os.getenv('WEBHOOK_BASE_URL', 'http://localhost:8000')
     
     # Extract project ID and topic name from full topic path
     # Format: projects/PROJECT_ID/topics/TOPIC_NAME

@@ -18,7 +18,7 @@ export default function ChatPanel() {
           animate={{ width: 340, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-          className="h-full shrink-0 flex flex-col overflow-hidden rounded-lg bg-white"
+          className="h-full shrink-0 flex flex-col overflow-hidden rounded-lg bg-white border border-border-light shadow-[0_0_1px_rgba(0,0,0,0.25)]"
         >
           <Suspense
             fallback={

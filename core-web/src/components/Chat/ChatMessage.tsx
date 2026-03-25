@@ -1,10 +1,9 @@
 import { useState, memo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { DocumentDuplicateIcon, CheckIcon, HandThumbUpIcon, HandThumbDownIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import type { ContentPart } from '../../api/client';
-import ContentPartsRenderer, { markdownComponents, CodeBlock } from './ContentPartsRenderer';
+import ContentPartsRenderer, { CodeBlock } from './ContentPartsRenderer';
 import ChatAttachmentImage from './ChatAttachmentImage';
+import StreamingText from './StreamingText';
 
 // Re-export CodeBlock so it's still available if anyone imported it from here
 export { CodeBlock };
@@ -93,13 +92,9 @@ function AssistantMessage({ content, contentParts, messageId, isStreaming, onReg
           {/* Content */}
           <div className="max-w-[85%]">
             {hasContentParts ? (
-              <ContentPartsRenderer parts={contentParts} messageId={messageId} />
+              <ContentPartsRenderer parts={contentParts} messageId={messageId} isStreaming={isStreaming} />
             ) : (
-              <div className="prose prose-gray max-w-none text-text-body text-[16px]">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {content}
-                </ReactMarkdown>
-              </div>
+              <StreamingText content={content} isStreaming={isStreaming ?? false} />
             )}
 
             {/* Message actions */}

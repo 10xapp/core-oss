@@ -1,6 +1,6 @@
 # Supabase Configuration for Core Project
-# Project ID: <your-project-id>
-# Region: <your-region>
+# Project ID: your-project-ref
+# Region: your-region
 
 [api]
 enabled = true

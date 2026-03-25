@@ -1,7 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
+import { Turnstile } from "react-turnstile";
 import { useAuthStore } from "../../stores/authStore";
+import { API_BASE } from "../../lib/apiBase";
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 
 /* ──────────────────── Styles ──────────────────── */
 
@@ -48,6 +52,15 @@ function MicrosoftIcon() {
 
 function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { signInWithGoogle, signInWithMicrosoft } = useAuthStore();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const hasTurnstile = !!TURNSTILE_SITE_KEY;
+
+  // Reset token when modal closes
+  useEffect(() => {
+    if (!isOpen) setTurnstileToken(null);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -58,6 +71,33 @@ function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
       return () => document.removeEventListener("keydown", handleEscape);
     }
   }, [isOpen, onClose]);
+
+  const handleSignIn = useCallback(async (provider: "google" | "microsoft") => {
+    if (hasTurnstile) {
+      if (!turnstileToken) return;
+      setVerifying(true);
+      try {
+        const res = await fetch(`${API_BASE.replace("/api", "")}/api/auth/verify-turnstile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: turnstileToken }),
+        });
+        if (!res.ok) {
+          setTurnstileToken(null);
+          return;
+        }
+      } catch {
+        setTurnstileToken(null);
+        return;
+      } finally {
+        setVerifying(false);
+      }
+    }
+    if (provider === "google") signInWithGoogle();
+    else signInWithMicrosoft();
+  }, [hasTurnstile, turnstileToken, signInWithGoogle, signInWithMicrosoft]);
+
+  const buttonsDisabled = hasTurnstile && (!turnstileToken || verifying);
 
   return createPortal(
     <AnimatePresence>
@@ -89,20 +129,33 @@ function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
             <p className="text-text-tertiary text-sm mb-6">Choose your account to continue</p>
             <div className="space-y-3">
               <button
-                onClick={signInWithGoogle}
-                className="w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-text-body text-white rounded-xl text-base font-medium hover:bg-black/80 transition-all"
+                onClick={() => handleSignIn("google")}
+                disabled={buttonsDisabled}
+                className="w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-text-body text-white rounded-xl text-base font-medium hover:bg-black/80 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <GoogleIcon />
                 Continue with Google
               </button>
               <button
-                onClick={signInWithMicrosoft}
-                className="w-full inline-flex items-center justify-center gap-3 px-4 py-3 border border-black/20 text-text-body rounded-xl text-base font-medium hover:bg-black/5 transition-all"
+                onClick={() => handleSignIn("microsoft")}
+                disabled={buttonsDisabled}
+                className="w-full inline-flex items-center justify-center gap-3 px-4 py-3 border border-black/20 text-text-body rounded-xl text-base font-medium hover:bg-black/5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <MicrosoftIcon />
                 Continue with Microsoft
               </button>
             </div>
+            {hasTurnstile && (
+              <div className="mt-4 flex justify-center">
+                <Turnstile
+                  sitekey={TURNSTILE_SITE_KEY}
+                  onVerify={(token: string) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken(null)}
+                  theme="light"
+                  size="flexible"
+                />
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}

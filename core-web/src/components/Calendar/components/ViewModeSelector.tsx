@@ -6,24 +6,24 @@ interface ViewModeSelectorProps {
 }
 
 const modes: { value: ViewMode; label: string }[] = [
-  { value: 'day', label: 'Day' },
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
-  { value: 'year', label: 'Year' }
+  { value: 'day', label: 'D' },
+  { value: 'week', label: 'W' },
+  { value: 'month', label: 'M' },
+  { value: 'year', label: 'Y' }
 ];
 
 export default function ViewModeSelector({ value, onChange }: ViewModeSelectorProps) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-0.5">
       {modes.map((mode) => (
         <button
           key={mode.value}
           onClick={() => onChange(mode.value)}
           className={`
-            text-sm transition-colors
+            w-7 h-7 flex items-center justify-center rounded-md text-xs font-medium transition-colors
             ${value === mode.value
-              ? 'text-gray-900 font-medium'
-              : 'text-gray-400 hover:text-gray-600'
+              ? 'bg-black/10 text-text-body'
+              : 'text-text-tertiary hover:bg-black/5 hover:text-text-body'
             }
           `}
         >

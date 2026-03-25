@@ -47,7 +47,7 @@ const APP_DISPLAY_INFO: Record<string, { name: string; icon: string; emoji: stri
   team: { name: 'Team', icon: 'ChatDots', emoji: '💬' },
   messages: { name: 'Messages', icon: 'ChatCircle', emoji: '💬' },
   files: { name: 'Files', icon: 'FolderOpen', emoji: '📁' },
-  dashboard: { name: 'Dashboard', icon: 'SquaresFour', emoji: '📊' },
+  dashboard: { name: 'Personal', icon: 'SquaresFour', emoji: '📊' },
   projects: { name: 'Projects', icon: 'Briefcase', emoji: '📋' },
   email: { name: 'Email', icon: 'Mail', emoji: '📧' },
   calendar: { name: 'Calendar', icon: 'Calendar', emoji: '📅' },
@@ -169,7 +169,7 @@ interface WorkspaceState {
   fetchWorkspaces: () => Promise<void>;
   fetchInitData: () => Promise<void>;
   initializeFromCache: () => void;
-  addWorkspace: (name: string, emoji?: string) => Promise<Workspace>;
+  addWorkspace: (name: string, emoji?: string) => Promise<Workspace & { welcomeNoteId?: string }>;
   removeWorkspace: (id: string) => Promise<void>;
   updateWorkspace: (id: string, updates: { name?: string; emoji?: string; icon_r2_key?: string; clear_icon?: boolean }) => Promise<void>;
   renameWorkspace: (id: string, name: string) => Promise<void>; // Deprecated: use updateWorkspace
@@ -433,7 +433,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       addWorkspace: async (name, emoji) => {
         try {
-          const newWorkspace = await apiCreateWorkspace(name, true);
+          const { workspace: newWorkspace, welcome_note_id } = await apiCreateWorkspace(name, true);
           const apps = await getWorkspaceApps(newWorkspace.id);
           const workspace = toWorkspace(newWorkspace, apps.map(toMiniApp));
 
@@ -446,7 +446,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             workspaces: [...state.workspaces, workspace],
           }));
 
-          return workspace;
+          return { ...workspace, welcomeNoteId: welcome_note_id ?? undefined };
         } catch (err) {
           console.error('Failed to create workspace:', err);
           throw err;

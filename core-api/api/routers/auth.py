@@ -11,10 +11,50 @@ from api.exceptions import handle_api_exception
 from api.schemas import MessageResponse
 from api.config import settings
 from api.rate_limit import limiter, _get_client_ip
+import httpx
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# ============== Turnstile Verification ==============
+
+class TurnstileVerifyRequest(BaseModel):
+    """Request to verify a Cloudflare Turnstile token"""
+    token: str
+
+class TurnstileVerifyResponse(BaseModel):
+    """Response from Turnstile verification"""
+    success: bool
+
+
+@router.post("/verify-turnstile", response_model=TurnstileVerifyResponse)
+@limiter.limit("10/minute", key_func=_get_client_ip)
+async def verify_turnstile(request: Request, response: Response, body: TurnstileVerifyRequest) -> TurnstileVerifyResponse:
+    """Verify a Cloudflare Turnstile token before allowing OAuth sign-in."""
+    if not settings.turnstile_secret_key:
+        # If not configured, allow through (dev environments without Turnstile)
+        return TurnstileVerifyResponse(success=True)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            result = await client.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data={
+                    "secret": settings.turnstile_secret_key,
+                    "response": body.token,
+                    "remoteip": _get_client_ip(request),
+                },
+            )
+            data = result.json()
+            if not data.get("success"):
+                logger.warning("Turnstile verification failed: %s", data.get("error-codes"))
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bot verification failed")
+            return TurnstileVerifyResponse(success=True)
+    except httpx.HTTPError as e:
+        logger.error("Turnstile API error: %s", e)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Verification service unavailable")
+
 
 # ============== OAuth Config Endpoint ==============
 
@@ -64,7 +104,7 @@ class MicrosoftCodeExchangeResponse(BaseModel):
 
 
 @router.post("/microsoft/exchange-code", response_model=MicrosoftCodeExchangeResponse)
-@limiter.limit("5/minute", key_func=_get_client_ip)
+@limiter.limit("5/minute;50/day", key_func=_get_client_ip)
 async def exchange_microsoft_code(request: Request, response: Response, body: MicrosoftCodeExchangeRequest):
     """
     Exchange Microsoft authorization code for tokens.
@@ -349,7 +389,7 @@ class CompleteOAuthRequest(BaseModel):
 
 
 @router.post("/complete-oauth", response_model=CompleteOAuthResponse)
-@limiter.limit("5/minute")
+@limiter.limit("5/minute;50/day")
 async def complete_oauth_flow(
     request: Request,
     response: Response,

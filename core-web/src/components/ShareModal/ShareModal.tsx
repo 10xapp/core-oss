@@ -161,23 +161,25 @@ export default function ShareModal() {
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <UserSearchInput
-            value={email}
-            onValueChange={(nextValue) => {
-              setEmail(nextValue);
-              setSelectedUser(null);
-            }}
-            onSelect={(user) => {
-              setEmail(user.email);
-              setSelectedUser(user);
-            }}
-          />
           <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <UserSearchInput
+                value={email}
+                onValueChange={(nextValue) => {
+                  setEmail(nextValue);
+                  setSelectedUser(null);
+                }}
+                onSelect={(user) => {
+                  setEmail(user.email);
+                  setSelectedUser(user);
+                }}
+              />
+            </div>
             <PermissionSelect value={permission} onChange={setPermission} />
             <button
               onClick={handleShare}
               disabled={!email.trim() || isSubmitting}
-              className="px-4 py-2 text-sm bg-black text-white rounded-md disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-black text-white rounded-md disabled:opacity-50 shrink-0"
             >
               {isSubmitting ? 'Sharing...' : 'Share'}
             </button>

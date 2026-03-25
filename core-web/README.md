@@ -1,94 +1,75 @@
 # core-web
 
-React + TypeScript frontend for Core — the all-in-one productivity platform.
+React + TypeScript web app for Core — the all-in-one productivity platform.
 
-## Quick Start
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-```bash
-# Install dependencies
-npm install
+Currently, two official plugins are available:
 
-# Copy environment config
-cp .env.example .env
-# Edit .env with your Supabase credentials
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-# Start dev server
-npm run dev
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-App runs at `http://localhost:5173`
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-## Tech Stack
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-- **React 19** with TypeScript
-- **Vite 7** for builds and HMR
-- **Tailwind 4** for styling
-- **Zustand** for state management (8 stores with persistence)
-- **React Router 7** for routing
-- **TipTap** (ProseMirror) for rich text editing
-- **@dnd-kit** for drag and drop
-- **motion** for animations
-- **Supabase JS** for auth and realtime subscriptions
-
-## Project Structure
-
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
-src/
-├── api/
-│   └── client.ts          # Central API client with auth
-├── components/
-│   ├── Calendar/           # Calendar views and event management
-│   ├── Chat/               # AI chat interface
-│   ├── Dashboard/          # Unified dashboard
-│   ├── Documents/          # Rich text editor
-│   ├── Email/              # Email client UI
-│   ├── Files/              # File browser and upload
-│   ├── Messages/           # Team messaging (channels, threads)
-│   ├── Projects/           # Kanban boards
-│   ├── Sidebar/            # App navigation
-│   └── ...                 # 34 component modules total
-├── hooks/                  # Custom React hooks
-├── lib/
-│   ├── supabase.ts         # Supabase client
-│   ├── sentry.ts           # Error tracking (optional)
-│   └── posthog.ts          # Analytics (optional)
-├── stores/                 # Zustand state stores
-│   ├── authStore.ts        # Auth state and JWT
-│   ├── emailStore.ts       # Email state and sync
-│   ├── calendarStore.ts    # Calendar events
-│   ├── conversationStore.ts # AI chat conversations
-│   ├── messagesStore.ts    # Team messaging
-│   ├── filesStore.ts       # File management
-│   └── workspaceStore.ts   # Workspace and member state
-├── types/                  # TypeScript type definitions
-├── utils/                  # Shared utilities
-├── App.tsx                 # Root component with routing
-└── main.tsx                # Entry point
-```
-
-## Key Patterns
-
-- **Stale-while-revalidate**: All stores serve cached data instantly, then refresh in the background
-- **Optimistic updates**: Email and messages update the UI before the API confirms
-- **Per-workspace caching**: Each workspace has its own cache for instant switching
-- **Central API client**: `src/api/client.ts` handles auth headers, base URL, and error handling
-- **Single realtime channel**: One Supabase channel (`global-realtime`) handles all realtime updates
-
-## Environment Variables
-
-See [`.env.example`](./.env.example) for all available variables. Only `VITE_API_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY` are required.
-
-## Scripts
-
-```bash
-npm run dev       # Start dev server
-npm run build     # Type check + production build
-npm run lint      # ESLint
-npm run preview   # Preview production build
-```
-
-## Design System
-
-- Custom Tailwind theme with Chivo Mono font
-- Design tokens defined in `src/index.css`
-- See [designguide.mdx](./designguide.mdx) and [designtokens.mdx](./designtokens.mdx) for the full system

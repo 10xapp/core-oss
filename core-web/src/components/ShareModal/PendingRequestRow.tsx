@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AccessRequest, PermissionLevel } from '../../api/client';
 import PermissionSelect from './PermissionSelect';
+import { avatarGradient } from '../../utils/avatarGradient';
 
 interface PendingRequestRowProps {
   request: AccessRequest;
@@ -68,7 +69,7 @@ export default function PendingRequestRow({ request, onApprove, onDeny }: Pendin
             className="w-9 h-9 rounded-full object-cover"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-bg-gray flex items-center justify-center text-xs font-semibold text-text-body">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold text-white" style={{ background: avatarGradient(name) }}>
             {initials}
           </div>
         )}

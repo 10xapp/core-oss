@@ -20,6 +20,7 @@ from api.services.calendar import (
     create_event,
     update_event,
     delete_event,
+    respond_to_event,
 )
 from api.services.syncs.sync_google_calendar import sync_google_calendar
 from api.dependencies import get_current_user_jwt, get_current_user_id
@@ -167,6 +168,21 @@ class CalendarSyncResponse(BaseModel):
     total_events: Optional[int] = None
     total_fetched: Optional[int] = None
     jobs_enqueued: Optional[int] = None
+
+    class Config:
+        extra = "allow"
+
+
+class RSVPRequest(BaseModel):
+    """Request model for responding to a calendar invite."""
+    response_status: Literal['accepted', 'declined', 'tentative']
+
+
+class RSVPResponse(BaseModel):
+    """Response model for RSVP operation."""
+    id: str
+    response_status: str
+    synced_to_google: bool = False
 
     class Config:
         extra = "allow"
@@ -359,6 +375,34 @@ async def delete_event_endpoint(
         return result
     except Exception as e:
         handle_api_exception(e, "Failed to delete event", logger)
+
+
+@router.post("/events/{event_id}/rsvp", response_model=RSVPResponse)
+async def respond_to_event_endpoint(
+    event_id: str,
+    rsvp_data: RSVPRequest,
+    user_jwt: str = Depends(get_current_user_jwt),
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Respond to a calendar event invitation (accept/decline/tentative).
+
+    Updates the user's response status in Google Calendar.
+
+    Requires: Authorization header with user's Supabase JWT
+    """
+    try:
+        logger.info(f"📅 RSVP '{rsvp_data.response_status}' for event {event_id} by user {user_id}")
+        result = respond_to_event(event_id, rsvp_data.response_status, user_id, user_jwt)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found or you are not an attendee"
+            )
+        logger.info(f"✅ RSVP updated (Google sync: {result.get('synced_to_google', False)})")
+        return result
+    except Exception as e:
+        handle_api_exception(e, "Failed to respond to event", logger)
 
 
 @router.post("/sync", response_model=CalendarSyncResponse, status_code=200)

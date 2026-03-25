@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     
-    # CORS settings (add production domains via ALLOWED_ORIGINS_ENV)
+    # CORS settings
     allowed_origins: List[str] = [
         "http://localhost:3000",
         "http://localhost:3001",
@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_domain: str = ""
     resend_from_email: str = ""
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:3000"
 
     @property
     def resend_from_address(self) -> str:
@@ -194,6 +194,9 @@ class Settings(BaseSettings):
     # Upstash Redis (rate limiting)
     upstash_redis_url: Optional[str] = None
     upstash_redis_token: Optional[str] = None
+
+    # Cloudflare Turnstile (bot protection)
+    turnstile_secret_key: str = ""
 
     # Sentry
     sentry_dsn: str = ""

@@ -17,6 +17,10 @@ from typing import Dict, Any, Optional
 
 from lib.supabase_client import get_service_role_client
 from lib.batch_utils import batch_upsert, get_existing_external_ids
+from api.services.notifications.calendar_invites import (
+    get_calendar_event_rows_by_external_ids,
+    reconcile_calendar_invite_notifications,
+)
 from api.services.microsoft.microsoft_oauth_provider import MicrosoftOAuthProvider
 
 logger = logging.getLogger(__name__)
@@ -277,6 +281,7 @@ def sync_outlook_calendar_incremental(
     try:
         supabase = get_service_role_client()
         access_token = _get_valid_access_token(connection_data)
+        account_email = connection_data.get('provider_email')
         headers = {"Authorization": f"Bearer {access_token}"}
 
         # Get calendar delta link from metadata
@@ -351,6 +356,13 @@ def sync_outlook_calendar_incremental(
             else:
                 active_events.append(event)
 
+        previous_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+            client=supabase,
+            user_id=user_id,
+            external_ids=deleted_ids,
+            connection_id=connection_id,
+        ) if deleted_ids else {}
+
         # Delete removed events
         deleted_count = 0
         delete_had_errors = False
@@ -374,6 +386,8 @@ def sync_outlook_calendar_incremental(
                 event_data = _parse_outlook_event(event)
                 if not event_data.get('external_id'):
                     continue
+                organizer = event.get('organizer') or {}
+                organizer_email = organizer.get('emailAddress', {}).get('address') if isinstance(organizer, dict) else None
 
                 db_record = {
                     'user_id': user_id,
@@ -386,6 +400,14 @@ def sync_outlook_calendar_incremental(
                     'end_time': event_data['end_time'],
                     'is_all_day': event_data['is_all_day'],
                     'status': event_data['status'],
+                    'attendees': event_data.get('attendees', []),
+                    'organizer_email': organizer_email,
+                    'is_organizer': (
+                        isinstance(account_email, str)
+                        and isinstance(organizer_email, str)
+                        and account_email.strip().lower()
+                        == organizer_email.strip().lower()
+                    ),
                     'synced_at': datetime.now(timezone.utc).isoformat(),
                     'raw_item': event_data['raw_item']
                 }
@@ -414,6 +436,21 @@ def sync_outlook_calendar_incremental(
             if result['errors']:
                 logger.warning(f"⚠️ [Outlook Calendar] Some batch errors: {result['errors'][:3]}")
                 batch_had_errors = True
+
+        if not batch_had_errors:
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=supabase,
+                user_id=user_id,
+                external_ids=all_external_ids,
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=supabase,
+                user_id=user_id,
+                account_email=account_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
 
         # Store new deltaLink in metadata (only if no errors)
         if new_delta_link and not (batch_had_errors or delete_had_errors):
@@ -467,6 +504,7 @@ def sync_outlook_calendar(
     try:
         supabase = get_service_role_client()
         access_token = _get_valid_access_token(connection_data)
+        account_email = connection_data.get('provider_email')
         headers = {"Authorization": f"Bearer {access_token}"}
 
         # Calculate date range
@@ -511,12 +549,15 @@ def sync_outlook_calendar(
         # Parse all events for batch upsert
         all_events_data = []
         all_external_ids = []
+        previous_rows_by_external_id: Dict[str, Dict[str, Any]] = {}
 
         for event in all_events:
             try:
                 event_data = _parse_outlook_event(event)
                 if not event_data.get('external_id'):
                     continue
+                organizer = event.get('organizer') or {}
+                organizer_email = organizer.get('emailAddress', {}).get('address') if isinstance(organizer, dict) else None
 
                 db_record = {
                     'user_id': user_id,
@@ -529,6 +570,14 @@ def sync_outlook_calendar(
                     'end_time': event_data['end_time'],
                     'is_all_day': event_data['is_all_day'],
                     'status': event_data['status'],
+                    'attendees': event_data.get('attendees', []),
+                    'organizer_email': organizer_email,
+                    'is_organizer': (
+                        isinstance(account_email, str)
+                        and isinstance(organizer_email, str)
+                        and account_email.strip().lower()
+                        == organizer_email.strip().lower()
+                    ),
                     'synced_at': datetime.now(timezone.utc).isoformat(),
                     'raw_item': event_data['raw_item']
                 }
@@ -544,6 +593,44 @@ def sync_outlook_calendar(
         synced_count = len([eid for eid in all_external_ids if eid not in existing_ids])
         updated_count = len(all_external_ids) - synced_count
 
+        deleted_count = 0
+        stale_rows = []
+        if all_external_ids:
+            stale_rows = supabase.table('calendar_events').select('*')\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', start_date)\
+                .lte('start_time', end_date)\
+                .not_.in_('external_id', all_external_ids)\
+                .execute().data or []
+            delete_result = supabase.table('calendar_events').delete()\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', start_date)\
+                .lte('start_time', end_date)\
+                .not_.in_('external_id', all_external_ids)\
+                .execute()
+            deleted_count = len(delete_result.data) if delete_result.data else 0
+        else:
+            stale_rows = supabase.table('calendar_events').select('*')\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', start_date)\
+                .lte('start_time', end_date)\
+                .execute().data or []
+            delete_result = supabase.table('calendar_events').delete()\
+                .eq('user_id', user_id)\
+                .eq('ext_connection_id', connection_id)\
+                .gte('start_time', start_date)\
+                .lte('start_time', end_date)\
+                .execute()
+            deleted_count = len(delete_result.data) if delete_result.data else 0
+
+        for stale_row in stale_rows:
+            external_id = stale_row.get('external_id')
+            if external_id:
+                previous_rows_by_external_id[external_id] = stale_row
+
         # Batch upsert all events
         batch_had_errors = False
         if all_events_data:
@@ -558,6 +645,21 @@ def sync_outlook_calendar(
                 logger.warning(f"⚠️ [Outlook Calendar] Some batch errors: {result['errors'][:3]}")
                 batch_had_errors = True
 
+        if not batch_had_errors:
+            current_rows_by_external_id = get_calendar_event_rows_by_external_ids(
+                client=supabase,
+                user_id=user_id,
+                external_ids=all_external_ids,
+                connection_id=connection_id,
+            )
+            reconcile_calendar_invite_notifications(
+                client=supabase,
+                user_id=user_id,
+                account_email=account_email,
+                previous_rows_by_external_id=previous_rows_by_external_id,
+                current_rows_by_external_id=current_rows_by_external_id,
+            )
+
         # Update last synced only if no errors
         if not batch_had_errors:
             supabase.table('ext_connections').update({
@@ -566,12 +668,13 @@ def sync_outlook_calendar(
         else:
             logger.warning("⚠️ [Outlook Calendar] Skipping last_synced update due to batch errors")
 
-        logger.info(f"✅ [Outlook Calendar] Full sync completed: {synced_count} added, {updated_count} updated")
+        logger.info(f"✅ [Outlook Calendar] Full sync completed: {synced_count} added, {updated_count} updated, {deleted_count} deleted")
 
         return {
             "success": True,
             "new_events": synced_count,
             "updated_events": updated_count,
+            "deleted_events": deleted_count,
             "total_events": len(all_events)
         }
 

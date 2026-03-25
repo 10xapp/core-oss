@@ -15,6 +15,8 @@ Content Part Schema:
 Content Part Types:
 - text: {"content": "markdown text"}
 - source_ref: {"source_index": 1}  # 1-based index
+- email_ref: {"email_index": 1}  # 1-based index into email display items
+- cal_ref: {"cal_index": 1}  # 1-based index into calendar display items
 - tool_result: {"display_type": "calendar_events", "items": [...], "total_count": 5}
 - action: {"action": "create_calendar_event", "status": "staged", "data": {...}, "description": "..."}
 - reasoning: {"content": "synthesis text"}  # Post-tool analysis
@@ -30,20 +32,37 @@ from typing import List, Dict, Any, Optional
 # Pattern to match citation markers like [1], [2], etc.
 CITATION_PATTERN = re.compile(r'\[(\d+)\]')
 
+# Pattern to match email reference markers like {E1}, {E2}, etc.
+EMAIL_REF_PATTERN = re.compile(r'\{E(\d+)\}')
+
+# Pattern to match calendar reference markers like {C1}, {C2}, etc.
+CAL_REF_PATTERN = re.compile(r'\{C(\d+)\}')
+
+# Combined pattern for all inline references (citations, email refs, calendar refs)
+ALL_REF_PATTERN = re.compile(r'(\[(\d+)\]|\{E(\d+)\}|\{C(\d+)\})')
+
 # Pattern to move citations before punctuation to after punctuation
 # Matches: [1]. or [1], or [1]! or [1]? or [1][2]. etc.
 CITATION_BEFORE_PUNCT_PATTERN = re.compile(r'((?:\[\d+\])+)([.!?,])')
 
+# Pattern to move email/calendar refs before punctuation to after punctuation
+EMAIL_REF_BEFORE_PUNCT_PATTERN = re.compile(r'((?:\{E\d+\})+)([.!?,])')
+CAL_REF_BEFORE_PUNCT_PATTERN = re.compile(r'((?:\{C\d+\})+)([.!?,])')
+
 
 def fix_citation_placement(text: str) -> str:
     """
-    Move citations that appear before punctuation to after punctuation.
+    Move citations/email refs that appear before punctuation to after punctuation.
 
     Example:
         "This is a fact [1]." -> "This is a fact. [1]"
         "Multiple sources [1][2]." -> "Multiple sources. [1][2]"
+        "PayPal email {E1}." -> "PayPal email. {E1}"
     """
-    return CITATION_BEFORE_PUNCT_PATTERN.sub(r'\2 \1', text)
+    text = CITATION_BEFORE_PUNCT_PATTERN.sub(r'\2 \1', text)
+    text = EMAIL_REF_BEFORE_PUNCT_PATTERN.sub(r'\2 \1', text)
+    text = CAL_REF_BEFORE_PUNCT_PATTERN.sub(r'\2 \1', text)
+    return text
 
 
 def generate_part_id() -> str:
@@ -53,37 +72,35 @@ def generate_part_id() -> str:
 
 def parse_text_to_parts(text: str, phase: str = "grounded") -> List[Dict[str, Any]]:
     """
-    Parse text with [N] citations into text and source_ref content parts.
+    Parse text with [N] citations and {EN} email refs into structured content parts.
 
     Args:
-        text: The raw text content with [N] citation markers
+        text: The raw text content with [N] citation markers and/or {EN} email ref markers
         phase: The content phase ("grounded" or "reasoning")
 
     Returns:
         List of content part dicts with id, type, phase, and data fields
 
     Example:
-        Input: "According to research [1], the model shows [2] improvements."
+        Input: "According to research [1], check the PayPal email. {E1}"
         Output: [
             {"id": "...", "type": "text", "phase": "grounded", "data": {"content": "According to research "}},
             {"id": "...", "type": "source_ref", "phase": "grounded", "data": {"source_index": 1}},
-            {"id": "...", "type": "text", "phase": "grounded", "data": {"content": ", the model shows "}},
-            {"id": "...", "type": "source_ref", "phase": "grounded", "data": {"source_index": 2}},
-            {"id": "...", "type": "text", "phase": "grounded", "data": {"content": " improvements."}}
+            {"id": "...", "type": "text", "phase": "grounded", "data": {"content": ", check the PayPal email. "}},
+            {"id": "...", "type": "email_ref", "phase": "grounded", "data": {"email_index": 1}},
         ]
     """
     if not text:
         return []
 
-    # Fix citation placement: move citations before punctuation to after
-    # e.g., "fact [1]." -> "fact. [1]"
+    # Fix citation placement: move citations/email refs before punctuation to after
     text = fix_citation_placement(text)
 
     parts = []
     last_end = 0
 
-    for match in CITATION_PATTERN.finditer(text):
-        # Add text before citation (if any)
+    for match in ALL_REF_PATTERN.finditer(text):
+        # Add text before the reference (if any)
         if match.start() > last_end:
             text_before = text[last_end:match.start()]
             if text_before:
@@ -94,18 +111,37 @@ def parse_text_to_parts(text: str, phase: str = "grounded") -> List[Dict[str, An
                     "data": {"content": text_before}
                 })
 
-        # Add source reference part
-        source_index = int(match.group(1))
-        parts.append({
-            "id": generate_part_id(),
-            "type": "source_ref",
-            "phase": phase,
-            "data": {"source_index": source_index}
-        })
+        if match.group(2) is not None:
+            # Source citation: [N]
+            source_index = int(match.group(2))
+            parts.append({
+                "id": generate_part_id(),
+                "type": "source_ref",
+                "phase": phase,
+                "data": {"source_index": source_index}
+            })
+        elif match.group(3) is not None:
+            # Email reference: {EN}
+            email_index = int(match.group(3))
+            parts.append({
+                "id": generate_part_id(),
+                "type": "email_ref",
+                "phase": phase,
+                "data": {"email_index": email_index}
+            })
+        elif match.group(4) is not None:
+            # Calendar reference: {CN}
+            cal_index = int(match.group(4))
+            parts.append({
+                "id": generate_part_id(),
+                "type": "cal_ref",
+                "phase": phase,
+                "data": {"cal_index": cal_index}
+            })
 
         last_end = match.end()
 
-    # Add remaining text after last citation
+    # Add remaining text after last reference
     if last_end < len(text):
         remaining = text[last_end:]
         if remaining:
@@ -116,7 +152,7 @@ def parse_text_to_parts(text: str, phase: str = "grounded") -> List[Dict[str, An
                 "data": {"content": remaining}
             })
 
-    # If no citations found, return single text part
+    # If no references found, return single text part
     if not parts and text:
         parts.append({
             "id": generate_part_id(),

@@ -118,7 +118,7 @@ export default function UserSearchInput({ value, onValueChange, onSelect }: User
         aria-expanded={isOpen}
         aria-controls={listboxId}
         aria-activedescendant={activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
-        className="w-full bg-white border border-border-gray rounded-md px-3 py-2 text-sm outline-none focus:border-text-tertiary"
+        className="w-full min-w-0 bg-white border border-border-gray rounded-md px-3 py-2 text-sm outline-none focus:border-text-tertiary"
       />
       {isOpen && (
         <div

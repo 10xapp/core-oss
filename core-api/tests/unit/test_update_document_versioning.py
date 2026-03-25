@@ -228,3 +228,44 @@ async def test_update_document_force_snapshot_queues_task(monkeypatch):
 
     # force_snapshot bypasses diff check even though diff may be small
     assert create_task_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_update_document_queues_file_edit_task_for_note_title_change(monkeypatch):
+    """Title-only note edits still queue the async file-edit side effects."""
+    import importlib
+
+    mod = importlib.import_module("api.services.documents.update_document")
+
+    client = MagicMock()
+    documents_qb = _create_async_query_builder()
+    documents_qb.execute = AsyncMock(
+        side_effect=[
+            MockAPIResponse(data=[{
+                "title": "Old title",
+                "content": "unchanged content",
+                "type": "note",
+                "updated_at": "2026-02-19T10:00:00+00:00",
+                "workspace_id": "ws-1",
+                "user_id": "owner-1",
+                "file_id": None,
+            }]),
+            MockAPIResponse(data=[{"id": "doc-title"}]),
+            MockAPIResponse(data=[{"id": "doc-title", "title": "New title", "content": "unchanged content"}]),
+        ]
+    )
+    client.table.side_effect = lambda table: documents_qb
+
+    create_task_mock = MagicMock()
+
+    monkeypatch.setattr(mod, "get_authenticated_async_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(mod.asyncio, "create_task", create_task_mock)
+
+    await mod.update_document(
+        user_id="user-1",
+        user_jwt="jwt",
+        document_id="doc-title",
+        title="New title",
+    )
+
+    assert create_task_mock.call_count == 1

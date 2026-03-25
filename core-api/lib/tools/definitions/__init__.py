@@ -15,6 +15,7 @@ from lib.tools.definitions import smart_search
 from lib.tools.definitions import messages
 from lib.tools.definitions import email_thread
 from lib.tools.definitions import semantic_search
+from lib.tools.definitions import projects
 
 __all__ = [
     "calendar",
@@ -26,4 +27,5 @@ __all__ = [
     "messages",
     "email_thread",
     "semantic_search",
+    "projects",
 ]

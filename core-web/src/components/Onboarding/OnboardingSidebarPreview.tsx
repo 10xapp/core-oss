@@ -20,9 +20,9 @@ export default function OnboardingSidebarPreview({
     <div className="w-[340px] overflow-hidden select-none shadow-lg rounded-lg">
       <div className="flex">
         {/* Mini icon sidebar */}
-        <div className="w-14 bg-[#323232] rounded-l-lg flex flex-col items-center py-3 gap-2 shrink-0">
+        <div className="w-14 bg-[#E3E3E5] rounded-l-lg flex flex-col items-center py-3 gap-2 shrink-0">
           {/* Workspace icon */}
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-1">
+          <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center mb-1">
             <AnimatePresence mode="wait">
               <motion.span
                 key={wsInitial}
@@ -40,7 +40,7 @@ export default function OnboardingSidebarPreview({
           {[...Array(5)].map((_, i) => (
             <div
               key={i}
-              className="w-9 h-9 rounded-md bg-white/[0.08]"
+              className="w-9 h-9 rounded-md bg-black/6"
             />
           ))}
           {/* User avatar at bottom */}

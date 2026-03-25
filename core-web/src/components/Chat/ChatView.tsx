@@ -7,6 +7,7 @@ import { Add01Icon } from '@hugeicons-pro/core-stroke-standard';
 import { getMessages, createConversation, type Message, type ContentPart } from '../../api/client';
 import { useConversationStore } from '../../stores/conversationStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useUIStore } from '../../stores/uiStore';
 import type { MentionData } from '../../types/mention';
 import { useChatAttachments, type UploadedAttachmentInfo } from '../../hooks/useChatAttachments';
 import { useChatStream } from '../../hooks/useChatStream';
@@ -47,7 +48,8 @@ export default function ChatView() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [showPreviousChats, setShowPreviousChats] = useState(false);
+  const showPreviousChats = useUIStore((state) => state.isChatHistoryOpen);
+  const setShowPreviousChats = useUIStore((state) => state.setChatHistoryOpen);
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const [editingConversationId, setEditingConversationId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -140,7 +142,6 @@ export default function ChatView() {
     setLoading,
   } = useChatStream({
     activeConversationRef,
-    messages,
     setMessages,
     selectedWorkspaceIds,
     workspaceId,
@@ -325,6 +326,7 @@ export default function ChatView() {
     if ((!hasText && !hasAttachments) || loading) return;
 
     let attachmentIds: string[] | undefined;
+    let foodHints: Record<string, boolean> | undefined;
     let attachmentParts: ContentPart[] | undefined;
 
     if (hasAttachments) {
@@ -342,6 +344,7 @@ export default function ChatView() {
 
       const result = await uploadAll(convId);
       attachmentIds = result.attachmentIds;
+      foodHints = result.foodHints;
       attachmentParts = buildAttachmentParts(result.uploadedAttachments);
       if (result.hadErrors) {
         return;
@@ -375,7 +378,7 @@ export default function ChatView() {
       setActiveConversationId(convId);
     }
 
-    await sendMessage(userMessage, convId, attachmentIds, attachmentParts);
+    await sendMessage(userMessage, convId, attachmentIds, foodHints, attachmentParts);
   };
 
   // Treat as non-empty while loading or when we know a redirect to active conversation is pending
@@ -383,18 +386,18 @@ export default function ChatView() {
   const isEmpty = messages.length === 0 && !hasStreamingContent && !loadingMessages && !isRestoringConversation;
 
   return (
-    <div className="flex-1 flex h-full overflow-hidden gap-2">
+    <div className="flex-1 flex h-full overflow-hidden">
     {/* Previous Chats - left panel */}
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {showPreviousChats && (
         <motion.div
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 240, opacity: 1 }}
+          animate={{ width: 212, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-          className="h-full flex flex-col overflow-hidden shrink-0 bg-[#FCFCFC] rounded-lg"
+          className={`h-full flex flex-col overflow-hidden shrink-0 ${SIDEBAR.bg} border-r border-black/5`}
         >
-          <div className="h-12 flex items-center justify-between pl-4 pr-2 shrink-0">
+          <div className="h-12 flex items-center justify-between pl-3 pr-2 shrink-0">
             <h2 className="text-base font-semibold text-text-body whitespace-nowrap">Chat</h2>
             <button
               onClick={() => {
@@ -440,7 +443,7 @@ export default function ChatView() {
                           onClick={() => {
                             navigate(getChatUrl(conversation.id));
                           }}
-                          className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                          className={`w-full flex items-center text-left px-2 h-[32px] rounded-md text-sm transition-colors ${
                             activeConversationId === conversation.id
                               ? SIDEBAR.selected
                               : `${SIDEBAR.item} hover:bg-black/5`
@@ -622,7 +625,7 @@ export default function ChatView() {
                   <div className="group py-4">
                     <div className="max-w-3xl mx-auto px-4">
                       <div className="max-w-[85%] flex items-center gap-2">
-                        <span className="inline-block w-3 h-3 bg-text-body rounded-full animate-pulse" />
+                        <span className="inline-block w-3 h-3 bg-text-body rounded-full animate-thinking-dot" />
                         {streamStatus && (
                           <span className="text-sm text-text-tertiary animate-pulse">{streamStatus}</span>
                         )}
