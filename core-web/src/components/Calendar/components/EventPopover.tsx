@@ -20,6 +20,17 @@ interface EventPopoverProps {
   onDeleted: () => void;
 }
 
+function isGoogleMeetLink(link: string): boolean {
+  if (!link) return false;
+  try {
+    const url = new URL(link);
+    return url.hostname === 'meet.google.com';
+  } catch {
+    // If the URL is invalid, treat it as not a Google Meet link
+    return false;
+  }
+}
+
 const POPOVER_WIDTH = 340;
 const POPOVER_GAP = 12;
 
@@ -653,9 +664,9 @@ export default function EventPopover({
               {/* Meeting Link field - positioned after time */}
               {storeEvent?.meeting_link ? (
                 <div className="flex items-start gap-2.5 mb-3">
-                  <HugeiconsIcon icon={Video01Icon} size={16} className={`mt-0.5 shrink-0 ${storeEvent.meeting_link.includes('meet.google.com') ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <HugeiconsIcon icon={Video01Icon} size={16} className={`mt-0.5 shrink-0 ${isGoogleMeetLink(storeEvent.meeting_link) ? 'text-blue-600' : 'text-gray-400'}`} />
                   <div className="flex-1">
-                    {storeEvent.meeting_link.includes('meet.google.com') ? (
+                    {isGoogleMeetLink(storeEvent.meeting_link) ? (
                       <a
                         href={storeEvent.meeting_link}
                         target="_blank"
