@@ -173,6 +173,8 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          HUGEICONS_TOKEN: ${{ secrets.HUGEICONS_TOKEN }}
 
       - name: TypeScript check + build
         run: npm run build
@@ -199,6 +201,8 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          HUGEICONS_TOKEN: ${{ secrets.HUGEICONS_TOKEN }}
 
       - name: ESLint
         run: npm run lint
