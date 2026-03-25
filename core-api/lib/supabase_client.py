@@ -16,13 +16,9 @@ from typing import Dict, Optional
 from supabase import create_client, Client, acreate_client, AsyncClient
 
 _supabase_client: Optional[Client] = None
-_service_role_client: Optional[Client] = None
 _async_supabase_client: Optional[AsyncClient] = None
-_async_service_role_client: Optional[AsyncClient] = None
 _supabase_client_lock = threading.Lock()
-_service_role_client_lock = threading.Lock()
 _async_client_lock = asyncio.Lock()
-_async_service_role_client_lock = asyncio.Lock()
 
 
 @dataclass
@@ -150,28 +146,24 @@ def get_authenticated_supabase_client(user_jwt: str) -> Client:
 
 def get_service_role_client() -> Client:
     """
-    Create a Supabase client with service role key.
+    Create a fresh Supabase client with service role key.
     This client bypasses RLS policies and should ONLY be used for:
     - Cron jobs that need to access data across all users
     - Background tasks that run server-to-server
     - Administrative operations
-    
+
+    Returns a new client each call to avoid stale connections in
+    serverless environments (Vercel) where singletons persist across
+    warm invocations but underlying TCP connections go idle and get
+    closed server-side.
+
     ⚠️ WARNING: Use with extreme caution! This client has full database access.
-    
+
     Returns:
         Client: Supabase client with service role privileges
     """
-    global _service_role_client
-
-    if _service_role_client is not None:
-        return _service_role_client
-
-    with _service_role_client_lock:
-        if _service_role_client is None:
-            supabase_url, supabase_service_key = _get_service_role_config()
-            _service_role_client = create_client(supabase_url, supabase_service_key)
-
-    return _service_role_client
+    supabase_url, supabase_service_key = _get_service_role_config()
+    return create_client(supabase_url, supabase_service_key)
 
 
 # Convenience alias for anon client
@@ -250,28 +242,19 @@ async def get_authenticated_async_client(user_jwt: str) -> AsyncClient:
 
 async def get_async_service_role_client() -> AsyncClient:
     """
-    Create an async Supabase client with service role key.
+    Create a fresh async Supabase client with service role key.
     This client bypasses RLS policies and should ONLY be used for:
     - Async background tasks that need cross-user access
     - Webhook handlers that need to process data for any user
+
+    Returns a new client each call to avoid stale connections in
+    serverless environments (see get_service_role_client docstring).
 
     ⚠️ WARNING: Use with extreme caution! This client has full database access.
 
     Returns:
         AsyncClient: Async Supabase client with service role privileges
     """
-    global _async_service_role_client
-
-    if _async_service_role_client is not None:
-        return _async_service_role_client
-
-    async with _async_service_role_client_lock:
-        if _async_service_role_client is None:
-            supabase_url, supabase_service_key = _get_service_role_config()
-            _async_service_role_client = await acreate_client(
-                supabase_url,
-                supabase_service_key,
-            )
-
-    return _async_service_role_client
+    supabase_url, supabase_service_key = _get_service_role_config()
+    return await acreate_client(supabase_url, supabase_service_key)
 

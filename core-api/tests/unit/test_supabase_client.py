@@ -45,26 +45,18 @@ def module():
     import lib.supabase_client as module
 
     with patch.object(module, "_supabase_client", None):
-        with patch.object(module, "_service_role_client", None):
-            with patch.object(module, "_async_supabase_client", None):
-                with patch.object(module, "_async_service_role_client", None):
-                    with patch.object(module, "_supabase_client_lock", threading.Lock()):
-                        with patch.object(module, "_service_role_client_lock", threading.Lock()):
-                            with patch.object(module, "_async_client_lock", asyncio.Lock()):
-                                with patch.object(
-                                    module,
-                                    "_async_service_role_client_lock",
-                                    asyncio.Lock(),
-                                ):
-                                    with patch.object(
-                                        module,
-                                        "_request_scope_var",
-                                        ContextVar(
-                                            "supabase_request_scope_test",
-                                            default=None,
-                                        ),
-                                    ):
-                                        yield module
+        with patch.object(module, "_async_supabase_client", None):
+            with patch.object(module, "_supabase_client_lock", threading.Lock()):
+                with patch.object(module, "_async_client_lock", asyncio.Lock()):
+                    with patch.object(
+                        module,
+                        "_request_scope_var",
+                        ContextVar(
+                            "supabase_request_scope_test",
+                            default=None,
+                        ),
+                    ):
+                        yield module
 
 
 class TestGetAsyncSupabaseClient:
@@ -93,38 +85,37 @@ class TestGetAsyncSupabaseClient:
 
 
 class TestServiceRoleClients:
-    def test_sync_service_role_returns_same_instance_across_calls(self, module):
-        created_client = _mock_client()
+    def test_sync_service_role_creates_fresh_client_each_call(self, module):
+        """Service role clients are NOT singletons to avoid stale connections in serverless."""
+        client_one = _mock_client()
+        client_two = _mock_client()
 
-        with patch("lib.supabase_client.create_client", return_value=created_client) as mock_create:
+        with patch("lib.supabase_client.create_client") as mock_create:
             with patch("api.config.settings", _mock_settings()):
-                client_one = module.get_service_role_client()
-                client_two = module.get_service_role_client()
+                mock_create.side_effect = [client_one, client_two]
+                result_one = module.get_service_role_client()
+                result_two = module.get_service_role_client()
 
-        assert client_one is client_two is created_client
-        assert mock_create.call_count == 1
+        assert result_one is client_one
+        assert result_two is client_two
+        assert result_one is not result_two
+        assert mock_create.call_count == 2
 
-    async def test_async_service_role_singleton_under_concurrency(self, module):
-        creation_count = 0
-        created_client = _mock_client()
+    async def test_async_service_role_creates_fresh_client_each_call(self, module):
+        """Async service role clients are NOT singletons to avoid stale connections in serverless."""
+        client_one = _mock_client()
+        client_two = _mock_client()
 
-        async def slow_create_client(*args, **kwargs):
-            nonlocal creation_count
-            creation_count += 1
-            await asyncio.sleep(0.01)
-            return created_client
-
-        with patch("lib.supabase_client.acreate_client", side_effect=slow_create_client):
+        with patch("lib.supabase_client.acreate_client", new_callable=AsyncMock) as mock_create:
             with patch("api.config.settings", _mock_settings()):
-                results = await asyncio.gather(
-                    module.get_async_service_role_client(),
-                    module.get_async_service_role_client(),
-                    module.get_async_service_role_client(),
-                    module.get_async_service_role_client(),
-                )
+                mock_create.side_effect = [client_one, client_two]
+                result_one = await module.get_async_service_role_client()
+                result_two = await module.get_async_service_role_client()
 
-        assert all(result is created_client for result in results)
-        assert creation_count == 1
+        assert result_one is client_one
+        assert result_two is client_two
+        assert result_one is not result_two
+        assert mock_create.await_count == 2
 
 
 class TestGetAuthenticatedAsyncClient:

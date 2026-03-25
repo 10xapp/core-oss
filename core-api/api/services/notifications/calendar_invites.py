@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
@@ -282,7 +283,19 @@ def _notification_state_by_group_key(
     else:
         query = query.in_("group_key", group_keys)
 
-    result = query.execute()
+    last_err: Optional[Exception] = None
+    for attempt in range(1, 4):
+        try:
+            result = query.execute()
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 3:
+                logger.warning(f"⚠️ Notification state query failed (attempt {attempt}/3): {e}")
+                time.sleep(0.5 * attempt)
+            else:
+                raise last_err
+
     presence: Dict[str, Dict[str, Any]] = {}
     for row in result.data or []:
         if not isinstance(row, dict):

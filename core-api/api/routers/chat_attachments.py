@@ -166,7 +166,7 @@ async def get_presigned_upload_urls(
         # Generate presigned PUT URLs
         expiry = settings.chat_attachment_upload_expiry
         original_presigned = r2_client.generate_presigned_put_url(original_key, request.content_type, expiry)
-        thumbnail_presigned = r2_client.generate_presigned_put_url(thumbnail_key, request.content_type, expiry)
+        thumbnail_presigned = r2_client.generate_presigned_put_url(thumbnail_key, "image/jpeg", expiry)
 
         # Create attachment record with status='uploading'
         attachment_id = str(uuid.uuid4())

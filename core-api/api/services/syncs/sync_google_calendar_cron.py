@@ -208,13 +208,16 @@ def sync_google_calendar_cron(
                 external_ids=all_external_ids,
                 connection_id=connection_id,
             )
-            reconcile_calendar_invite_notifications(
-                client=service_supabase,
-                user_id=user_id,
-                account_email=connection_email,
-                previous_rows_by_external_id=previous_rows_by_external_id,
-                current_rows_by_external_id=current_rows_by_external_id,
-            )
+            try:
+                reconcile_calendar_invite_notifications(
+                    client=service_supabase,
+                    user_id=user_id,
+                    account_email=connection_email,
+                    previous_rows_by_external_id=previous_rows_by_external_id,
+                    current_rows_by_external_id=current_rows_by_external_id,
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Calendar invite notification reconciliation failed (non-fatal): {e}")
 
         # Update last synced timestamp only if no errors occurred
         if not batch_had_errors:
