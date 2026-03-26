@@ -57,7 +57,6 @@ export default function NotificationsPanel() {
 
   const handleInviteResolved = useCallback(async (
     action: 'accept' | 'decline',
-    _notification: Notification,
   ) => {
     if (action === 'accept') {
       await useWorkspaceStore.getState().fetchInitData();

@@ -514,7 +514,7 @@ export const useFilesStore = create<FilesState>()(
 
         // Evict oldest cache entries to bound memory (keep max 3)
         const MAX_CACHED = 3;
-        let cache = { ...state.workspaceDocCache };
+        const cache = { ...state.workspaceDocCache };
         const entries = Object.entries(cache);
         if (entries.length >= MAX_CACHED && !cache[appId]) {
           const oldest = entries.sort(([, a], [, b]) => a.lastFetched - b.lastFetched)[0];

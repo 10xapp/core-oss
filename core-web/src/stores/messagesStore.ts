@@ -43,7 +43,7 @@ function stripFileBlocks(messages: ChannelMessage[]): ChannelMessage[] {
     blocks: msg.blocks.map(block => {
       if (block.type === 'file') {
         // Keep file block structure and dimensions, but remove large URL data
-        const { url, preview, ...metadata } = block.data;
+        const { url: _url, preview: _preview, ...metadata } = block.data;
         return {
           ...block,
           data: {
@@ -1502,7 +1502,7 @@ export const useMessagesStore = create<MessagesState>()(
                   [activeChannelId]: messagesResult.messages,
                 },
               }));
-            } catch (msgErr) {
+            } catch {
               // Non-critical - messages will be fetched when user switches
               console.log(`[MessagesStore] Background message preload skipped for ${activeChannelId}`);
             }
@@ -1559,7 +1559,7 @@ export const useMessagesStore = create<MessagesState>()(
               try {
                 localStorage.setItem(name, JSON.stringify(value));
                 return;
-              } catch (retryError) {
+              } catch {
                 // Strategy 2: Try to save only the workspace cache (drop message cache)
                 try {
                   const minimalValue = {
@@ -1571,7 +1571,7 @@ export const useMessagesStore = create<MessagesState>()(
                   };
                   localStorage.setItem(name, JSON.stringify(minimalValue));
                   return;
-                } catch (minimalError) {
+                } catch {
                   // Strategy 3: Disable persistence and log once
                   if (!persistenceDisabled) {
                     persistenceDisabled = true;

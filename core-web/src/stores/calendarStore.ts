@@ -201,7 +201,7 @@ function buildEventsByDateIndex(
   for (const event of events) {
     // Parse start and end dates - handle all-day events specially to avoid timezone shifts
     const isAllDay = event.all_day === true;
-    let currentDate = parseDateForIndexing(event.start_time, isAllDay);
+    const currentDate = parseDateForIndexing(event.start_time, isAllDay);
     const endDayOnly = parseDateForIndexing(event.end_time, isAllDay);
 
     // Add event to every date it spans
@@ -962,7 +962,7 @@ export const useCalendarStore = create<CalendarState>()(
         const endMinute = endTotalMinutes % 60;
 
         // Handle multi-day events: if end hour exceeds 23, move to next day
-        let endDate = new Date(newDate);
+        const endDate = new Date(newDate);
         if (endHour > 23) {
           endDate.setDate(endDate.getDate() + Math.floor(endHour / 24));
           endHour = endHour % 24;

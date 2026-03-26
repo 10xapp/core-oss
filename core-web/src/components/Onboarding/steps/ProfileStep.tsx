@@ -22,7 +22,6 @@ export default function ProfileStep({
   onNameChange,
   onAvatarChange,
   onNext,
-  onBack: _onBack,
 }: ProfileStepProps) {
   const [uploading, setUploading] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);

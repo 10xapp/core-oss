@@ -282,7 +282,7 @@ export function calculateWeekEventPosition(
   dayColumnWidth: number,
   _dayIndex: number,
   hourHeight: number = 60,
-  _timeColumnWidth: number = 53,
+  _timeColumnWidth = 53,
   viewDate?: Date
 ): {
   top: number;

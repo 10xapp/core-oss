@@ -14,7 +14,6 @@ export default function WorkspaceNameStep({
   value,
   onChange,
   onNext,
-  onBack: _onBack,
 }: WorkspaceNameStepProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && value.trim()) {

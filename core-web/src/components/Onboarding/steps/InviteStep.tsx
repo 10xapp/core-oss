@@ -19,7 +19,6 @@ export default function InviteStep({
   onEmailsChange,
   onNext,
   onSkip,
-  onBack: _onBack,
 }: InviteStepProps) {
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);

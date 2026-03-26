@@ -1659,7 +1659,7 @@ export async function* regenerateMessage(
     }),
   });
 
-  let token = await ensureFreshToken();
+  const token = await ensureFreshToken();
   let response = await buildRequest(token);
 
   if (response.status === 401) {

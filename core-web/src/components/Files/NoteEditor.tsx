@@ -496,7 +496,7 @@ function TableFloatingToolbar({ editor }: { editor: Editor }) {
 
     try {
       const tablePos = $from.before(depth);
-      let dom = editor.view.nodeDOM(tablePos);
+      const dom = editor.view.nodeDOM(tablePos);
       if (!(dom instanceof HTMLElement)) {
         setPosition(null);
         return;

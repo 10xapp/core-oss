@@ -53,7 +53,6 @@ export default function NotificationPanel({ onNavigate }: NotificationPanelProps
 
   const handleInviteResolved = async (
     action: 'accept' | 'decline',
-    _notification: Notification,
   ) => {
     if (action === 'accept') {
       await useWorkspaceStore.getState().fetchInitData();

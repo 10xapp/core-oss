@@ -208,7 +208,7 @@ export default function NewEventPopover() {
       end_time = `${year}-${month}-${day}T23:59:59${tzOffset}`;
     } else {
       // Determine end time - use drag-to-create values if available, otherwise default to 1 hour
-      let finalEndHour = endHour !== undefined ? endHour : hour + 1;
+      const finalEndHour = endHour !== undefined ? endHour : hour + 1;
       const finalEndMinute = endMinute !== undefined ? endMinute : 0;
 
       // Handle multi-day events: if end time is past midnight, use next day
