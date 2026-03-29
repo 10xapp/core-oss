@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Calendar03Icon, Location01Icon, Video01Icon, Delete02Icon, PencilEdit01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Calendar, MapPin, Video, Trash2, Pencil } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import type { CalendarEvent } from '../../../api/client';
 import { updateCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
@@ -522,7 +522,7 @@ export default function EventPopover({
                     className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
                     title="Edit all fields"
                   >
-                    <HugeiconsIcon icon={PencilEdit01Icon} size={16} strokeWidth={2} />
+                    <Icon icon={Pencil} size={16} />
                   </button>
                   <button
                     onClick={handleDelete}
@@ -530,14 +530,14 @@ export default function EventPopover({
                     title="Delete"
                     disabled={isSaving}
                   >
-                    <HugeiconsIcon icon={Delete02Icon} size={16} strokeWidth={2} />
+                    <Icon icon={Trash2} size={16} />
                   </button>
                 </div>
               </div>
 
               {/* Date and time */}
               <div className="flex items-start gap-2.5 mb-3">
-                <HugeiconsIcon icon={Calendar03Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                <Icon icon={Calendar} size={16} className="text-gray-400 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   {editingField === 'date' ? (
                     <div className="space-y-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
@@ -675,7 +675,7 @@ export default function EventPopover({
               {/* Meeting Link field - positioned after time */}
               {storeEvent?.meeting_link && getSafeHref(storeEvent.meeting_link) ? (
                 <div className="flex items-start gap-2.5 mb-3">
-                  <HugeiconsIcon icon={Video01Icon} size={16} className={`mt-0.5 shrink-0 ${isGoogleMeetLink(storeEvent.meeting_link) ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <Icon icon={Video} size={16} className={`mt-0.5 shrink-0 ${isGoogleMeetLink(storeEvent.meeting_link) ? 'text-blue-600' : 'text-gray-400'}`} />
                   <div className="flex-1">
                     {isGoogleMeetLink(storeEvent.meeting_link) ? (
                       <a
@@ -702,7 +702,7 @@ export default function EventPopover({
                 </div>
               ) : editingField === 'link' ? (
                 <div className="flex items-start gap-2.5 mb-3">
-                  <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                  <Icon icon={Video} size={16} className="text-gray-400 mt-0.5 shrink-0" />
                   <div className="flex-1">
                     <input
                       type="url"
@@ -722,7 +722,7 @@ export default function EventPopover({
               {/* Location */}
               {storeEvent.location || editingField === 'location' ? (
                 <div className="flex items-start gap-2.5 mb-3">
-                  <HugeiconsIcon icon={Location01Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                  <Icon icon={MapPin} size={16} className="text-gray-400 mt-0.5 shrink-0" />
                   <div className="flex-1">
                     {editingField === 'location' ? (
                       <input
@@ -748,7 +748,7 @@ export default function EventPopover({
                 </div>
               ) : (
                 <div className="flex items-start gap-2.5 mb-3">
-                  <HugeiconsIcon icon={Location01Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+                  <Icon icon={MapPin} size={16} className="text-gray-400 mt-0.5 shrink-0" />
                   <p
                     onClick={() => setEditingField('location')}
                     className="text-sm text-gray-400 cursor-pointer hover:text-gray-600 hover:bg-gray-100 hover:rounded px-1"

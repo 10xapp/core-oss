@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Cancel01Icon, Delete02Icon, PencilEdit01Icon, Location01Icon, Calendar03Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { X, Trash2, Pencil, MapPin, Calendar, Video } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import type { CalendarEvent } from '../../../api/client';
 import { updateCalendarEvent, deleteCalendarEvent } from '../../../api/client';
 
@@ -160,7 +160,7 @@ export default function EventDetailModal({
                   className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Edit event"
                 >
-                  <HugeiconsIcon icon={PencilEdit01Icon} size={20} strokeWidth={2} />
+                  <Icon icon={Pencil} size={20} />
                 </button>
                 <button
                   onClick={handleDelete}
@@ -168,7 +168,7 @@ export default function EventDetailModal({
                   className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
                   title="Delete event"
                 >
-                  <HugeiconsIcon icon={Delete02Icon} size={20} strokeWidth={2} />
+                  <Icon icon={Trash2} size={20} />
                 </button>
               </>
             )}
@@ -176,7 +176,7 @@ export default function EventDetailModal({
               onClick={onClose}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <HugeiconsIcon icon={Cancel01Icon} size={20} strokeWidth={2} />
+              <Icon icon={X} size={20} />
             </button>
           </div>
         </div>
@@ -294,7 +294,7 @@ export default function EventDetailModal({
 
             <div className="space-y-3">
               <div className="flex items-start gap-3">
-                <HugeiconsIcon icon={Calendar03Icon} size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <Icon icon={Calendar} size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm text-gray-900">{formatDisplayDate(event.start_time)}</p>
                   {!event.all_day && (
@@ -310,18 +310,14 @@ export default function EventDetailModal({
 
               {event.location && (
                 <div className="flex items-start gap-3">
-                  <HugeiconsIcon icon={Location01Icon} size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <Icon icon={MapPin} size={20} className="text-gray-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-gray-900">{event.location}</p>
                 </div>
               )}
 
               {event.meeting_link && getSafeHref(event.meeting_link) && (
                 <div className="flex items-start gap-3">
-                  <HugeiconsIcon
-                    icon={Video01Icon}
-                    size={20}
-                    className={`mt-0.5 shrink-0 ${isGoogleMeetLink(event.meeting_link) ? 'text-blue-600' : 'text-gray-400'}`}
-                  />
+                  <Icon icon={Video} size={20} className={`mt-0.5 shrink-0 ${isGoogleMeetLink(event.meeting_link) ? 'text-blue-600' : 'text-gray-400'}`} />
                   <a
                     href={getSafeHref(event.meeting_link)!}
                     target="_blank"

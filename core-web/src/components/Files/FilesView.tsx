@@ -17,24 +17,8 @@ import {
   ArrowUturnLeftIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Folder01Icon,
-  FolderAddIcon,
-  File01Icon,
-  Image01Icon,
-  Video01Icon,
-  File02Icon,
-  VolumeHighIcon,
-  Upload04Icon,
-  Cancel01Icon,
-  Download04Icon,
-  Add01Icon,
-  PencilEdit01Icon,
-  Copy01Icon,
-  FolderExportIcon,
-  Delete02Icon,
-} from "@hugeicons-pro/core-stroke-standard";
+import { Folder, FolderPlus, FileText, Image, Video, File, Volume2, Upload, X, Download, Plus, Pencil, Copy, FolderOutput, Trash2 } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import {
   DndContext,
   pointerWithin,
@@ -225,50 +209,50 @@ function getFileIcon(doc: Document, size: string = "w-5 h-5") {
 
   // Folders
   if (doc.is_folder || doc.type === "folder") {
-    return <HugeiconsIcon icon={Folder01Icon} size={iconSize} />;
+    return <Icon icon={Folder} size={iconSize} />;
   }
 
   // Notes (editable text documents)
   if (isNote(doc)) {
-    return <HugeiconsIcon icon={File02Icon} size={iconSize} />;
+    return <Icon icon={File} size={iconSize} />;
   }
 
   // Files (uploaded files) - check mime type
   const mimeType = getFileMimeType(doc);
   if (mimeType.startsWith("image/")) {
-    return <HugeiconsIcon icon={Image01Icon} size={iconSize} />;
+    return <Icon icon={Image} size={iconSize} />;
   }
   if (mimeType.startsWith("video/")) {
-    return <HugeiconsIcon icon={Video01Icon} size={iconSize} />;
+    return <Icon icon={Video} size={iconSize} />;
   }
   if (mimeType.startsWith("audio/")) {
-    return <HugeiconsIcon icon={VolumeHighIcon} size={iconSize} />;
+    return <Icon icon={Volume2} size={iconSize} />;
   }
   if (mimeType === "application/pdf") {
-    return <HugeiconsIcon icon={File02Icon} size={iconSize} />;
+    return <Icon icon={File} size={iconSize} />;
   }
   if (
     mimeType ===
       "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
     mimeType === "application/vnd.ms-powerpoint"
   ) {
-    return <HugeiconsIcon icon={File02Icon} size={iconSize} />;
+    return <Icon icon={File} size={iconSize} />;
   }
   if (
     mimeType.includes("zip") ||
     mimeType.includes("compressed") ||
     mimeType.includes("archive")
   ) {
-    return <HugeiconsIcon icon={File01Icon} size={iconSize} />;
+    return <Icon icon={FileText} size={iconSize} />;
   }
   if (
     mimeType.startsWith("text/") ||
     mimeType.includes("document") ||
     mimeType.includes("word")
   ) {
-    return <HugeiconsIcon icon={File02Icon} size={iconSize} />;
+    return <Icon icon={File} size={iconSize} />;
   }
-  return <HugeiconsIcon icon={File01Icon} size={iconSize} />;
+  return <Icon icon={FileText} size={iconSize} />;
 }
 
 // Format date like Apple Notes - time for today, "Yesterday", or short date
@@ -353,7 +337,7 @@ function NestedFolderContents({
                     className={`w-full flex items-center pr-3 h-[32px] rounded-md text-sm transition-colors cursor-pointer hover:bg-black/5 ${SIDEBAR.item} active:cursor-grabbing group`}
                   >
                     <span className="shrink-0 ml-3 mr-2 relative w-4 h-4">
-                      <HugeiconsIcon icon={Folder01Icon} size={16} className={`absolute inset-0 transition-opacity ${isNestedExpanded ? "opacity-0" : "group-hover:opacity-0"}`} />
+                      <Icon icon={Folder} size={16} className={`absolute inset-0 transition-opacity ${isNestedExpanded ? "opacity-0" : "group-hover:opacity-0"}`} />
                       <ChevronRightIcon className={`w-4 h-4 absolute inset-0 transition-all duration-150 ${isNestedExpanded ? "opacity-100 rotate-90" : "opacity-0 group-hover:opacity-100"}`} />
                     </span>
                     {editingItemId === item.id ? (
@@ -407,7 +391,7 @@ function NestedFolderContents({
                           }}
                           className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                         >
-                          <HugeiconsIcon icon={PencilEdit01Icon} size={14} />
+                          <Icon icon={Pencil} size={14} />
                           Rename
                         </button>
                         <button
@@ -417,7 +401,7 @@ function NestedFolderContents({
                           }}
                           className="w-full px-3 py-1.5 text-left text-sm text-red-500 hover:bg-bg-gray flex items-center gap-2"
                         >
-                          <HugeiconsIcon icon={Delete02Icon} size={14} />
+                          <Icon icon={Trash2} size={14} />
                           Delete
                         </button>
                       </Dropdown>
@@ -522,7 +506,7 @@ function NestedFolderContents({
                       }}
                       className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                     >
-                      <HugeiconsIcon icon={PencilEdit01Icon} size={14} />
+                      <Icon icon={Pencil} size={14} />
                       Rename
                     </button>
                     <button
@@ -532,7 +516,7 @@ function NestedFolderContents({
                       }}
                       className="w-full px-3 py-1.5 text-left text-sm text-red-500 hover:bg-bg-gray flex items-center gap-2"
                     >
-                      <HugeiconsIcon icon={Delete02Icon} size={14} />
+                      <Icon icon={Trash2} size={14} />
                       Delete
                     </button>
                   </Dropdown>
@@ -1857,8 +1841,8 @@ export default function FilesView() {
     return (
       <div className="flex-1 flex items-center justify-center bg-bg-shell">
         <div className="text-center">
-          <HugeiconsIcon
-            icon={Folder01Icon}
+          <Icon
+            icon={Folder}
             size={48}
             className="mx-auto mb-4 text-text-tertiary"
           />
@@ -1900,7 +1884,7 @@ export default function FilesView() {
               title="New"
               aria-label="New file or folder"
             >
-              <HugeiconsIcon icon={Add01Icon} size={16} aria-hidden="true" />
+              <Icon icon={Plus} size={16} aria-hidden="true" />
             </button>
             <Dropdown
               isOpen={showNewMenu}
@@ -1915,7 +1899,7 @@ export default function FilesView() {
                 disabled={isCreatingNote}
                 className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
-                <HugeiconsIcon icon={Add01Icon} size={14} aria-hidden="true" />
+                <Icon icon={Plus} size={14} aria-hidden="true" />
                 New Note
               </button>
               <button
@@ -1925,7 +1909,7 @@ export default function FilesView() {
                 }}
                 className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
-                <HugeiconsIcon icon={FolderAddIcon} size={14} aria-hidden="true" />
+                <Icon icon={FolderPlus} size={14} aria-hidden="true" />
                 New Folder
               </button>
               <button
@@ -1936,7 +1920,7 @@ export default function FilesView() {
                 disabled={isUploading}
                 className="w-[calc(100%-8px)] mx-1 px-2 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray rounded-md flex items-center gap-2 disabled:opacity-50 focus-visible:bg-bg-gray focus-visible:outline-none"
               >
-                <HugeiconsIcon icon={Upload04Icon} size={14} aria-hidden="true" />
+                <Icon icon={Upload} size={14} aria-hidden="true" />
                 Upload File
               </button>
             </Dropdown>
@@ -2098,8 +2082,8 @@ export default function FilesView() {
                   transition={{ duration: 0.1 }}
                 >
                   <div className="p-6 text-center text-text-tertiary">
-                    <HugeiconsIcon
-                      icon={File02Icon}
+                    <Icon
+                      icon={File}
                       size={32}
                       className="mx-auto mb-2 opacity-50"
                     />
@@ -2207,7 +2191,7 @@ export default function FilesView() {
                                       }`}
                                     >
                                       <span className="shrink-0 ml-3 mr-2 relative w-4 h-4">
-                                        <HugeiconsIcon icon={Folder01Icon} size={16} className={`absolute inset-0 transition-opacity ${isExpanded ? "opacity-0" : "group-hover:opacity-0"}`} />
+                                        <Icon icon={Folder} size={16} className={`absolute inset-0 transition-opacity ${isExpanded ? "opacity-0" : "group-hover:opacity-0"}`} />
                                         <ChevronRightIcon className={`w-4 h-4 absolute inset-0 transition-all duration-150 ${isExpanded ? "opacity-100 rotate-90" : "opacity-0 group-hover:opacity-100"}`} />
                                       </span>
                                       {editingItemId === item.id ? (
@@ -2255,14 +2239,14 @@ export default function FilesView() {
                                             onClick={(e) => { e.stopPropagation(); handleRenameItem(item); }}
                                             className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                                           >
-                                            <HugeiconsIcon icon={PencilEdit01Icon} size={14} />
+                                            <Icon icon={Pencil} size={14} />
                                             Rename
                                           </button>
                                           <button
                                             onClick={(e) => handleDeleteClick(item, e)}
                                             className="w-full px-3 py-1.5 text-left text-sm text-red-500 hover:bg-bg-gray flex items-center gap-2"
                                           >
-                                            <HugeiconsIcon icon={Delete02Icon} size={14} />
+                                            <Icon icon={Trash2} size={14} />
                                             Delete
                                           </button>
                                         </Dropdown>
@@ -2327,7 +2311,7 @@ export default function FilesView() {
                                           onClick={(e) => { e.stopPropagation(); handleRenameItem(item); }}
                                           className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                                         >
-                                          <HugeiconsIcon icon={PencilEdit01Icon} size={14} />
+                                          <Icon icon={Pencil} size={14} />
                                           Rename
                                         </button>
                                         {!item.is_folder && item.type !== 'folder' && !item.file_id && (
@@ -2339,7 +2323,7 @@ export default function FilesView() {
                                             }}
                                             className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                                           >
-                                            <HugeiconsIcon icon={Copy01Icon} size={14} />
+                                            <Icon icon={Copy} size={14} />
                                             Duplicate
                                           </button>
                                         )}
@@ -2352,7 +2336,7 @@ export default function FilesView() {
                                               }}
                                               className="w-full px-3 py-1.5 text-left text-sm text-text-body hover:bg-bg-gray flex items-center gap-2"
                                             >
-                                              <HugeiconsIcon icon={FolderExportIcon} size={14} />
+                                              <Icon icon={FolderOutput} size={14} />
                                               Move to...
                                             </button>
                                             {moveMenuDocId === item.id && (
@@ -2374,7 +2358,7 @@ export default function FilesView() {
                                                       onClick={(e) => { e.stopPropagation(); handleMoveToFolder(item.id, f.id); }}
                                                       className="w-full px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-bg-gray flex items-center gap-2 truncate"
                                                     >
-                                                      <HugeiconsIcon icon={Folder01Icon} size={12} className="text-yellow-500 shrink-0" />
+                                                      <Icon icon={Folder} size={12} className="text-yellow-500 shrink-0" />
                                                       {f.title}
                                                     </button>
                                                   ))}
@@ -2386,7 +2370,7 @@ export default function FilesView() {
                                           onClick={(e) => handleDeleteClick(item, e)}
                                           className="w-full px-3 py-1.5 text-left text-sm text-red-500 hover:bg-bg-gray flex items-center gap-2"
                                         >
-                                          <HugeiconsIcon icon={Delete02Icon} size={14} />
+                                          <Icon icon={Trash2} size={14} />
                                           Delete
                                         </button>
                                       </Dropdown>
@@ -2444,7 +2428,7 @@ export default function FilesView() {
                     {activeDragItem && (
                       <div className="flex items-center gap-2 px-2 h-[32px] rounded-md text-sm bg-bg-mini-app shadow-md">
                         {(activeDragItem.is_folder || activeDragItem.type === "folder") ? (
-                          <HugeiconsIcon icon={Folder01Icon} size={16} className="text-text-tertiary shrink-0" />
+                          <Icon icon={Folder} size={16} className="text-text-tertiary shrink-0" />
                         ) : (
                           <span className="shrink-0">{getFileIcon(activeDragItem, "w-4 h-4")}</span>
                         )}
@@ -2518,11 +2502,11 @@ export default function FilesView() {
                         }`}
                       >
                         {isFolder ? (
-                          <HugeiconsIcon icon={Folder01Icon} size={15} className="shrink-0" />
+                          <Icon icon={Folder} size={15} className="shrink-0" />
                         ) : isFile ? (
-                          <HugeiconsIcon icon={File01Icon} size={15} className="shrink-0" />
+                          <Icon icon={FileText} size={15} className="shrink-0" />
                         ) : (
-                          <HugeiconsIcon icon={File02Icon} size={15} className="shrink-0" />
+                          <Icon icon={File} size={15} className="shrink-0" />
                         )}
                         <div className="flex-1 min-w-0 text-left">
                           <span className="block truncate">{item.title || 'Untitled'}</span>
@@ -2552,8 +2536,8 @@ export default function FilesView() {
           {isDragOver && (
             <div className="absolute inset-0 bg-brand-primary/10 flex items-center justify-center pointer-events-none rounded-lg m-1">
               <div className="bg-white rounded-lg shadow-lg px-4 py-3 text-center">
-                <HugeiconsIcon
-                  icon={Upload04Icon}
+                <Icon
+                  icon={Upload}
                   size={24}
                   className="mx-auto mb-1 text-brand-primary"
                 />
@@ -2583,7 +2567,7 @@ export default function FilesView() {
                       className="p-2 rounded-lg hover:bg-bg-gray transition-colors"
                       title="Download"
                     >
-                      <HugeiconsIcon icon={Download04Icon} size={18} className="text-text-tertiary" />
+                      <Icon icon={Download} size={18} className="text-text-tertiary" />
                     </a>
                   )}
                   <HeaderButtons onSettingsClick={() => setShowSettingsDropdown(!showSettingsDropdown)} settingsButtonRef={settingsButtonRef} />
@@ -2817,8 +2801,8 @@ export default function FilesView() {
                   </div>
                 ) : (
                   <div className="text-center">
-                    <HugeiconsIcon
-                      icon={File02Icon}
+                    <Icon
+                      icon={File}
                       size={48}
                       className="mx-auto mb-4 text-text-tertiary opacity-50"
                     />
@@ -2833,7 +2817,7 @@ export default function FilesView() {
                       disabled={isCreatingNote}
                       className="mt-4 flex items-center gap-2 px-4 py-2 text-sm font-medium text-text-light bg-brand-primary hover:opacity-90 rounded-lg transition-opacity disabled:opacity-50 mx-auto"
                     >
-                      <HugeiconsIcon icon={Add01Icon} size={16} />
+                      <Icon icon={Plus} size={16} />
                       New Note
                     </button>
                   </div>
@@ -2894,7 +2878,7 @@ export default function FilesView() {
                     cursor: "pointer",
                   }}
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={24} />
+                  <Icon icon={X} size={24} />
                 </button>
                 <a
                   href={previewImage.url}
@@ -2917,7 +2901,7 @@ export default function FilesView() {
                     textDecoration: "none",
                   }}
                 >
-                  <HugeiconsIcon icon={Download04Icon} size={24} />
+                  <Icon icon={Download} size={24} />
                 </a>
                 <motion.img
                   initial={{ opacity: 0, scale: 0.9 }}

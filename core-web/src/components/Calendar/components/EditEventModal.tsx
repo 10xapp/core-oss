@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { PencilEdit01Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Pencil, Video } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { updateCalendarEvent } from '../../../api/client';
 import TimePickerInput from './TimePickerInput';
 import type { CalendarEvent } from '../../../api/client';
@@ -211,7 +211,7 @@ export default function EditEventModal({
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-600 font-medium hover:bg-blue-100 transition-colors"
                       >
-                        <HugeiconsIcon icon={Video01Icon} size={14} className="text-blue-600 shrink-0" />
+                        <Icon icon={Video} size={14} className="text-blue-600 shrink-0" />
                         Join with Google Meet
                       </a>
                     );
@@ -224,7 +224,7 @@ export default function EditEventModal({
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 border border-border-subtle rounded-lg text-xs text-text-secondary hover:bg-neutral-100 transition-colors"
                       >
-                        <HugeiconsIcon icon={PencilEdit01Icon} size={14} className="text-text-secondary shrink-0" />
+                        <Icon icon={Pencil} size={14} className="text-text-secondary shrink-0" />
                         <span className="truncate">{meetingLink.trim()}</span>
                       </a>
                     );

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, Loading03Icon } from "@hugeicons-pro/core-stroke-standard";
+import { Plus, LoaderCircle } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import { AnimatePresence, motion } from "motion/react";
 import {
   DndContext,
@@ -99,8 +99,8 @@ function CalendarContent({
             onToday={handleToday}
           />
           {isSyncing && (
-            <HugeiconsIcon
-              icon={Loading03Icon}
+            <Icon
+              icon={LoaderCircle}
               size={14}
               className="animate-spin text-gray-400 ml-1.5"
             />
@@ -117,8 +117,8 @@ function CalendarContent({
       {/* Main content area */}
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center text-text-secondary">
-          <HugeiconsIcon
-            icon={Loading03Icon}
+          <Icon
+            icon={LoaderCircle}
             size={24}
             className="animate-spin mr-2"
           />
@@ -695,7 +695,7 @@ export default function CalendarView() {
               className="p-1 rounded bg-white border border-black/10 hover:border-black/20 text-text-secondary hover:text-text-body transition-colors"
               title="New event"
             >
-              <HugeiconsIcon icon={Add01Icon} size={16} />
+              <Icon icon={Plus} size={16} />
             </button>
           </div>
 

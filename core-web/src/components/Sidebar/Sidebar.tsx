@@ -5,36 +5,26 @@ import { motion, AnimatePresence } from "motion/react";
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 import { useViewPrefetch } from "../../hooks/useViewPrefetch";
 import { usePresenceStore } from "../../stores/presenceStore";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
-  Folder01Icon,
-  Comment01Icon,
-  UserMultiple02Icon,
-  Settings01Icon,
-  ArrowDown01Icon,
-  PinIcon,
-  Add01Icon,
-  Delete01Icon,
-  Logout01Icon,
-  Login01Icon,
-  DashboardSquare01Icon,
-  Camera01Icon,
-  Mail01Icon,
-  Calendar04Icon,
-  ArtificialIntelligence02Icon,
-  SourceCodeIcon,
-  LinkSquare02Icon,
-} from "@hugeicons-pro/core-stroke-standard";
-import {
-  Folder01Icon as Folder01IconSolid,
-  Comment01Icon as Comment01IconSolid,
-  UserMultiple02Icon as UserMultiple02IconSolid,
-  PinIcon as PinIconSolid,
-  DashboardSquare01Icon as DashboardSquare01IconSolid,
-  Mail01Icon as Mail01IconSolid,
-  Calendar04Icon as Calendar04IconSolid,
-  ArtificialIntelligence02Icon as ArtificialIntelligence02IconSolid,
-} from "@hugeicons-pro/core-solid-standard";
+  Folder,
+  MessageCircle,
+  Users,
+  Settings,
+  ChevronDown,
+  Pin,
+  Plus,
+  Trash2,
+  LogOut,
+  LogIn,
+  LayoutDashboard,
+  Camera,
+  Mail,
+  Calendar,
+  Brain,
+  Code,
+  ExternalLink,
+} from "lucide-react";
+import { Icon, type LucideIcon } from "../ui/Icon";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useProductStore } from "../../stores/productStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -65,8 +55,7 @@ import SettingsView from "../Settings/SettingsView";
 interface NavItem {
   id: string;
   name: string;
-  icon: IconSvgElement;
-  iconSolid: IconSvgElement;
+  icon: LucideIcon;
   path: string;
   type?: string;
 }
@@ -77,56 +66,56 @@ const availableAppTypes = [
   {
     type: "chat",
     name: "Chat",
-    icon: Comment01Icon,
+    icon: MessageCircle,
   },
   {
     type: "messages",
     name: "Messages",
-    icon: UserMultiple02Icon,
+    icon: Users,
   },
   {
     type: "files",
     name: "Files",
-    icon: Folder01Icon,
+    icon: Folder,
   },
   {
     type: "dashboard",
     name: "Personal",
-    icon: DashboardSquare01Icon,
+    icon: LayoutDashboard,
   },
   {
     type: "projects",
     name: "Projects",
-    icon: PinIcon,
+    icon: Pin,
   },
   {
     type: "agents",
     name: "Agents",
-    icon: ArtificialIntelligence02Icon,
+    icon: Brain,
   },
   {
     type: "email",
     name: "Email",
-    icon: Mail01Icon,
+    icon: Mail,
   },
   {
     type: "calendar",
     name: "Calendar",
-    icon: Calendar04Icon,
+    icon: Calendar,
   },
 ];
 
-// Map app types to their icons (stroke and solid variants)
-const appIcons: Record<string, { stroke: IconSvgElement; solid: IconSvgElement }> = {
-  chat: { stroke: Comment01Icon, solid: Comment01IconSolid },
-  files: { stroke: Folder01Icon, solid: Folder01IconSolid },
-  team: { stroke: UserMultiple02Icon, solid: UserMultiple02IconSolid },
-  messages: { stroke: UserMultiple02Icon, solid: UserMultiple02IconSolid },
-  projects: { stroke: PinIcon, solid: PinIconSolid },
-  dashboard: { stroke: DashboardSquare01Icon, solid: DashboardSquare01IconSolid },
-  agents: { stroke: ArtificialIntelligence02Icon, solid: ArtificialIntelligence02IconSolid },
-  email: { stroke: Mail01Icon, solid: Mail01IconSolid },
-  calendar: { stroke: Calendar04Icon, solid: Calendar04IconSolid },
+// Map app types to their icons
+const appIcons: Record<string, LucideIcon> = {
+  chat: MessageCircle,
+  files: Folder,
+  team: Users,
+  messages: Users,
+  projects: Pin,
+  dashboard: LayoutDashboard,
+  agents: Brain,
+  email: Mail,
+  calendar: Calendar,
 };
 
 // Generate workspace-specific path for an app
@@ -781,8 +770,7 @@ export default function Sidebar() {
         .map((app) => ({
           id: app.id,
           name: app.name,
-          icon: appIcons[app.type].stroke,
-          iconSolid: appIcons[app.type].solid,
+          icon: appIcons[app.type],
           path: targetWorkspace.isDefault && topLevelAppTypes.includes(app.type)
             ? `/${app.type}`
             : getAppPath(targetWorkspace.id, app.type),
@@ -842,9 +830,9 @@ export default function Sidebar() {
                 }`}
               >
                 {activeProductType === 'ai_builder' ? (
-                  <HugeiconsIcon icon={SourceCodeIcon} size={20} className="text-text-body" />
+                  <Icon icon={Code} size={20} className="text-text-body" />
                 ) : activeProductType === 'website_builder' ? (
-                  <HugeiconsIcon icon={LinkSquare02Icon} size={20} className="text-text-body" />
+                  <Icon icon={ExternalLink} size={20} className="text-text-body" />
                 ) : selectedView === "dashboard" ? (
                   <img
                     src="/CoreLogo.png"
@@ -1048,7 +1036,7 @@ export default function Sidebar() {
                 }}
                 className="w-full px-2.5 py-2 text-left text-sm flex items-center gap-2.5 text-text-secondary hover:bg-bg-gray rounded-lg"
               >
-                <HugeiconsIcon icon={Add01Icon} size={18} />
+                <Icon icon={Plus} size={18} />
                 <span>New workspace</span>
               </button>
             </div>
@@ -1062,9 +1050,9 @@ export default function Sidebar() {
           {/* Workspace-specific mini apps - at top */}
           {displayMiniApps.filter((app) => app.type !== 'email' && app.type !== 'calendar').map((app) => {
             // Check both the direct path and any workspace-prefixed variant
-            const isItemActive = isActivePath(app.path) || (
+            const isItemActive = isActivePath(app.path) || !!(
               targetWorkspace && location.pathname.match(new RegExp(`/workspace/[^/]+/${app.type}(/|$)`))
-            ) || false;
+            );
             const hasUnread =
               app.type === "messages" &&
               (() => {
@@ -1088,7 +1076,7 @@ export default function Sidebar() {
                   title={app.name}
                   className={`${iconBtn} ${isItemActive ? iconBtnActive : iconBtnInactive}`}
                 >
-                  <HugeiconsIcon icon={isItemActive ? app.iconSolid : app.icon} size={20} />
+                  <Icon icon={app.icon} size={20} active={isItemActive} />
                 </button>
                 {hasUnread && (
                   <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-[#E3E3E5]" />
@@ -1109,7 +1097,7 @@ export default function Sidebar() {
               title="AI Apps"
               className={`${iconBtn} ${location.pathname.startsWith('/builder') ? iconBtnActive : iconBtnInactive}`}
             >
-              <HugeiconsIcon icon={SourceCodeIcon} size={20} />
+              <Icon icon={Code} size={20} />
             </button>
           </div>
         )}
@@ -1122,7 +1110,7 @@ export default function Sidebar() {
               title="My Sites"
               className={`${iconBtn} ${location.pathname.startsWith('/sites') ? iconBtnActive : iconBtnInactive}`}
             >
-              <HugeiconsIcon icon={LinkSquare02Icon} size={20} />
+              <Icon icon={ExternalLink} size={20} />
             </button>
           </div>
         )}
@@ -1141,7 +1129,7 @@ export default function Sidebar() {
                   title="Email"
                   className={`${iconBtn} ${isEmailActive ? iconBtnActive : iconBtnInactive}`}
                 >
-                  <HugeiconsIcon icon={isEmailActive ? Mail01IconSolid : Mail01Icon} size={20} />
+                  <Icon icon={Mail} size={20} active={isEmailActive} />
                 </button>
                 <button
                   onClick={() => navigate(targetWorkspace && !targetWorkspace.isDefault ? `/workspace/${targetWorkspace.id}/calendar` : '/calendar')}
@@ -1149,7 +1137,7 @@ export default function Sidebar() {
                   title="Calendar"
                   className={`${iconBtn} ${isCalendarActive ? iconBtnActive : iconBtnInactive}`}
                 >
-                  <HugeiconsIcon icon={isCalendarActive ? Calendar04IconSolid : Calendar04Icon} size={20} />
+                  <Icon icon={Calendar} size={20} active={isCalendarActive} />
                 </button>
               </>
             );
@@ -1161,7 +1149,7 @@ export default function Sidebar() {
               title="Workspace Settings"
               className={`${iconBtn} ${iconBtnInactive}`}
             >
-              <HugeiconsIcon icon={Settings01Icon} size={20} />
+              <Icon icon={Settings} size={20} />
             </button>
           )}
 
@@ -1200,7 +1188,7 @@ export default function Sidebar() {
                   }}
                   className="w-full px-3 py-2 text-left text-sm flex items-center gap-2.5 hover:bg-bg-gray rounded-lg"
                 >
-                  <HugeiconsIcon icon={Settings01Icon} size={20} />
+                  <Icon icon={Settings} size={20} />
                   User Settings
                 </button>
                 {isAuthenticated ? (
@@ -1211,7 +1199,7 @@ export default function Sidebar() {
                     }}
                     className="w-full px-3 py-2 text-left text-sm flex items-center gap-2.5 hover:bg-bg-gray rounded-lg"
                   >
-                    <HugeiconsIcon icon={Logout01Icon} size={20} />
+                    <Icon icon={LogOut} size={20} />
                     Log out
                   </button>
                 ) : (
@@ -1222,7 +1210,7 @@ export default function Sidebar() {
                     }}
                     className="w-full px-3 py-2 text-left text-sm flex items-center gap-2.5 hover:bg-bg-gray rounded-lg"
                   >
-                    <HugeiconsIcon icon={Login01Icon} size={20} />
+                    <Icon icon={LogIn} size={20} />
                     Sign in
                   </button>
                 )}
@@ -1538,7 +1526,7 @@ export default function Sidebar() {
                             className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-bg-gray transition-colors"
                           >
                             <span className="w-7 h-7 flex items-center justify-center text-text-secondary">
-                              {appTypeInfo?.icon && <HugeiconsIcon icon={appTypeInfo.icon} size={18} />}
+                              {appTypeInfo?.icon && <Icon icon={appTypeInfo.icon} size={18} />}
                             </span>
                             <span className="flex-1 text-sm">{app.name}</span>
                             <button
@@ -1546,8 +1534,8 @@ export default function Sidebar() {
                               disabled={index === 0}
                               className="w-6 h-6 flex items-center justify-center text-text-tertiary disabled:opacity-30 hover:bg-bg-gray rounded"
                             >
-                              <HugeiconsIcon
-                                icon={ArrowDown01Icon}
+                              <Icon
+                                icon={ChevronDown}
                                 size={14}
                                 style={{ transform: "rotate(180deg)" }}
                               />
@@ -1557,13 +1545,13 @@ export default function Sidebar() {
                               disabled={index === editingApps.length - 1}
                               className="w-6 h-6 flex items-center justify-center text-text-tertiary disabled:opacity-30 hover:bg-bg-gray rounded"
                             >
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={14} />
+                              <Icon icon={ChevronDown} size={14} />
                             </button>
                             <button
                               onClick={() => removeAppFromEditing(app.id)}
                               className="w-6 h-6 flex items-center justify-center text-red-500 hover:bg-red-50 rounded"
                             >
-                              <HugeiconsIcon icon={Delete01Icon} size={14} />
+                              <Icon icon={Trash2} size={14} />
                             </button>
                           </div>
                         );
@@ -1591,11 +1579,11 @@ export default function Sidebar() {
                           className="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-bg-gray text-left transition-colors"
                         >
                           <span className="w-7 h-7 flex items-center justify-center text-text-secondary">
-                            <HugeiconsIcon icon={app.icon} size={18} />
+                            <Icon icon={app.icon} size={18} />
                           </span>
                           <span className="flex-1">{app.name}</span>
-                          <HugeiconsIcon
-                            icon={Add01Icon}
+                          <Icon
+                            icon={Plus}
                             size={16}
                             className="text-text-tertiary"
                           />
@@ -1731,7 +1719,7 @@ export default function Sidebar() {
                     </span>
                   )}
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover/icon:opacity-100 transition-opacity">
-                    <HugeiconsIcon icon={Camera01Icon} size={16} className="text-white" />
+                    <Icon icon={Camera} size={16} className="text-white" />
                   </div>
                 </button>
                 <input
@@ -1763,8 +1751,8 @@ export default function Sidebar() {
                     onClick={() => setShowDangerZone(!showDangerZone)}
                     className="flex items-center gap-2 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
                   >
-                    <HugeiconsIcon
-                      icon={ArrowDown01Icon}
+                    <Icon
+                      icon={ChevronDown}
                       size={12}
                       style={{
                         transform: showDangerZone ? "rotate(0deg)" : "rotate(-90deg)",
@@ -1872,7 +1860,7 @@ export default function Sidebar() {
                     }}
                     className="w-6 h-6 flex items-center justify-center text-red-500 hover:bg-red-50 rounded shrink-0"
                   >
-                    <HugeiconsIcon icon={Delete01Icon} size={14} />
+                    <Icon icon={Trash2} size={14} />
                   </button>
                 </div>
               ))}

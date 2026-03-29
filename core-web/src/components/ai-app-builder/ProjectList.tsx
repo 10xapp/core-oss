@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { useBuilderStore } from "../../stores/builderStore";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Add01Icon,
-  ArrowLeft01Icon,
-  ArrowUp01Icon,
-} from "@hugeicons/core-free-icons";
+import { Plus, ArrowLeft, ArrowUp } from "lucide-react";
+import { Icon } from "../ui/Icon";
 
 function autoTitle(prompt: string): string {
   // Take first ~50 chars, cut at last word boundary
@@ -66,7 +62,7 @@ export default function ProjectList({
           href="/chat"
           className="p-1.5 rounded-lg hover:bg-gray-50 text-text-secondary"
         >
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={18} />
+          <Icon icon={ArrowLeft} size={18} />
         </a>
         <h1 className="text-sm font-medium text-text-body">App Builder</h1>
       </div>
@@ -108,7 +104,7 @@ export default function ProjectList({
                   disabled={creating || !prompt.trim()}
                   className="p-2 rounded-full bg-gray-900 text-white disabled:opacity-30 hover:opacity-90 transition-opacity"
                 >
-                  <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
+                  <Icon icon={ArrowUp} size={14} />
                 </button>
               </div>
             </div>
@@ -151,7 +147,7 @@ export default function ProjectList({
                   onClick={() => setShowCreateForm(true)}
                   className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-body transition-colors"
                 >
-                  <HugeiconsIcon icon={Add01Icon} size={12} />
+                  <Icon icon={Plus} size={12} />
                   New
                 </button>
               </div>

@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowDownIcon, ClockIcon, TrashIcon, EllipsisHorizontalIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'motion/react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Add01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Plus } from 'lucide-react';
+import { Icon } from '../ui/Icon';
 import { getMessages, createConversation, type Message, type ContentPart } from '../../api/client';
 import { useConversationStore } from '../../stores/conversationStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
@@ -411,7 +411,7 @@ export default function ChatView() {
               className="p-1 rounded bg-white border border-black/10 hover:border-black/20 text-text-secondary hover:text-text-body transition-colors"
               title="New chat"
             >
-              <HugeiconsIcon icon={Add01Icon} size={16} />
+              <Icon icon={Plus} size={16} />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto px-2 pb-4">

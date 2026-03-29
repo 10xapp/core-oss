@@ -1,11 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  UserIcon,
-  Tag01Icon,
-  Calendar03Icon,
-} from "@hugeicons-pro/core-stroke-standard";
+import { User, Tag, Calendar } from "lucide-react";
+import { Icon } from "../../ui/Icon";
 import { Flag } from "@phosphor-icons/react";
 import { useProjectsStore } from "../../../stores/projectsStore";
 import {
@@ -273,13 +269,13 @@ export default function ProjectsListView() {
                 </td>
                 <td className="px-4 py-3.5 h-[52px]">
                   <div className="flex items-center gap-2.5 text-gray-400 -ml-2 pl-3">
-                    <HugeiconsIcon icon={UserIcon} size={14} />
+                    <Icon icon={User} size={14} />
                     <span>—</span>
                   </div>
                 </td>
                 <td className="px-4 py-3.5 h-[52px]">
                   <div className="flex items-center gap-2 text-gray-400 -ml-2 pl-2">
-                    <HugeiconsIcon icon={Calendar03Icon} size={14} />
+                    <Icon icon={Calendar} size={14} />
                     <span>—</span>
                   </div>
                 </td>
@@ -291,7 +287,7 @@ export default function ProjectsListView() {
                 </td>
                 <td className="px-4 py-3.5 h-[52px]">
                   <div className="flex items-center gap-2 text-gray-400 -ml-2 pl-3">
-                    <HugeiconsIcon icon={Tag01Icon} size={14} />
+                    <Icon icon={Tag} size={14} />
                     <span>—</span>
                   </div>
                 </td>

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useBuilderStore } from "../../stores/builderStore";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, Download04Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft, Download } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import BuilderChat from "./BuilderChat";
 import BuilderPreview from "./BuilderPreview";
 import VersionSelector from "./VersionSelector";
@@ -27,7 +27,7 @@ export default function BuilderWorkspace() {
           onClick={() => navigate("/builder")}
           className="p-1.5 rounded-lg hover:bg-gray-50 text-text-secondary"
         >
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={16} />
+          <Icon icon={ArrowLeft} size={16} />
         </button>
         <span className="text-sm font-medium text-text-body max-w-[200px] truncate">
           {activeProject?.name || "Untitled"}
@@ -45,7 +45,7 @@ export default function BuilderWorkspace() {
           className="p-1.5 rounded-lg hover:bg-gray-50 text-text-secondary disabled:opacity-30 disabled:pointer-events-none transition-colors"
           title="Download as ZIP"
         >
-          <HugeiconsIcon icon={Download04Icon} size={16} />
+          <Icon icon={Download} size={16} />
         </button>
 
         {/* Generation indicator */}

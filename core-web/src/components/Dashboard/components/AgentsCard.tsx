@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { ArtificialIntelligence02Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Brain } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { useWorkspaceStore } from '../../../stores/workspaceStore';
 import { getWorkspaceAgents, type AgentInstance } from '../../../api/client';
 import BentoCard from './BentoCard';
@@ -167,8 +167,8 @@ export default function AgentsCard() {
     <BentoCard
       title="Agents"
       icon={
-        <HugeiconsIcon
-          icon={ArtificialIntelligence02Icon}
+        <Icon
+          icon={Brain}
           size={18}
         />
       }
@@ -193,8 +193,8 @@ export default function AgentsCard() {
         </div>
       ) : displayAgents.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center py-12 text-text-tertiary">
-          <HugeiconsIcon
-            icon={ArtificialIntelligence02Icon}
+          <Icon
+            icon={Brain}
             size={32}
             className="mb-2 opacity-40"
           />

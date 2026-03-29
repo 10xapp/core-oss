@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { avatarGradient } from '../../../utils/avatarGradient';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckIcon } from '@heroicons/react/24/outline';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { UserIcon } from '@hugeicons-pro/core-stroke-standard';
+import { User } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { useProjectsStore } from '../../../stores/projectsStore';
 import {
   useProjectMembers,
@@ -175,7 +175,7 @@ export default function AssigneePicker({ issueId, boardId, currentAssignees, but
                   transition={{ duration: 0.15 }}
                   className={`flex items-center gap-1 text-gray-400 ${emptyState === 'icon-dash' || emptyState === 'icon-only' ? '' : 'gap-1.5'}`}
                 >
-                  <HugeiconsIcon icon={UserIcon} size={compact ? 12 : 14} />
+                  <Icon icon={User} size={compact ? 12 : 14} />
                   {emptyState !== 'icon-only' && (
                     <span className={compact ? 'text-[11px]' : ''}>{emptyState === 'icon-dash' ? '–' : 'No assignees'}</span>
                   )}
