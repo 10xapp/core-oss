@@ -15,6 +15,7 @@ import logging
 import httpx
 
 from lib.supabase_client import supabase, get_authenticated_supabase_client
+from lib.token_encryption import encrypt_token_fields
 from api.services.provider_factory import ProviderFactory
 from api.config import settings
 
@@ -455,7 +456,7 @@ class AuthService:
 
         # Use upsert to atomically create or update - avoids race condition
         result = supabase.table('ext_connections')\
-            .upsert(data, on_conflict='user_id,provider,provider_user_id')\
+            .upsert(encrypt_token_fields(data), on_conflict='user_id,provider,provider_user_id')\
             .execute()
 
         logger.info(f"Upserted OAuth connection for user {user_id}, provider {provider}")
@@ -650,7 +651,7 @@ class AuthService:
 
         # Use upsert to atomically create or update - avoids race condition
         upsert_result = auth_supabase.table('ext_connections')\
-            .upsert(connection_data, on_conflict='user_id,provider,provider_user_id')\
+            .upsert(encrypt_token_fields(connection_data), on_conflict='user_id,provider,provider_user_id')\
             .execute()
         logger.info(f"✅ Upserted OAuth connection for {user_id}")
 
@@ -867,7 +868,7 @@ class AuthService:
 
         # Use upsert to handle re-adding previously deleted accounts
         result = auth_supabase.table('ext_connections')\
-            .upsert(connection_data, on_conflict='user_id,provider,provider_user_id')\
+            .upsert(encrypt_token_fields(connection_data), on_conflict='user_id,provider,provider_user_id')\
             .execute()
 
         if not result.data:

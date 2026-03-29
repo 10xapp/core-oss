@@ -1,6 +1,8 @@
 """
 Application configuration settings
 """
+from cryptography.fernet import Fernet
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional, Set
 
@@ -198,12 +200,45 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile (bot protection)
     turnstile_secret_key: str = ""
 
+    # Token encryption (OAuth tokens at rest)
+    token_encryption_key: str = ""           # Fernet key for encrypting OAuth tokens at rest
+    token_encryption_key_previous: str = ""  # Previous key for zero-downtime key rotation
+
     # Sentry
     sentry_dsn: str = ""
 
     # Environment
     api_env: str = "development"
-    
+
+    @model_validator(mode="after")
+    def validate_token_encryption_settings(self):
+        """Fail fast on invalid token-encryption rollout configuration."""
+        current_key = self.token_encryption_key
+        previous_key = self.token_encryption_key_previous
+
+        if previous_key and not current_key:
+            raise ValueError(
+                "TOKEN_ENCRYPTION_KEY_PREVIOUS requires TOKEN_ENCRYPTION_KEY to also be set"
+            )
+
+        if current_key:
+            try:
+                Fernet(current_key.encode())
+            except Exception as exc:
+                raise ValueError(
+                    "TOKEN_ENCRYPTION_KEY must be a valid Fernet key"
+                ) from exc
+
+        if previous_key:
+            try:
+                Fernet(previous_key.encode())
+            except Exception as exc:
+                raise ValueError(
+                    "TOKEN_ENCRYPTION_KEY_PREVIOUS must be a valid Fernet key"
+                ) from exc
+
+        return self
+
     class Config:
         # Load from .env file for local development
         # In production (Vercel), environment variables are set directly

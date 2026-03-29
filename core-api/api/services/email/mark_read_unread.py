@@ -9,6 +9,7 @@ This module handles the translation between these models.
 """
 from typing import Dict, Any
 from lib.supabase_client import get_authenticated_supabase_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 import logging
 import requests
 from googleapiclient.errors import HttpError
@@ -46,7 +47,7 @@ def _get_email_provider(user_id: str, email_id: str, user_jwt: str) -> tuple[str
     if not result.data:
         raise ValueError(f"Email not found: {email_id}")
 
-    connection = result.data.get('ext_connections', {})
+    connection = decrypt_ext_connection_tokens(result.data.get('ext_connections', {}))
     provider = connection.get('provider', 'google')
     connection_id = connection.get('id')
 

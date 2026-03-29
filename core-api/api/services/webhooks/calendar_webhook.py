@@ -12,6 +12,7 @@ from googleapiclient.errors import HttpError
 
 from lib.supabase_client import get_service_role_client
 from lib.batch_utils import batch_upsert
+from lib.token_encryption import decrypt_ext_connection_tokens
 from api.services.google_auth import (
     get_calendar_service_for_webhook,
     GoogleAuthError
@@ -75,6 +76,8 @@ def process_calendar_notification(
         return {"status": "ok", "message": "No active subscription"}
 
     sub_data = subscription.data[0]
+    if sub_data.get('ext_connections'):
+        sub_data['ext_connections'] = decrypt_ext_connection_tokens(sub_data['ext_connections'])
     user_id = sub_data['ext_connections']['user_id']
     account_email = sub_data['ext_connections'].get('provider_email')
     sync_token = sub_data.get('sync_token')

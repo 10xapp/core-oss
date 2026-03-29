@@ -32,6 +32,7 @@ from api.services.syncs import sync_gmail, sync_outlook
 from api.dependencies import get_current_user_jwt, get_current_user_id
 from api.exceptions import handle_api_exception
 from lib.supabase_client import get_authenticated_supabase_client, get_authenticated_async_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 import logging
 
 logger = logging.getLogger(__name__)
@@ -985,7 +986,7 @@ async def sync_emails_endpoint(
             .in_('provider', ['google', 'microsoft'])\
             .execute()
 
-        connections = connections_result.data or []
+        connections = [decrypt_ext_connection_tokens(c) for c in (connections_result.data or [])]
         google_connections = [c for c in connections if c.get('provider') == 'google']
         microsoft_connections = [c for c in connections if c.get('provider') == 'microsoft']
 

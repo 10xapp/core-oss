@@ -19,6 +19,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 from api.config import settings
+from lib.token_encryption import encrypt_token_fields
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +335,7 @@ def get_valid_microsoft_credentials(
         }
 
         supabase_client.table('ext_connections')\
-            .update(update_data)\
+            .update(encrypt_token_fields(update_data))\
             .eq('id', connection_data['id'])\
             .execute()
 

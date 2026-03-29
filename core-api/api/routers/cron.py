@@ -36,6 +36,7 @@ from sentry_sdk.crons import capture_checkin
 from sentry_sdk.crons.consts import MonitorStatus
 from api.config import settings
 from lib.supabase_client import get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 from api.services.syncs import (
     sync_gmail_cron,
     sync_google_calendar_cron,
@@ -513,6 +514,9 @@ async def cron_renew_watches(authorization: str = Header(None)):
             .execute()
 
         expiring_subs = result.data
+        for sub in (expiring_subs or []):
+            if sub.get('ext_connections'):
+                sub['ext_connections'] = decrypt_ext_connection_tokens(sub['ext_connections'])
 
         if not expiring_subs:
             logger.info("ℹ️ No watches need renewal")
