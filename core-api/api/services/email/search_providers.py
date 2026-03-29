@@ -20,6 +20,7 @@ from api.services.email.google_api_helpers import parse_email_headers
 from api.services.email.fetch_emails import fetch_emails
 from api.services.syncs.sync_outlook import build_outlook_labels
 from lib.supabase_client import get_authenticated_async_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -433,7 +434,7 @@ async def search_emails_with_providers(
                 conn_query = conn_query.in_('id', account_ids)
 
             conn_result = await conn_query.execute()
-            provider_connections = conn_result.data or []
+            provider_connections = [decrypt_ext_connection_tokens(c) for c in (conn_result.data or [])]
         except Exception as e:
             logger.warning(f"[Search] Failed to fetch connections: {e}")
 

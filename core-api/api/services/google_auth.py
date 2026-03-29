@@ -19,6 +19,10 @@ from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 
 from lib.supabase_client import get_service_role_client
+from lib.token_encryption import (
+    decrypt_ext_connection_tokens,
+    encrypt_token_fields,
+)
 from api.config import settings
 
 logger = logging.getLogger(__name__)
@@ -138,7 +142,7 @@ def get_credentials_for_connection(
     if not result.data:
         raise NoConnectionError(f"No active connection found with ID {connection_id}")
 
-    connection_data = result.data
+    connection_data = decrypt_ext_connection_tokens(result.data)
     credentials = get_valid_credentials(connection_data, supabase_client)
 
     return credentials, connection_data
@@ -184,7 +188,7 @@ def get_credentials_for_user(
     if not result.data or len(result.data) == 0:
         raise NoConnectionError(f"No active {provider} connection found for user {user_id}")
 
-    connection_data = result.data[0]  # Get first result from list
+    connection_data = decrypt_ext_connection_tokens(result.data[0])  # Get first result from list
     credentials = get_valid_credentials(connection_data, supabase_client)
 
     return credentials, connection_data
@@ -209,8 +213,8 @@ def get_gmail_service_for_webhook(
     """
     # Extract connection info - webhook queries join ext_connections
     if 'ext_connections' in connection_data:
-        # Nested from join query
-        ext_conn = connection_data['ext_connections']
+        # Nested from join query — decrypt nested tokens
+        ext_conn = decrypt_ext_connection_tokens(connection_data['ext_connections'])
         conn_for_refresh = {
             'id': connection_data.get('ext_connection_id'),
             'user_id': ext_conn.get('user_id'),
@@ -244,7 +248,8 @@ def get_calendar_service_for_webhook(
     """
     # Extract connection info - webhook queries join ext_connections
     if 'ext_connections' in connection_data:
-        ext_conn = connection_data['ext_connections']
+        # Nested from join query — decrypt nested tokens
+        ext_conn = decrypt_ext_connection_tokens(connection_data['ext_connections'])
         conn_for_refresh = {
             'id': connection_data.get('ext_connection_id'),
             'user_id': ext_conn.get('user_id'),
@@ -369,7 +374,7 @@ def _refresh_and_save_token(
 
         if connection_id:
             supabase_client.table('ext_connections')\
-                .update(update_data)\
+                .update(encrypt_token_fields(update_data))\
                 .eq('id', connection_id)\
                 .execute()
             logger.info("✅ Successfully refreshed and saved Google access token")

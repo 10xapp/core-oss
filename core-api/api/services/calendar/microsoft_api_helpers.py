@@ -6,6 +6,7 @@ Provides similar interface to google_api_helpers.py for consistency.
 """
 from typing import Optional, Dict, Any, Tuple
 from lib.supabase_client import get_authenticated_supabase_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 import logging
 import httpx
 
@@ -54,7 +55,7 @@ def get_microsoft_calendar_service_for_account(
             logger.warning(f"❌ No active Microsoft connection found for account {account_id}")
             return None, None, None
 
-        connection_data = connection_result.data
+        connection_data = decrypt_ext_connection_tokens(connection_result.data)
         connection_data['user_id'] = user_id
         connection_id = connection_data['id']
 
@@ -116,7 +117,7 @@ def get_microsoft_calendar_service(
             logger.warning(f"❌ No active Microsoft connection found for user {user_id}")
             return None, None, None
 
-        connection_data = connection_result.data[0]
+        connection_data = decrypt_ext_connection_tokens(connection_result.data[0])
         connection_data['user_id'] = user_id
         connection_id = connection_data['id']
 

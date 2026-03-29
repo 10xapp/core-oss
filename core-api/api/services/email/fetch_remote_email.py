@@ -23,6 +23,7 @@ from api.services.email.google_api_helpers import (
 from api.services.syncs.sync_outlook import build_outlook_labels
 from api.services.email.label_normalization import normalize_labels_canonical
 from lib.supabase_client import get_authenticated_async_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def fetch_remote_email(
     if not conn_result.data:
         raise ValueError(f"No active connection found for id={connection_id}")
 
-    connection_data = conn_result.data
+    connection_data = decrypt_ext_connection_tokens(conn_result.data)
     connection_data['user_id'] = user_id
     provider = connection_data['provider']
 

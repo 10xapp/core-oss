@@ -15,6 +15,7 @@ from api.services.webhooks import (
     process_gmail_notification,
     process_calendar_notification
 )
+from lib.token_encryption import decrypt_ext_connection_tokens
 
 from pydantic import BaseModel
 from api.schemas import HealthResponse
@@ -372,7 +373,9 @@ async def _enqueue_microsoft_notification(notification: dict) -> dict:
             return {"success": False, "error": "Unknown subscription"}
 
         subscription_data = sub_result.data[0]
-        connection_data = subscription_data.get('ext_connections')
+        connection_data = decrypt_ext_connection_tokens(
+            subscription_data.get('ext_connections')
+        )
         if not connection_data:
             return {"success": False, "error": "No connection data"}
 
@@ -442,7 +445,9 @@ async def process_microsoft_notification(notification: dict) -> dict:
             return {"success": False, "error": "Unknown subscription"}
 
         subscription_data = sub_result.data[0]
-        connection_data = subscription_data.get('ext_connections')
+        connection_data = decrypt_ext_connection_tokens(
+            subscription_data.get('ext_connections')
+        )
 
         if not connection_data:
             logger.warning("⚠️ [Microsoft] No connection data for subscription")

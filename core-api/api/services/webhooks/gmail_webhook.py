@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from googleapiclient.errors import HttpError
 
 from lib.supabase_client import get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 from api.services.google_auth import (
     get_gmail_service_for_webhook,
     get_current_gmail_history_id,
@@ -79,6 +80,8 @@ def process_gmail_notification(
         logger.warning(f"⚠️ Multiple subscriptions found for {email_address}, using first")
 
     sub_data = subscription.data[0]
+    if sub_data.get('ext_connections'):
+        sub_data['ext_connections'] = decrypt_ext_connection_tokens(sub_data['ext_connections'])
     user_id = sub_data['ext_connections']['user_id']
     old_history_id = sub_data.get('history_id')
     subscription_id = sub_data['id']

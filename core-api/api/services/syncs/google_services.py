@@ -9,6 +9,10 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Any
 
 from api.services.syncs.google_error_utils import is_permanent_google_oauth_error
+from lib.token_encryption import (
+    decrypt_ext_connection_tokens,
+    encrypt_token_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +52,7 @@ def get_google_services_for_connection(
         if not connection_result.data:
             return None, None, None
 
-        connection_data = connection_result.data
+        connection_data = decrypt_ext_connection_tokens(connection_result.data)
         user_id = connection_data['user_id']
         access_token = connection_data.get('access_token')
         refresh_token = connection_data.get('refresh_token')
@@ -123,7 +127,7 @@ def get_google_services_for_connection(
                     logger.info(f"🔄 Google issued new refresh token for connection {connection_id[:8]}...")
 
                 service_supabase.table('ext_connections')\
-                    .update(update_data)\
+                    .update(encrypt_token_fields(update_data))\
                     .eq('id', connection_id)\
                     .execute()
 

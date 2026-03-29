@@ -17,6 +17,7 @@ from typing import Dict, Any, Optional
 
 from lib.supabase_client import get_service_role_client
 from lib.batch_utils import batch_upsert, get_existing_external_ids
+from lib.token_encryption import encrypt_token_fields
 from api.services.notifications.calendar_invites import (
     get_calendar_event_rows_by_external_ids,
     reconcile_calendar_invite_notifications,
@@ -91,11 +92,11 @@ def _get_valid_access_token(connection_data: Dict[str, Any]) -> str:
 
                 # Update connection in database
                 supabase = get_service_role_client()
-                supabase.table('ext_connections').update({
+                supabase.table('ext_connections').update(encrypt_token_fields({
                     'access_token': new_tokens['access_token'],
                     'refresh_token': new_tokens.get('refresh_token', connection_data.get('refresh_token')),
                     'token_expires_at': (datetime.now(timezone.utc) + timedelta(seconds=new_tokens['expires_in'])).isoformat()
-                }).eq('id', connection_data['id']).execute()
+                })).eq('id', connection_data['id']).execute()
 
                 return new_tokens['access_token']
         except Exception as e:

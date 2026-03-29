@@ -17,6 +17,7 @@ from qstash.errors import SignatureError
 from api.config import settings
 from api.routers.cron import verify_cron_auth
 from lib.supabase_client import get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/workers", tags=["workers"])
@@ -186,7 +187,7 @@ def _load_connection(
         .eq("is_active", True)\
         .maybe_single()\
         .execute()
-    return service_supabase, conn_result.data
+    return service_supabase, decrypt_ext_connection_tokens(conn_result.data) if conn_result.data else None
 
 
 def _touch_last_synced(service_supabase: Any, connection_id: str) -> None:

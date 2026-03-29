@@ -5,6 +5,10 @@ Shared utilities for interacting with Google Calendar API
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from lib.supabase_client import get_authenticated_supabase_client, get_service_role_client
+from lib.token_encryption import (
+    decrypt_ext_connection_tokens,
+    encrypt_token_fields,
+)
 import logging
 import uuid
 from google.oauth2.credentials import Credentials
@@ -44,7 +48,7 @@ def get_google_calendar_service_for_account(user_id: str, user_jwt: str, account
             logger.warning(f"❌ No active Google connection found for account {account_id}")
             return None, None
 
-        connection_data = connection_result.data
+        connection_data = decrypt_ext_connection_tokens(connection_result.data)
         connection_data['user_id'] = user_id
         connection_id = connection_data['id']
 
@@ -107,7 +111,7 @@ def get_google_calendar_service(user_id: str, user_jwt: str, account_id: str = N
             logger.info("💡 User needs to connect their Google Calendar via OAuth")
             return None, None
 
-        connection_data = connection_result.data[0]  # Get first result from list
+        connection_data = decrypt_ext_connection_tokens(connection_result.data[0])  # Get first result from list
         connection_data['user_id'] = user_id
         connection_id = connection_data['id']
 
@@ -201,7 +205,7 @@ def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional
                 .execute()
 
             if fresh_result.data and len(fresh_result.data) > 0:
-                fresh_data = fresh_result.data[0]
+                fresh_data = decrypt_ext_connection_tokens(fresh_result.data[0])
                 fresh_expires_at_str = fresh_data.get('token_expires_at')
                 if fresh_expires_at_str:
                     try:
@@ -270,7 +274,7 @@ def _refresh_google_token_if_needed(connection_data: Dict[str, Any]) -> Optional
 
         service_supabase = get_service_role_client()
         service_supabase.table('ext_connections')\
-            .update(update_data)\
+            .update(encrypt_token_fields(update_data))\
             .eq('id', connection_id)\
             .execute()
 

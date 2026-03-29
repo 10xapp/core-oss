@@ -6,6 +6,7 @@ from typing import Dict, Any
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from lib.supabase_client import get_authenticated_supabase_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 import logging
 import requests
 from googleapiclient.errors import HttpError
@@ -83,7 +84,7 @@ def _get_email_with_connection(user_id: str, email_id: str, user_jwt: str) -> tu
         return None, None, None, None
 
     email_data = result.data
-    connection = email_data.get('ext_connections', {})
+    connection = decrypt_ext_connection_tokens(email_data.get('ext_connections', {}))
     provider = connection.get('provider', 'google')
     connection_id = connection.get('id')
 
@@ -446,12 +447,13 @@ def get_email_details(
             for conn in connections_result.data:
                 if conn.get('provider') == 'microsoft':
                     # Try with Microsoft
+                    decrypted_conn = decrypt_ext_connection_tokens(conn)
                     connection_data = {
-                        'id': conn['id'],
-                        'access_token': conn.get('access_token'),
-                        'refresh_token': conn.get('refresh_token'),
-                        'token_expires_at': conn.get('token_expires_at'),
-                        'metadata': conn.get('metadata', {}),
+                        'id': decrypted_conn['id'],
+                        'access_token': decrypted_conn.get('access_token'),
+                        'refresh_token': decrypted_conn.get('refresh_token'),
+                        'token_expires_at': decrypted_conn.get('token_expires_at'),
+                        'metadata': decrypted_conn.get('metadata', {}),
                     }
                     return _get_outlook_email_details(
                         email_id=email_id,

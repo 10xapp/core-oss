@@ -18,6 +18,7 @@ from api.services.syncs import (
 )
 from api.services.calendar.google_api_helpers import get_google_calendar_service_for_account
 from lib.supabase_client import get_authenticated_supabase_client, get_service_role_client
+from lib.token_encryption import decrypt_ext_connection_tokens
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -320,9 +321,10 @@ async def trigger_manual_sync(
             .eq('is_active', True)\
             .execute()
 
-        # Group connections by provider
-        google_connections = [c for c in (connections.data or []) if c['provider'] == 'google']
-        microsoft_connections = [c for c in (connections.data or []) if c['provider'] == 'microsoft']
+        # Decrypt tokens and group connections by provider
+        all_connections = [decrypt_ext_connection_tokens(c) for c in (connections.data or [])]
+        google_connections = [c for c in all_connections if c['provider'] == 'google']
+        microsoft_connections = [c for c in all_connections if c['provider'] == 'microsoft']
 
         logger.info(f"📊 Found {len(google_connections)} Google + {len(microsoft_connections)} Microsoft accounts")
 
