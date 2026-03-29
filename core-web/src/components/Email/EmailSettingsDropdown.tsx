@@ -1,10 +1,5 @@
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Settings03Icon,
-  Delete02Icon,
-  Archive02Icon,
-  ArrowTurnBackwardIcon,
-} from "@hugeicons-pro/core-stroke-standard";
+import { Settings, Trash2, Archive, Undo2 } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import Dropdown from "../Dropdown/Dropdown";
 
 interface EmailSettingsDropdownProps {
@@ -41,7 +36,7 @@ export default function EmailSettingsDropdown({
             }}
             className={itemClass}
           >
-            <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={16} className="text-text-secondary" />
+            <Icon icon={Undo2} size={16} className="text-text-secondary" />
             <span>Restore</span>
           </button>
         )}
@@ -55,7 +50,7 @@ export default function EmailSettingsDropdown({
             }}
             className={itemClass}
           >
-            <HugeiconsIcon icon={Archive02Icon} size={16} className="text-text-secondary" />
+            <Icon icon={Archive} size={16} className="text-text-secondary" />
             <span>Archive</span>
           </button>
         )}
@@ -69,7 +64,7 @@ export default function EmailSettingsDropdown({
             }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
           >
-            <HugeiconsIcon icon={Delete02Icon} size={16} className="text-red-500" />
+            <Icon icon={Trash2} size={16} className="text-red-500" />
             <span>Delete</span>
           </button>
         )}
@@ -85,7 +80,7 @@ export default function EmailSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={Settings03Icon} size={16} className="text-text-secondary" />
+              <Icon icon={Settings} size={16} className="text-text-secondary" />
               <span>App settings</span>
             </button>
           </>

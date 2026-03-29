@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBuilderStore } from "../../stores/builderStore";
 import { streamBuilderGeneration, type BuilderMessage } from "../../api/client";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowUp01Icon } from "@hugeicons/core-free-icons";
+import { ArrowUp } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import ReactMarkdown from "react-markdown";
 
 export default function BuilderChat() {
@@ -305,7 +305,7 @@ export default function BuilderChat() {
                 disabled={!input.trim()}
                 className="p-1.5 rounded-full bg-gray-900 text-white disabled:opacity-30 hover:opacity-90 transition-opacity"
               >
-                <HugeiconsIcon icon={ArrowUp01Icon} size={14} />
+                <Icon icon={ArrowUp} size={14} />
               </button>
             )}
           </div>

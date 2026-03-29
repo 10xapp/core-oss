@@ -16,21 +16,8 @@ import { Link } from '@tiptap/extension-link';
 import { Underline } from '@tiptap/extension-underline';
 import { Highlight } from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
-import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  LeftToRightListBulletIcon,
-  LeftToRightListNumberIcon,
-  QuoteDownIcon,
-  SourceCodeIcon,
-  Download04Icon,
-  CheckListIcon,
-  TextUnderlineIcon,
-  HighlighterIcon,
-  Link01Icon,
-  Clock01Icon,
-  Minimize01Icon,
-  Maximize01Icon,
-} from '@hugeicons-pro/core-stroke-standard';
+import { List, ListOrdered, Quote, Code, Download, ListChecks, Underline as UnderlineIcon, Highlighter, Link as LinkIcon, Clock, Minimize2, Maximize2 } from 'lucide-react';
+import { Icon } from '../ui/Icon';
 import { useUIStore } from '../../stores/uiStore';
 import { UniversalMentionMark } from '../Mentions/MentionMark';
 import { UniversalMentionAutocomplete } from '../Mentions/UniversalMentionAutocomplete';
@@ -229,7 +216,7 @@ export function NoteToolbar({
             isActive={editor.isActive('underline')}
             title="Underline"
           >
-            <HugeiconsIcon icon={TextUnderlineIcon} size={16} />
+            <Icon icon={UnderlineIcon} size={16} />
           </ToolbarButton>
           <button
             ref={highlightButtonRef}
@@ -244,7 +231,7 @@ export function NoteToolbar({
                 : 'text-text-secondary hover:text-text-body hover:bg-bg-gray'
             }`}
           >
-            <HugeiconsIcon icon={HighlighterIcon} size={16} />
+            <Icon icon={Highlighter} size={16} />
           </button>
           <ToolbarButton
             onAction={() => {
@@ -257,7 +244,7 @@ export function NoteToolbar({
             isActive={editor.isActive('link')}
             title="Link"
           >
-            <HugeiconsIcon icon={Link01Icon} size={16} />
+            <Icon icon={LinkIcon} size={16} />
           </ToolbarButton>
         </div>
 
@@ -267,14 +254,14 @@ export function NoteToolbar({
           isActive={editor.isActive('bulletList')}
           title="Bullet List"
         >
-          <HugeiconsIcon icon={LeftToRightListBulletIcon} size={16} />
+          <Icon icon={List} size={16} />
         </ToolbarButton>
         <ToolbarButton
           onAction={() => editor.chain().focus().toggleOrderedList().run()}
           isActive={editor.isActive('orderedList')}
           title="Numbered List"
         >
-          <HugeiconsIcon icon={LeftToRightListNumberIcon} size={16} />
+          <Icon icon={ListOrdered} size={16} />
         </ToolbarButton>
         <div className="w-px h-4 bg-border-gray mx-1" />
         <ToolbarButton
@@ -282,14 +269,14 @@ export function NoteToolbar({
           isActive={editor.isActive('blockquote')}
           title="Quote"
         >
-          <HugeiconsIcon icon={QuoteDownIcon} size={16} />
+          <Icon icon={Quote} size={16} />
         </ToolbarButton>
         <ToolbarButton
           onAction={() => editor.chain().focus().toggleCode().run()}
           isActive={editor.isActive('code')}
           title="Code"
         >
-          <HugeiconsIcon icon={SourceCodeIcon} size={16} />
+          <Icon icon={Code} size={16} />
         </ToolbarButton>
         <div className="w-px h-4 bg-border-gray mx-1" />
         <ToolbarButton
@@ -297,7 +284,7 @@ export function NoteToolbar({
           isActive={editor.isActive('taskList')}
           title="Task List"
         >
-          <HugeiconsIcon icon={CheckListIcon} size={16} />
+          <Icon icon={ListChecks} size={16} />
         </ToolbarButton>
         <ToolbarButton
           onAction={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
@@ -436,7 +423,7 @@ export function NoteToolbarRight({
             : 'text-text-tertiary hover:text-text-body hover:bg-bg-gray'
         }`}
       >
-        <HugeiconsIcon icon={Clock01Icon} size={16} />
+        <Icon icon={Clock} size={16} />
       </button>
       {onDownload && (
         <button
@@ -444,7 +431,7 @@ export function NoteToolbarRight({
           title="Download as .md"
           className="p-1.5 rounded transition-colors text-text-tertiary hover:text-text-body hover:bg-bg-gray"
         >
-          <HugeiconsIcon icon={Download04Icon} size={16} />
+          <Icon icon={Download} size={16} />
         </button>
       )}
       {onToggleFullWidth && (
@@ -453,7 +440,7 @@ export function NoteToolbarRight({
           title={isFullWidth ? "Narrow width" : "Full width"}
           className="p-1.5 rounded transition-colors text-text-tertiary hover:text-text-body hover:bg-bg-gray"
         >
-          <HugeiconsIcon icon={isFullWidth ? Minimize01Icon : Maximize01Icon} size={16} />
+          <Icon icon={isFullWidth ? Minimize2 : Maximize2} size={16} />
         </button>
       )}
       <div className="flex items-center gap-2 text-xs text-text-tertiary ml-2">

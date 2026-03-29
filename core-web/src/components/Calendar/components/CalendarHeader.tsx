@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowLeft01Icon, ArrowRight01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import type { ViewMode } from '../types/calendar.types';
 
 // Inject keyframes once for smooth animations
@@ -121,14 +121,14 @@ export default function CalendarHeader({
             className="p-1 text-text-tertiary hover:text-text-body hover:bg-black/5 rounded-md transition-colors"
             aria-label="Previous"
           >
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={14} strokeWidth={2} />
+            <Icon icon={ArrowLeft} size={14} />
           </button>
           <button
             onClick={onNext}
             className="p-1 text-text-tertiary hover:text-text-body hover:bg-black/5 rounded-md transition-colors"
             aria-label="Next"
           >
-            <HugeiconsIcon icon={ArrowRight01Icon} size={14} strokeWidth={2} />
+            <Icon icon={ArrowRight} size={14} />
           </button>
         </div>
       )}

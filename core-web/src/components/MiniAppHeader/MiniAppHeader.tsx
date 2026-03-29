@@ -1,16 +1,7 @@
 import { useState } from 'react';
 import MiniAppSettingsModal from './MiniAppSettingsModal';
-import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  Notification02Icon,
-  Settings03Icon,
-  ChatFeedback01Icon,
-} from '@hugeicons-pro/core-stroke-standard';
-import {
-  Notification02Icon as Notification02IconSolid,
-  Settings03Icon as Settings03IconSolid,
-  ChatFeedback01Icon as ChatFeedback01IconSolid,
-} from '@hugeicons-pro/core-solid-standard';
+import { Bell, Settings, MessageCircle } from 'lucide-react';
+import { Icon } from '../ui/Icon';
 import { useUIStore } from '../../stores/uiStore';
 import { useNotificationStore } from '../../stores/notificationStore';
 import NotificationsPanel from '../NotificationsPanel/NotificationsPanel';
@@ -47,7 +38,7 @@ export function HeaderButtons({ onSettingsClick, settingsButtonRef }: { onSettin
             title="Notifications"
             className={`${iconBtn} ${isNotificationsPanelOpen ? iconBtnActive : iconBtnInactive} relative`}
           >
-            <HugeiconsIcon icon={isNotificationsPanelOpen ? Notification02IconSolid : Notification02Icon} size={20} />
+            <Icon icon={Bell} size={20} active={isNotificationsPanelOpen} />
             {unreadCount > 0 && (
               <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-semibold rounded-full flex items-center justify-center">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -64,7 +55,7 @@ export function HeaderButtons({ onSettingsClick, settingsButtonRef }: { onSettin
           title="App Settings"
           className={`${iconBtn} ${showSettingsModal || (onSettingsClick && false) ? iconBtnActive : iconBtnInactive}`}
         >
-          <HugeiconsIcon icon={showSettingsModal || (onSettingsClick && false) ? Settings03IconSolid : Settings03Icon} size={20} />
+          <Icon icon={Settings} size={20} active={showSettingsModal || (onSettingsClick && false)} />
         </button>
 
         {/* AI Chat toggle */}
@@ -73,7 +64,7 @@ export function HeaderButtons({ onSettingsClick, settingsButtonRef }: { onSettin
           title="AI Chat"
           className={`${iconBtn} ${isSidebarChatOpen ? iconBtnActive : iconBtnInactive}`}
         >
-          <HugeiconsIcon icon={isSidebarChatOpen ? ChatFeedback01IconSolid : ChatFeedback01Icon} size={20} />
+          <Icon icon={MessageCircle} size={20} active={isSidebarChatOpen} className="-scale-x-100" />
         </button>
       </div>
 

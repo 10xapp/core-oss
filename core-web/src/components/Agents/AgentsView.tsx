@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon } from "@hugeicons-pro/core-stroke-standard";
-import { ArtificialIntelligence02Icon } from "@hugeicons-pro/core-stroke-standard";
+import { Plus, Brain } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import {
   getWorkspaceAgents,
@@ -113,7 +112,7 @@ export default function AgentsView() {
               className="p-1 rounded bg-white border border-black/10 hover:border-black/20 text-text-secondary hover:text-text-body transition-colors"
               title="New agent"
             >
-              <HugeiconsIcon icon={Add01Icon} size={16} />
+              <Icon icon={Plus} size={16} />
             </button>
           </div>
 
@@ -125,8 +124,8 @@ export default function AgentsView() {
               </div>
             ) : agents.length === 0 ? (
               <div className="px-4 py-8 text-center">
-                <HugeiconsIcon
-                  icon={ArtificialIntelligence02Icon}
+                <Icon
+                  icon={Brain}
                   size={32}
                   className="mx-auto text-text-tertiary opacity-50 mb-2"
                 />
@@ -194,8 +193,8 @@ export default function AgentsView() {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <HugeiconsIcon
-                  icon={ArtificialIntelligence02Icon}
+                <Icon
+                  icon={Brain}
                   size={32}
                   className="mx-auto text-text-tertiary opacity-50 mb-3"
                 />

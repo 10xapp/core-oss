@@ -1,16 +1,6 @@
 import { useState } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  Download04Icon,
-  Clock01Icon,
-  SquareArrowExpand01Icon,
-  SquareArrowShrink02Icon,
-  Share01Icon,
-  Delete02Icon,
-  PencilEdit01Icon,
-  Copy01Icon,
-  FolderExportIcon,
-} from "@hugeicons-pro/core-stroke-standard";
+import { Download, Clock, Maximize, Minimize, Share, Trash2, Pencil, Copy, FolderOutput } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import Dropdown from "../Dropdown/Dropdown";
 import FilesSharingModal from "./FilesSharingModal";
 
@@ -61,7 +51,7 @@ export default function FilesSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={PencilEdit01Icon} size={16} className="text-text-secondary" />
+              <Icon icon={Pencil} size={16} className="text-text-secondary" />
               <span>Rename</span>
             </button>
           )}
@@ -75,7 +65,7 @@ export default function FilesSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={Copy01Icon} size={16} className="text-text-secondary" />
+              <Icon icon={Copy} size={16} className="text-text-secondary" />
               <span>Duplicate</span>
             </button>
           )}
@@ -89,7 +79,7 @@ export default function FilesSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={FolderExportIcon} size={16} className="text-text-secondary" />
+              <Icon icon={FolderOutput} size={16} className="text-text-secondary" />
               <span>Move to</span>
             </button>
           )}
@@ -106,8 +96,8 @@ export default function FilesSettingsDropdown({
               className={itemClass + " justify-between"}
             >
               <div className="flex items-center gap-3">
-                <HugeiconsIcon
-                  icon={isFullWidth ? SquareArrowShrink02Icon : SquareArrowExpand01Icon}
+                <Icon
+                  icon={isFullWidth ? Minimize : Maximize}
                   size={16}
                   className="text-text-secondary"
                 />
@@ -136,7 +126,7 @@ export default function FilesSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={Download04Icon} size={16} className="text-text-secondary" />
+              <Icon icon={Download} size={16} className="text-text-secondary" />
               <span>Download as Markdown</span>
             </button>
           )}
@@ -150,7 +140,7 @@ export default function FilesSettingsDropdown({
               }}
               className={itemClass}
             >
-              <HugeiconsIcon icon={Clock01Icon} size={16} className="text-text-secondary" />
+              <Icon icon={Clock} size={16} className="text-text-secondary" />
               <span>Version history</span>
             </button>
           )}
@@ -166,7 +156,7 @@ export default function FilesSettingsDropdown({
                 }}
                 className={itemClass}
               >
-                <HugeiconsIcon icon={Share01Icon} size={16} className="text-text-secondary" />
+                <Icon icon={Share} size={16} className="text-text-secondary" />
                 <span>Sharing</span>
               </button>
             </>
@@ -183,7 +173,7 @@ export default function FilesSettingsDropdown({
                 }}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
               >
-                <HugeiconsIcon icon={Delete02Icon} size={16} className="text-red-500" />
+                <Icon icon={Trash2} size={16} className="text-red-500" />
                 <span>Delete file</span>
               </button>
             </>

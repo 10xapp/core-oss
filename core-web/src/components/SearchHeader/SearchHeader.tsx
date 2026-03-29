@@ -1,10 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  Cancel01Icon,
-  SparklesIcon,
-} from '@hugeicons-pro/core-stroke-standard';
+import { X, Sparkles } from 'lucide-react';
+import { Icon } from '../ui/Icon';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 
 interface WorkspaceScope {
@@ -109,7 +106,7 @@ export default function SearchHeader() {
       <form onSubmit={handleSubmit} className="relative w-[400px]">
         <div className="flex items-center gap-2 bg-white border border-border-gray rounded-lg px-3 h-[32px] focus-within:border-text-tertiary transition-colors">
           {/* AI sparkle icon */}
-          <HugeiconsIcon icon={SparklesIcon} size={18} className="text-brand-primary flex-shrink-0" />
+          <Icon icon={Sparkles} size={18} className="text-brand-primary flex-shrink-0" />
 
           {/* Scope chip */}
           {scope && (
@@ -127,7 +124,7 @@ export default function SearchHeader() {
                 onClick={clearScope}
                 className="ml-0.5 text-text-secondary hover:text-text-body"
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={12} />
+                <Icon icon={X} size={12} />
               </button>
             </div>
           )}

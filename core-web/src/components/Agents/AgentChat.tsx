@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "motion/react";
 import { ClockIcon } from "@heroicons/react/24/outline";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArtificialIntelligence02Icon } from "@hugeicons-pro/core-stroke-standard";
+import { Brain } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import {
   invokeAgent,
   getConversationTasks,
@@ -211,8 +211,8 @@ export default function AgentChat({ agent }: AgentChatProps) {
               ) : tasks.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <HugeiconsIcon
-                      icon={ArtificialIntelligence02Icon}
+                    <Icon
+                      icon={Brain}
                       size={28}
                       className="mx-auto text-text-tertiary opacity-40 mb-2"
                     />
@@ -246,8 +246,8 @@ export default function AgentChat({ agent }: AgentChatProps) {
           <div className="flex-1 flex flex-col">
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <HugeiconsIcon
-                  icon={ArtificialIntelligence02Icon}
+                <Icon
+                  icon={Brain}
                   size={32}
                   className="mx-auto text-text-tertiary opacity-40 mb-3"
                 />

@@ -20,12 +20,8 @@ import {
   CloudArrowDownIcon,
 } from "@heroicons/react/24/outline";
 import { motion, AnimatePresence } from "motion/react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  PencilEdit01Icon,
-  ArrowMoveUpLeftIcon,
-  ArrowMoveUpRightIcon,
-} from "@hugeicons-pro/core-stroke-standard";
+import { Pencil, ArrowUpLeft, ArrowUpRight } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { useInView } from "react-intersection-observer";
 import { SIDEBAR } from "../../lib/sidebar";
@@ -1399,8 +1395,8 @@ export default function EmailView() {
               title="Compose email"
               aria-label="Compose email"
             >
-              <HugeiconsIcon
-                icon={PencilEdit01Icon}
+              <Icon
+                icon={Pencil}
                 size={16}
                 aria-hidden="true"
               />
@@ -1887,7 +1883,7 @@ export default function EmailView() {
                         className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
                         title="Reply"
                       >
-                        <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
+                        <Icon icon={ArrowUpLeft} size={18} />
                       </button>
                       {(selectedEmail.to_emails?.length > 1 ||
                         (selectedEmail.cc_emails?.length ?? 0) > 0) && (
@@ -1898,7 +1894,7 @@ export default function EmailView() {
                           className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
                           title="Reply All"
                         >
-                          <HugeiconsIcon icon={ArrowMoveUpLeftIcon} size={18} />
+                          <Icon icon={ArrowUpLeft} size={18} />
                         </button>
                       )}
                       <button
@@ -1906,7 +1902,7 @@ export default function EmailView() {
                         className="p-2 text-text-body hover:bg-bg-gray-dark/50 rounded-lg transition-colors"
                         title="Forward"
                       >
-                        <HugeiconsIcon icon={ArrowMoveUpRightIcon} size={18} />
+                        <Icon icon={ArrowUpRight} size={18} />
                       </button>
                       <div className="w-px h-5 bg-border-gray mx-1" />
                       {activeFolder === "TRASH" ? (

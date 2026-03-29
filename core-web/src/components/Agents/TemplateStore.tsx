@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Cancel01Icon } from "@hugeicons-pro/core-stroke-standard";
+import { X } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import {
   getAgentTemplates,
   createAgent,
@@ -131,7 +131,7 @@ export default function TemplateStore({ workspaceId, onClose, onCreated }: Templ
             onClick={onClose}
             className="p-1.5 rounded-md hover:bg-bg-gray text-text-tertiary"
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={16} />
+            <Icon icon={X} size={16} />
           </button>
         </div>
 

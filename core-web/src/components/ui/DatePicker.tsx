@@ -14,8 +14,8 @@ import {
   isToday,
 } from 'date-fns';
 import { ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { Calendar03Icon } from '@hugeicons-pro/core-stroke-standard';
-import { HugeiconsIcon } from '@hugeicons/react';
+import { Calendar } from 'lucide-react';
+import { Icon } from './Icon';
 import { getRelativeDate } from '../../utils/dateUtils';
 
 interface DatePickerProps {
@@ -293,7 +293,7 @@ export default function DatePicker({
           showXIcon ? (
             <XMarkIcon className="w-4 h-4 text-gray-400 shrink-0" />
           ) : (
-            <HugeiconsIcon icon={Calendar03Icon} size={16} className="text-gray-400 shrink-0" />
+            <Icon icon={Calendar} size={16} className="text-gray-400 shrink-0" />
           )
         )}
         {normalizedValue ? (

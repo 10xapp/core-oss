@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, MoreHorizontalIcon } from "@hugeicons-pro/core-stroke-standard";
+import { Plus, MoreHorizontal } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import type { AgentConversation } from "../../api/client";
 
 interface AgentConversationSidebarProps {
@@ -48,7 +48,7 @@ export default function AgentConversationSidebar({
           onClick={onCreate}
           className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-sm text-text-secondary hover:bg-black/5 transition-colors focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-inset"
         >
-          <HugeiconsIcon icon={Add01Icon} size={14} aria-hidden="true" />
+          <Icon icon={Plus} size={14} aria-hidden="true" />
           <span>New conversation</span>
         </button>
       </div>
@@ -98,7 +98,7 @@ export default function AgentConversationSidebar({
                     aria-label={`Options for ${conv.title}`}
                     className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 shrink-0 p-0.5 rounded hover:bg-black/10 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-brand-primary transition-opacity"
                   >
-                    <HugeiconsIcon icon={MoreHorizontalIcon} size={14} className="text-text-tertiary" aria-hidden="true" />
+                    <Icon icon={MoreHorizontal} size={14} className="text-text-tertiary" aria-hidden="true" />
                   </button>
                 </div>
               )}

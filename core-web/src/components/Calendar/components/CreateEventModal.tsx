@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Cancel01Icon, Video01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { X, Video } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { createCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
 import DatePicker from '../../ui/DatePicker';
@@ -143,7 +143,7 @@ export default function CreateEventModal({
             onClick={onClose}
             className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={20} strokeWidth={2} />
+            <Icon icon={X} size={20} />
           </button>
         </div>
 
@@ -234,7 +234,7 @@ export default function CreateEventModal({
                 : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
             }`}
           >
-            <HugeiconsIcon icon={Video01Icon} size={16} className={addGoogleMeet ? 'text-blue-600' : 'text-gray-400'} />
+            <Icon icon={Video} size={16} className={addGoogleMeet ? 'text-blue-600' : 'text-gray-400'} />
             <span className={`text-sm ${addGoogleMeet ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
               {addGoogleMeet ? 'Google Meet video conferencing' : 'Add Google Meet video conferencing'}
             </span>

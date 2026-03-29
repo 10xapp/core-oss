@@ -1,12 +1,8 @@
 import { useMemo, useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  FilterMailIcon,
-  KanbanIcon,
-  LeftToRightListBulletIcon,
-} from "@hugeicons-pro/core-stroke-standard";
 import { XMarkIcon } from "@heroicons/react/24/outline";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { Filter, Columns3, List } from "lucide-react";
+import { Icon } from "../../ui/Icon";
 import { Flag } from "@phosphor-icons/react";
 import { useProjectsStore } from "../../../stores/projectsStore";
 import { useProjectBoard, useProjectMembers } from "../../../hooks/queries/useProjects";
@@ -164,7 +160,7 @@ export default function ProjectsFilterBar({
             }`}
             aria-label="Filters"
           >
-            <HugeiconsIcon icon={FilterMailIcon} size={16} />
+            <Icon icon={Filter} size={16} />
             {!hasActiveFilters && (
               <span className="text-[13px] font-medium">Filter</span>
             )}
@@ -568,7 +564,7 @@ export default function ProjectsFilterBar({
           }`}
           aria-label="Kanban view"
         >
-          <HugeiconsIcon icon={KanbanIcon} size={14} />
+          <Icon icon={Columns3} size={14} />
         </button>
         <button
           type="button"
@@ -580,7 +576,7 @@ export default function ProjectsFilterBar({
           }`}
           aria-label="List view"
         >
-          <HugeiconsIcon icon={LeftToRightListBulletIcon} size={14} />
+          <Icon icon={List} size={14} />
         </button>
       </div>
     </div>

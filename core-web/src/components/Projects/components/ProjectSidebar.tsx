@@ -7,8 +7,8 @@ import {
   type ProjectBoard,
 } from '../../../hooks/queries/useProjects';
 import { EllipsisHorizontalIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Add01Icon, KanbanIcon } from '@hugeicons-pro/core-stroke-standard';
+import { Plus, Columns3 } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import ConfirmModal from './ConfirmModal';
 import Dropdown from '../../Dropdown/Dropdown';
 import { SIDEBAR } from '../../../lib/sidebar';
@@ -86,7 +86,7 @@ export default function ProjectSidebar({ onCreateClick, onSelectProject }: Proje
           title="New project"
           aria-label="New project"
         >
-          <HugeiconsIcon icon={Add01Icon} size={16} aria-hidden="true" />
+          <Icon icon={Plus} size={16} aria-hidden="true" />
         </button>
       </div>
 
@@ -115,7 +115,7 @@ export default function ProjectSidebar({ onCreateClick, onSelectProject }: Proje
                       : `${SIDEBAR.item} hover:bg-black/5`
                   }`}
                 >
-                  <HugeiconsIcon icon={KanbanIcon} size={16} className="flex-shrink-0" aria-hidden="true" />
+                  <Icon icon={Columns3} size={16} className="flex-shrink-0" aria-hidden="true" />
                   {editingBoardId === board.id ? (
                     <input
                       type="text"
@@ -183,7 +183,7 @@ export default function ProjectSidebar({ onCreateClick, onSelectProject }: Proje
         {/* Empty State */}
         {boards.length === 0 && (
           <div className="px-4 py-8 text-center">
-            <HugeiconsIcon icon={KanbanIcon} size={32} className="mx-auto text-text-tertiary opacity-50 mb-2" aria-hidden="true" />
+            <Icon icon={Columns3} size={32} className="mx-auto text-text-tertiary opacity-50 mb-2" aria-hidden="true" />
             <p className="text-sm text-text-tertiary">No projects yet</p>
             <button
               onClick={onCreateClick}

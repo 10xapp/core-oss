@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useBuilderStore } from "../../stores/builderStore";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { ChevronDown } from "lucide-react";
+import { Icon } from "../ui/Icon";
 
 export default function VersionSelector() {
   const { versions, activeVersion, setActiveVersion } = useBuilderStore();
@@ -27,7 +27,7 @@ export default function VersionSelector() {
         className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-gray-50 text-xs text-text-secondary font-medium transition-colors"
       >
         v{activeVersion?.version_number || 1}
-        <HugeiconsIcon icon={ArrowDown01Icon} size={12} className="text-text-tertiary" />
+        <Icon icon={ChevronDown} size={12} className="text-text-tertiary" />
       </button>
 
       {isOpen && (

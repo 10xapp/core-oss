@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons-pro/core-stroke-standard";
+import { ChevronDown } from "lucide-react";
+import { Icon } from "../ui/Icon";
 import { getTaskSteps, type AgentTaskStep } from "../../api/client";
 import { useAgentStepsRealtime } from "../../hooks/useAgentRealtime";
 
@@ -113,8 +113,8 @@ export default function TaskStepLog({ agentId, taskId, isRunning }: TaskStepLogP
 
               {/* Expand indicator */}
               {hasDetail && (
-                <HugeiconsIcon
-                  icon={ArrowDown01Icon}
+                <Icon
+                  icon={ChevronDown}
                   size={12}
                   className={`text-text-tertiary shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                 />

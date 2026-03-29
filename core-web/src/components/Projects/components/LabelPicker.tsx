@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckIcon } from '@heroicons/react/24/outline';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Tag01Icon, Add01Icon } from '@hugeicons-pro/core-stroke-standard';
+import { Tag, Plus } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { useProjectBoard, useCreateLabel, useToggleIssueLabel, type ProjectLabel } from '../../../hooks/queries/useProjects';
 
 interface LabelPickerProps {
@@ -159,7 +159,7 @@ export default function LabelPicker({ issueId, boardId, currentLabels, buttonCla
           </div>
         ) : (
           <div className={`flex items-center gap-1.5 text-gray-400 flex-1 ${emptyState === 'icon-dash' ? 'pl-0.5' : ''}`}>
-            <HugeiconsIcon icon={Tag01Icon} size={14} />
+            <Icon icon={Tag} size={14} />
             <span>{emptyState === 'icon-dash' ? '—' : 'Add label'}</span>
           </div>
         )}
@@ -270,7 +270,7 @@ export default function LabelPicker({ issueId, boardId, currentLabels, buttonCla
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-gray-500 hover:bg-gray-50 transition-colors"
               >
-                <HugeiconsIcon icon={Add01Icon} size={14} />
+                <Icon icon={Plus} size={14} />
                 Create label
               </button>
             )}

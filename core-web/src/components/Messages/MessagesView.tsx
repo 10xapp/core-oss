@@ -27,9 +27,8 @@ import {
   ArrowUturnLeftIcon,
 } from "@heroicons/react/24/outline";
 import Dropdown from "../Dropdown/Dropdown";
-import { HugeiconsIcon } from '@hugeicons/react';
-import { Add01Icon } from '@hugeicons-pro/core-stroke-standard';
-import {UserGroup03Icon} from '@hugeicons-pro/core-stroke-standard';
+import { Plus, Users } from 'lucide-react';
+import { Icon } from '../ui/Icon';
 import { useMessagesStore } from "../../stores/messagesStore";
 import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -2292,7 +2291,7 @@ export default function MessagesView() {
               title="New channel"
               aria-label="New channel"
             >
-              <HugeiconsIcon icon={Add01Icon} size={16} aria-hidden="true" />
+              <Icon icon={Plus} size={16} aria-hidden="true" />
             </button>
           </div>
 
@@ -3395,7 +3394,7 @@ export default function MessagesView() {
                     {/* Members Section */}
                     <div className="border-t border-border-light pt-3">
                       <h3 className="flex items-center gap-2 text-sm font-medium text-gray-900 pb-3">
-                        <HugeiconsIcon icon={UserGroup03Icon} size={20} />
+                        <Icon icon={Users} size={20} />
                         Members{!isLoadingChannelMembers && ` (${safeChannelMembers.length})`}
                       </h3>
                       {channelMembersError && (

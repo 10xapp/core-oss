@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { Calendar03Icon, Location01Icon, Video01Icon, NoteEditIcon } from '@hugeicons-pro/core-stroke-standard';
-import { HugeiconsIcon } from '@hugeicons/react';
+import { Calendar, MapPin, Video, FileEdit } from 'lucide-react';
+import { Icon } from '../../ui/Icon';
 import { createCalendarEvent } from '../../../api/client';
 import { useCalendarStore } from '../../../stores/calendarStore';
 import { eventCreationFlags } from '../utils/eventCreationFlags';
@@ -439,7 +439,7 @@ export default function NewEventPopover() {
 
         {/* Date and time */}
         <div className="flex items-start gap-2.5 mb-3 pb-3 border-b border-gray-200">
-          <HugeiconsIcon icon={Calendar03Icon} size={16} className="text-gray-400 mt-0.5 shrink-0" />
+          <Icon icon={Calendar} size={16} className="text-gray-400 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-500 mb-1">{formatDisplayDate()}</p>
 
@@ -580,7 +580,7 @@ export default function NewEventPopover() {
             onClick={() => togglePendingEventGoogleMeet(false)}
             className="flex items-center gap-2.5 mb-2 w-full text-left px-0 py-1"
           >
-            <HugeiconsIcon icon={Video01Icon} size={16} className="text-blue-600 shrink-0" />
+            <Icon icon={Video} size={16} className="text-blue-600 shrink-0" />
             <span className="text-sm text-blue-600 underline underline-offset-2">meet.google.com/...</span>
           </button>
         ) : (
@@ -589,14 +589,14 @@ export default function NewEventPopover() {
             onClick={() => togglePendingEventGoogleMeet(true)}
             className="flex items-center gap-2.5 mb-2 w-full text-left px-0 py-1"
           >
-            <HugeiconsIcon icon={Video01Icon} size={16} className="text-gray-400 shrink-0" />
+            <Icon icon={Video} size={16} className="text-gray-400 shrink-0" />
             <span className="text-sm text-gray-400">Add Google Meet</span>
           </button>
         )}
 
         {/* Location */}
         <div className="flex items-center gap-2.5 mb-3">
-          <HugeiconsIcon icon={Location01Icon} size={16} className="text-gray-400 shrink-0" />
+          <Icon icon={MapPin} size={16} className="text-gray-400 shrink-0" />
           <input
             type="text"
             value={pendingEvent?.location || ''}
@@ -609,7 +609,7 @@ export default function NewEventPopover() {
 
         {/* Description */}
         <div className="flex items-start gap-2.5">
-          <HugeiconsIcon icon={NoteEditIcon} size={16} className="text-gray-400 shrink-0 mt-1.5" />
+          <Icon icon={FileEdit} size={16} className="text-gray-400 shrink-0 mt-1.5" />
           <textarea
             value={pendingEvent?.description || ''}
             onChange={(e) => updatePendingEventDescription(e.target.value)}

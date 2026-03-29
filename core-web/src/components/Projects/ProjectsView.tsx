@@ -13,8 +13,8 @@ import ProjectsListView from "./components/ProjectsListView";
 import ProjectsSettingsModal from "./components/ProjectsSettingsModal";
 import ProjectsSettingsDropdown from "./components/ProjectsSettingsDropdown";
 import { HeaderButtons } from "../MiniAppHeader";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { KanbanIcon } from "@hugeicons-pro/core-stroke-standard";
+import { Columns3 } from "lucide-react";
+import { Icon } from "../ui/Icon";
 
 export default function ProjectsView() {
   const { workspaceId, boardId: urlBoardId } = useParams<{ workspaceId: string; boardId?: string }>();
@@ -144,7 +144,7 @@ export default function ProjectsView() {
               {/* Board Header */}
               <div className="h-12 flex items-center justify-between pl-5 pr-3 border-b border-border-gray">
                 <div className="flex items-center gap-2">
-                  <HugeiconsIcon icon={KanbanIcon} size={18} className="text-text-body" />
+                  <Icon icon={Columns3} size={18} className="text-text-body" />
                   <h1 className="text-base font-semibold text-text-body">
                     {activeBoard?.name || "Project Board"}
                   </h1>
