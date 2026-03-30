@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -23,6 +23,7 @@ import { useWorkspacePresence } from "./hooks/useWorkspacePresence";
 import { useResumeRevalidation } from "./hooks/useResumeRevalidation";
 import { Sentry, setSentryUser } from "./lib/sentry";
 import { identifyUser, resetUser, trackPageView } from "./lib/posthog";
+import { FeatureErrorBoundary } from "./components/ui/FeatureErrorBoundary";
 
 const OAuthCallback = lazy(() => import("./components/OAuthCallback"));
 const InviteAcceptPage = lazy(() => import("./pages/InviteAcceptPage"));
@@ -185,11 +186,15 @@ function AppLayout({ children }: { children: React.ReactNode }) {
             {authLoading ? (
               <RouteLoading />
             ) : (
-              <Suspense fallback={<RouteLoading />}>{children}</Suspense>
+              <FeatureErrorBoundary feature="this view">
+                <Suspense fallback={<RouteLoading />}>{children}</Suspense>
+              </FeatureErrorBoundary>
             )}
           </main>
           {/* AI Chat Panel - right side */}
-          <ChatPanel />
+          <FeatureErrorBoundary feature="Chat">
+            <ChatPanel />
+          </FeatureErrorBoundary>
         </div>
       </div>
     </KeyboardNavigationProvider>
@@ -473,14 +478,16 @@ function AppContent() {
   // Custom-layout apps render without the sidebar
   if (location.pathname === "/builder" || location.pathname.startsWith("/builder/")) {
     return (
-      <Suspense fallback={<div className="h-screen w-screen bg-white" />}>
-        <Toaster position="top-right" richColors />
-        <Routes>
-          <Route path="/builder" element={<AIBuilderView />} />
-          <Route path="/builder/:projectId" element={<AIBuilderView />} />
-          <Route path="/builder/:projectId/preview" element={<AIBuilderView />} />
-        </Routes>
-      </Suspense>
+      <FeatureErrorBoundary feature="AI Builder">
+        <Suspense fallback={<div className="h-screen w-screen bg-white" />}>
+          <Toaster position="top-right" richColors />
+          <Routes>
+            <Route path="/builder" element={<AIBuilderView />} />
+            <Route path="/builder/:projectId" element={<AIBuilderView />} />
+            <Route path="/builder/:projectId/preview" element={<AIBuilderView />} />
+          </Routes>
+        </Suspense>
+      </FeatureErrorBoundary>
     );
   }
 
