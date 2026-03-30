@@ -2,8 +2,9 @@
 Workspaces router - HTTP endpoints for workspace management
 """
 from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import Optional, Dict, Any, List
+from api.request_types import WorkspaceRole, WorkspaceAppType
 from api.services.workspaces import (
     get_workspaces,
     get_workspace_by_id,
@@ -63,7 +64,12 @@ class UpdateWorkspaceRequest(BaseModel):
 class AddMemberRequest(BaseModel):
     """Request model for adding a workspace member"""
     email: EmailStr = Field(..., description="Email of user to add")
-    role: str = Field(default="member", description="Role: 'member' or 'admin'")
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER, description="Role: 'member' or 'admin'")
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: WorkspaceRole | str) -> WorkspaceRole | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
     class Config:
         json_schema_extra = {
@@ -76,14 +82,24 @@ class AddMemberRequest(BaseModel):
 
 class UpdateMemberRoleRequest(BaseModel):
     """Request model for updating a member's role"""
-    role: str = Field(..., description="New role: 'member' or 'admin'")
+    role: WorkspaceRole = Field(..., description="New role: 'member' or 'admin'")
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: WorkspaceRole | str) -> WorkspaceRole | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class CreateAppRequest(BaseModel):
     """Request model for creating a workspace app"""
-    app_type: str = Field(..., description="App type (chat, files, messages, dashboard, projects, email, calendar, agents)")
+    app_type: WorkspaceAppType = Field(..., description="App type (chat, files, messages, dashboard, projects, email, calendar, agents)")
     is_public: bool = Field(default=True, description="Whether app is visible to all members")
     position: Optional[int] = Field(None, ge=0, description="Display order position")
+
+    @field_validator("app_type", mode="before")
+    @classmethod
+    def normalize_app_type(cls, value: WorkspaceAppType | str) -> WorkspaceAppType | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
     class Config:
         json_schema_extra = {

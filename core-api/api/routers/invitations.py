@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from api.dependencies import get_current_user_id, get_current_user_jwt
 from api.exceptions import handle_api_exception
+from api.request_types import WorkspaceRole
 from api.services.workspaces.invitations import (
     create_or_refresh_workspace_invitation,
     list_workspace_invitations,
@@ -27,7 +28,12 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspace invitations"])
 
 class CreateInvitationRequest(BaseModel):
     email: EmailStr
-    role: str = Field(default="member", description="member|admin")
+    role: WorkspaceRole = Field(default=WorkspaceRole.MEMBER, description="member|admin")
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: WorkspaceRole | str) -> WorkspaceRole | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class InvitationItemResponse(BaseModel):

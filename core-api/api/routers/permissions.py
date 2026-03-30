@@ -5,11 +5,12 @@ from typing import List, Dict, Any, Optional
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from api.config import settings
 from api.dependencies import get_current_user_id, get_current_user_jwt
 from api.exceptions import handle_api_exception
+from api.request_types import AccessRequestStatus, PermissionLevel, ResourceType
 from api.rate_limit import limiter
 from api.services.permissions import (
     share_resource,
@@ -40,36 +41,68 @@ router = APIRouter(prefix="/api", tags=["permissions"])
 # ==========================================================================
 
 class ShareResourceRequest(BaseModel):
-    resource_type: str
+    resource_type: ResourceType
     resource_id: str
     grantee_email: EmailStr
-    permission: str = Field(default="read", description="read|write|admin")
+    permission: PermissionLevel = Field(default=PermissionLevel.READ, description="read|write|admin")
+
+    @field_validator("resource_type", "permission", mode="before")
+    @classmethod
+    def normalize_values(cls, value: ResourceType | PermissionLevel | str) -> ResourceType | PermissionLevel | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class BatchShareGrant(BaseModel):
     email: EmailStr
-    permission: str = Field(default="read", description="read|write|admin")
+    permission: PermissionLevel = Field(default=PermissionLevel.READ, description="read|write|admin")
+
+    @field_validator("permission", mode="before")
+    @classmethod
+    def normalize_permission(cls, value: PermissionLevel | str) -> PermissionLevel | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class BatchShareRequest(BaseModel):
-    resource_type: str
+    resource_type: ResourceType
     resource_id: str
     grants: List[BatchShareGrant]
 
+    @field_validator("resource_type", mode="before")
+    @classmethod
+    def normalize_resource_type(cls, value: ResourceType | str) -> ResourceType | str:
+        return value.strip().lower() if isinstance(value, str) else value
+
 
 class UpdateShareRequest(BaseModel):
-    permission: str
+    permission: PermissionLevel
+
+    @field_validator("permission", mode="before")
+    @classmethod
+    def normalize_permission(cls, value: PermissionLevel | str) -> PermissionLevel | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class AccessRequestCreate(BaseModel):
-    resource_type: str
+    resource_type: ResourceType
     resource_id: str
     message: Optional[str] = None
 
+    @field_validator("resource_type", mode="before")
+    @classmethod
+    def normalize_resource_type(cls, value: ResourceType | str) -> ResourceType | str:
+        return value.strip().lower() if isinstance(value, str) else value
+
 
 class AccessRequestResolve(BaseModel):
-    status: str
-    permission: Optional[str] = "read"
+    status: AccessRequestStatus
+    permission: Optional[PermissionLevel] = PermissionLevel.READ
+
+    @field_validator("status", "permission", mode="before")
+    @classmethod
+    def normalize_values(cls, value: AccessRequestStatus | PermissionLevel | str | None) -> AccessRequestStatus | PermissionLevel | str | None:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 class PermissionItemResponse(BaseModel):
@@ -96,10 +129,15 @@ class ResourceSharesResponse(BaseModel):
 
 
 class CreateLinkRequest(BaseModel):
-    resource_type: str
+    resource_type: ResourceType
     resource_id: str
-    permission: str = Field(default="read", description="read|write|admin")
+    permission: PermissionLevel = Field(default=PermissionLevel.READ, description="read|write|admin")
     slug: Optional[str] = Field(default=None, description="Optional custom slug for the link")
+
+    @field_validator("resource_type", "permission", mode="before")
+    @classmethod
+    def normalize_values(cls, value: ResourceType | PermissionLevel | str) -> ResourceType | PermissionLevel | str:
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class UpdateLinkSlugRequest(BaseModel):
