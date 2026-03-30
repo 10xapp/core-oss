@@ -193,7 +193,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
           {/* AI Chat Panel - right side */}
           <FeatureErrorBoundary feature="Chat">
-            <ChatPanel />
+            <Suspense fallback={null}>
+              <ChatPanel />
+            </Suspense>
           </FeatureErrorBoundary>
         </div>
       </div>

@@ -51,7 +51,9 @@ export class FeatureErrorBoundary extends Component<Props, State> {
             Something went wrong in {this.props.feature}
           </p>
           <p className="text-xs text-text-secondary">
-            {this.state.error?.message || 'An unexpected error occurred.'}
+            {import.meta.env.DEV
+              ? (this.state.error?.message || 'An unexpected error occurred.')
+              : 'Something unexpected happened. Please try again.'}
           </p>
           <button
             onClick={this.handleReset}
