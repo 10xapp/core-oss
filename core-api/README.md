@@ -69,7 +69,7 @@ RESEND_FROM_DOMAIN=yourdomain.com
 # Optional explicit sender (overrides RESEND_FROM_DOMAIN)
 # RESEND_FROM_EMAIL=Core <invites@yourdomain.com>
 # Local dev:
-FRONTEND_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
 # Production:
 # FRONTEND_URL=https://core.so
 

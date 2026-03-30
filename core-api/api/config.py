@@ -131,7 +131,7 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_domain: str = ""
     resend_from_email: str = ""
-    frontend_url: str = "http://localhost:3000"
+    frontend_url: str = "http://localhost:5173"
 
     @property
     def resend_from_address(self) -> str:
