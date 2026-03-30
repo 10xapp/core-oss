@@ -464,11 +464,9 @@ async def stream_chat_response(
             for action in pending_actions:
                 yield action
 
-            # Signal stream completion
-            yield done_event()
-
             # ── Auto-ingest conversation into Ultramemory ──────────
-            # Fire-and-forget: don't block the response stream
+            # Schedule before final yield so the task is created even
+            # if the client disconnects after receiving done_event.
             if settings.ultramemory_url:
                 try:
                     user_message = ""
@@ -489,14 +487,22 @@ async def stream_chat_response(
                             f"User: {user_message}\n"
                             f"Assistant: {full_response[:2000]}"
                         )
-                        asyncio.create_task(
-                            memory.ingest(
-                                user_id=user_id,
-                                content=conversation_text,
-                                category="conversation",
-                            )
-                        )
+
+                        async def _safe_ingest():
+                            try:
+                                await memory.ingest(
+                                    user_id=user_id,
+                                    content=conversation_text,
+                                    category="conversation",
+                                )
+                            except Exception as exc:
+                                logger.warning(f"Memory auto-ingest background task failed: {exc}")
+
+                        asyncio.create_task(_safe_ingest())
                 except Exception as e:
                     logger.warning(f"Memory auto-ingest failed (non-fatal): {e}")
+
+            # Signal stream completion
+            yield done_event()
 
             break

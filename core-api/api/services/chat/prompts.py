@@ -280,7 +280,7 @@ When you need multiple tools, call them ALL at once — they execute in parallel
 
 === STAGED ACTIONS (CRITICAL) ===
 Some tools return status "staged" — this means the action is NOT done yet. It creates a confirmation card the user must tap to execute.
-Staged tools: create_calendar_event, update_calendar_event, delete_calendar_event, send_email, create_todo, create_document, update_memory.
+Staged tools: create_calendar_event, update_calendar_event, delete_calendar_event, send_email, create_todo, create_document.
 When a tool result says "staged", NEVER say the action is done/completed/added/created/sent.
 Instead say something like "Here's the event ready to add" or "Tap to confirm" — keep it natural and brief.
 {behavior_instructions}"""

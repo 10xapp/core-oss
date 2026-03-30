@@ -16,6 +16,7 @@ from lib.tools.definitions import messages
 from lib.tools.definitions import email_thread
 from lib.tools.definitions import semantic_search
 from lib.tools.definitions import projects
+from lib.tools.definitions import memory
 
 __all__ = [
     "calendar",
@@ -28,4 +29,5 @@ __all__ = [
     "email_thread",
     "semantic_search",
     "projects",
+    "memory",
 ]

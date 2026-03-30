@@ -7,11 +7,19 @@ Replaces the stub update_memory tool with three real tools:
 - search_memory: Detailed semantic search with scores
 """
 
+import logging
 from typing import Dict
 
 from lib.tools.base import ToolCategory, ToolContext, ToolResult, success, error
 from lib.tools.registry import tool
-from lib import ultramemory_client as memory
+
+logger = logging.getLogger(__name__)
+
+
+def _get_memory():
+    """Lazy import to avoid failure when Ultramemory is not configured."""
+    from lib import ultramemory_client as memory
+    return memory
 
 
 @tool(
@@ -27,7 +35,6 @@ from lib import ultramemory_client as memory
     },
     required=["content"],
     category=ToolCategory.MEMORY,
-    staged=True,  # Confirm before saving
     status="Saving to memory...",
 )
 async def remember(args: Dict, ctx: ToolContext) -> ToolResult:
@@ -37,11 +44,16 @@ async def remember(args: Dict, ctx: ToolContext) -> ToolResult:
     if not content:
         return error("Nothing to remember — content is empty.")
 
-    result = await memory.ingest(
-        user_id=ctx.user_id,
-        content=content,
-        category=category,
-    )
+    try:
+        memory = _get_memory()
+        result = await memory.ingest(
+            user_id=ctx.user_id,
+            content=content,
+            category=category,
+        )
+    except Exception as e:
+        logger.warning(f"Memory ingest failed: {e}")
+        return error("Memory service is temporarily unavailable. Please try again later.")
 
     if result.get("error"):
         return error(f"Failed to save memory: {result['error']}")
@@ -73,11 +85,19 @@ async def recall(args: Dict, ctx: ToolContext) -> ToolResult:
     if not query:
         return error("No search query provided.")
 
-    results = await memory.search(
-        user_id=ctx.user_id,
-        query=query,
-        top_k=5,
-    )
+    try:
+        memory = _get_memory()
+        results = await memory.search(
+            user_id=ctx.user_id,
+            query=query,
+            top_k=5,
+        )
+    except Exception as e:
+        logger.warning(f"Memory search failed: {e}")
+        return error("Memory service is temporarily unavailable.")
+
+    if results is None:
+        return error("Memory search failed — backend returned an error.")
 
     if not results:
         return success(
@@ -88,9 +108,13 @@ async def recall(args: Dict, ctx: ToolContext) -> ToolResult:
     # Format for the LLM
     formatted = []
     for r in results:
+        try:
+            score = float(r.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0.0
         formatted.append({
             "content": r.get("content", ""),
-            "relevance": f"{float(r.get('score', 0)):.0%}",
+            "relevance": f"{score:.0%}",
             "date": r.get("created_at", "")[:10],
         })
 
@@ -110,7 +134,6 @@ async def recall(args: Dict, ctx: ToolContext) -> ToolResult:
     params={
         "query": "Search query (natural language)",
         "max_results": "Maximum results to return (default 10)",
-        "category": "Filter by category: 'preference', 'fact', 'decision', 'todo', 'email', 'event'",
     },
     required=["query"],
     category=ToolCategory.MEMORY,
@@ -118,26 +141,41 @@ async def recall(args: Dict, ctx: ToolContext) -> ToolResult:
 )
 async def search_memory(args: Dict, ctx: ToolContext) -> ToolResult:
     query = args.get("query", "")
-    top_k = int(args.get("max_results", 10))
+    try:
+        top_k = max(1, min(50, int(args.get("max_results", 10))))
+    except (ValueError, TypeError):
+        top_k = 10
 
     if not query:
         return error("No search query provided.")
 
-    results = await memory.search(
-        user_id=ctx.user_id,
-        query=query,
-        top_k=top_k,
-        min_score=0.45,  # Lower threshold for broader results
-    )
+    try:
+        memory = _get_memory()
+        results = await memory.search(
+            user_id=ctx.user_id,
+            query=query,
+            top_k=top_k,
+            min_score=0.45,  # Lower threshold for broader results
+        )
+    except Exception as e:
+        logger.warning(f"Memory search failed: {e}")
+        return error("Memory service is temporarily unavailable.")
+
+    if results is None:
+        return error("Memory search failed — backend returned an error.")
 
     if not results:
         return success({"results": [], "count": 0}, "No memories found.")
 
     formatted = []
     for r in results:
+        try:
+            score = float(r.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0.0
         entry = {
             "content": r.get("content", ""),
-            "score": float(r.get("score", 0)),
+            "score": score,
             "date": r.get("created_at", ""),
             "entities": r.get("entities", []),
         }

@@ -14,23 +14,35 @@ from api.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Reuse a single async client across requests
+# Reuse a single async client across requests (created lazily)
 _client: Optional[httpx.AsyncClient] = None
 
 
 def _get_client() -> httpx.AsyncClient:
+    """Get or create the shared async HTTP client."""
     global _client
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(
             base_url=settings.ultramemory_url,
-            timeout=30.0,
+            timeout=httpx.Timeout(30.0, connect=10.0),
         )
     return _client
 
 
+async def close():
+    """Close the HTTP client. Call from app shutdown/lifespan."""
+    global _client
+    if _client and not _client.is_closed:
+        await _client.aclose()
+        _client = None
+
+
 def _user_session(user_id: str) -> str:
-    """Map a 10xApp user ID to an Ultramemory session name."""
-    return f"10x-{user_id[:12]}"
+    """Map a 10xApp user ID to an Ultramemory session name.
+
+    Uses the full user UUID — no truncation — to avoid collisions.
+    """
+    return f"10x-{user_id}"
 
 
 # ─── Core Operations ────────────────────────────────────────────
@@ -45,14 +57,8 @@ async def ingest(
     """
     Ingest a memory into Ultramemory.
 
-    Args:
-        user_id: 10xApp user UUID
-        content: Text content to remember
-        category: Memory category (conversation, preference, fact, email, etc.)
-        session: Override session name (defaults to user-scoped)
-
     Returns:
-        API response dict with memory count
+        API response dict with memory count, or {"error": ...} on failure.
     """
     client = _get_client()
     payload = {
@@ -64,7 +70,7 @@ async def ingest(
         resp = await client.post("/api/ingest", json=payload)
         resp.raise_for_status()
         return resp.json()
-    except httpx.HTTPError as e:
+    except Exception as e:
         logger.error(f"Ultramemory ingest failed: {e}")
         return {"error": str(e), "count": 0}
 
@@ -75,19 +81,12 @@ async def search(
     top_k: int = 5,
     min_score: float = 0.55,
     session: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> Optional[List[Dict[str, Any]]]:
     """
     Semantic search across a user's memories.
 
-    Args:
-        user_id: 10xApp user UUID
-        query: Natural language search query
-        top_k: Number of results to return
-        min_score: Minimum similarity threshold
-        session: Override session name
-
     Returns:
-        List of memory dicts with content, score, created_at
+        List of memory dicts on success, None on backend failure.
     """
     client = _get_client()
     payload = {
@@ -101,9 +100,9 @@ async def search(
         resp.raise_for_status()
         data = resp.json()
         return data.get("results", [])
-    except httpx.HTTPError as e:
+    except Exception as e:
         logger.error(f"Ultramemory search failed: {e}")
-        return []
+        return None  # Distinct from empty results
 
 
 async def recall(
@@ -122,7 +121,10 @@ async def recall(
 
     lines = ["## Relevant Memories\n"]
     for r in results:
-        score = r.get("score", 0)
+        try:
+            score = float(r.get("score", 0))
+        except (ValueError, TypeError):
+            score = 0.0
         content = r.get("content", "")
         created = r.get("created_at", "")[:10]
         lines.append(f"- [{score:.0%}] ({created}) {content}")
@@ -155,7 +157,7 @@ async def startup_context(
             for m in data["recent_memories"][:5]:
                 context_parts.append(f"- {m.get('content', '')}")
         return "\n\n".join(context_parts)
-    except httpx.HTTPError as e:
+    except Exception as e:
         logger.error(f"Ultramemory startup-context failed: {e}")
         return ""
 
@@ -166,5 +168,5 @@ async def health() -> bool:
     try:
         resp = await client.get("/api/health")
         return resp.status_code == 200
-    except httpx.HTTPError:
+    except Exception:
         return False
