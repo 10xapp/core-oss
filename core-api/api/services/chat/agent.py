@@ -22,6 +22,7 @@ from api.services.chat.events import (
 from api.services.chat.prompts import build_system_prompt
 from lib.tools import ToolRegistry, ToolContext
 from lib.r2_client import get_r2_client
+from lib import ultramemory_client as memory
 
 # Import definitions to register all tools
 import lib.tools.definitions  # noqa: F401
@@ -465,4 +466,37 @@ async def stream_chat_response(
 
             # Signal stream completion
             yield done_event()
+
+            # ── Auto-ingest conversation into Ultramemory ──────────
+            # Fire-and-forget: don't block the response stream
+            if settings.ultramemory_url:
+                try:
+                    user_message = ""
+                    for msg in reversed(messages):
+                        if msg.get("role") == "user":
+                            user_message = msg.get("content", "")
+                            if isinstance(user_message, list):
+                                # Vision API format — extract text parts
+                                user_message = " ".join(
+                                    p.get("text", "") for p in user_message
+                                    if p.get("type") == "text"
+                                )
+                            break
+
+                    full_response = "".join(collected_messages)
+                    if user_message and full_response:
+                        conversation_text = (
+                            f"User: {user_message}\n"
+                            f"Assistant: {full_response[:2000]}"
+                        )
+                        asyncio.create_task(
+                            memory.ingest(
+                                user_id=user_id,
+                                content=conversation_text,
+                                category="conversation",
+                            )
+                        )
+                except Exception as e:
+                    logger.warning(f"Memory auto-ingest failed (non-fatal): {e}")
+
             break

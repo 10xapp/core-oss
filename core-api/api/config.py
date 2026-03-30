@@ -198,6 +198,9 @@ class Settings(BaseSettings):
     # Cloudflare Turnstile (bot protection)
     turnstile_secret_key: str = ""
 
+    # Ultramemory (persistent AI memory)
+    ultramemory_url: str = ""  # e.g., http://localhost:8642
+
     # Sentry
     sentry_dsn: str = ""
 

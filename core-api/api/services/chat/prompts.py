@@ -7,6 +7,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from lib.supabase_client import get_authenticated_async_client
+from api.config import settings
+from lib import ultramemory_client as memory
 
 logger = logging.getLogger(__name__)
 
@@ -305,6 +307,21 @@ When creating items (documents), associate them with the most relevant workspace
     context_str = build_context_string(context)
     if context_str:
         base_prompt += f"\n\nThe user has provided the following context for this conversation:{context_str}\n\nUse this context to help answer the user's questions. Reference specific details from the provided emails or documents when relevant."
+
+    # ── Inject Ultramemory long-term context ──────────────────
+    if settings.ultramemory_url:
+        try:
+            memory_context = await memory.startup_context(user_id)
+            if memory_context:
+                base_prompt += (
+                    "\n\n=== LONG-TERM MEMORY ===\n"
+                    "The following is from your long-term memory about this user. "
+                    "Use it to personalize your responses, but don't mention that you're "
+                    "reading from memory unless asked.\n\n"
+                    f"{memory_context}"
+                )
+        except Exception as e:
+            logger.warning(f"Memory context load failed (non-fatal): {e}")
 
     return base_prompt
 
