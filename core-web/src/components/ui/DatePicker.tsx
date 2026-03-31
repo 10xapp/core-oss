@@ -317,6 +317,7 @@ export default function DatePicker({
       {isOpen && createPortal(
         <div
           ref={dropdownRef}
+          data-datepicker-portal
           onClick={(e) => e.stopPropagation()}
           className={`fixed z-10000 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden ${dropdownClassName}`}
           style={{

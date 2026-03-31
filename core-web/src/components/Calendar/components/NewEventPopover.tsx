@@ -308,7 +308,15 @@ export default function NewEventPopover() {
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // DatePicker dropdown is portaled to document.body — not inside popoverRef
+      if (
+        target instanceof Element &&
+        target.closest("[data-datepicker-portal]")
+      ) {
+        return;
+      }
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
         // Get fresh state from store
         const currentPending = useCalendarStore.getState().pendingEvent;
         if (currentPending?.title.trim()) {

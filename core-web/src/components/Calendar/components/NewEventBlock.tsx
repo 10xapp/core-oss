@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
+import { motion } from "motion/react";
 import { formatTimeRangeCompact } from "../utils/dateHelpers";
 import { useCalendarStore } from "../../../stores/calendarStore";
+
+/** Spring aligned with 15-min vertical snap (hourHeight/4 px); tuned for quick follow without losing the smooth spring */
+const DRAG_CREATE_SPRING = {
+  type: "spring" as const,
+  stiffness: 780,
+  damping: 42,
+  mass: 0.55,
+};
 
 interface NewEventBlockProps {
   date: Date;
@@ -14,6 +23,8 @@ interface NewEventBlockProps {
   hourHeight?: number;
   timeColumnWidth?: number;
   title?: string;
+  /** True while pointer is down for drag-to-create — enables magnetic spring on size/position */
+  isDragging?: boolean;
 }
 
 export default function NewEventBlock({
@@ -28,6 +39,7 @@ export default function NewEventBlock({
   hourHeight = 60,
   timeColumnWidth = 53,
   title = "",
+  isDragging = false,
 }: NewEventBlockProps) {
   const blockRef = useRef<HTMLDivElement>(null);
   const updatePendingEventRect = useCalendarStore(
@@ -119,7 +131,13 @@ export default function NewEventBlock({
       const rect = blockRef.current.getBoundingClientRect();
       updatePendingEventRect(rect);
     }
-  }, [updatePendingEventRect]);
+  }, [
+    updatePendingEventRect,
+    position.top,
+    position.left,
+    position.width,
+    position.height,
+  ]);
 
   const getPadding = () => {
     if (isWeekView) return "6px 8px";
@@ -128,19 +146,24 @@ export default function NewEventBlock({
     return "10px 8px";
   };
 
-  const style = {
-    top: position.top,
-    left: position.left,
-    width: position.width,
-    height: position.height,
-    zIndex: 50,
-  };
-
   return (
-    <div
+    <motion.div
       ref={blockRef}
+      initial={false}
+      animate={{
+        top: position.top,
+        left: position.left,
+        width: position.width,
+        height: position.height,
+      }}
+      transition={isDragging ? DRAG_CREATE_SPRING : { duration: 0 }}
+      onAnimationComplete={() => {
+        if (blockRef.current) {
+          updatePendingEventRect(blockRef.current.getBoundingClientRect());
+        }
+      }}
       className="absolute pointer-events-auto text-left bg-[#D6EFF8] rounded-md ring-2 ring-[#35A9DD] overflow-hidden"
-      style={style}
+      style={{ zIndex: 50 }}
     >
       <div
         className={`h-full flex ${isVeryShortEvent ? 'items-center gap-1.5' : 'gap-2.5'}`}
@@ -180,6 +203,6 @@ export default function NewEventBlock({
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

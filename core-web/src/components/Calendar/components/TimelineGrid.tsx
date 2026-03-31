@@ -45,6 +45,7 @@ export default function TimelineGrid({
   const startDraggingToCreate = useCalendarStore((state) => state.startDraggingToCreate);
   const updateDragToCreate = useCalendarStore((state) => state.updateDragToCreate);
   const cancelCreatingEvent = useCalendarStore((state) => state.cancelCreatingEvent);
+  const finishDragToCreate = useCalendarStore((state) => state.finishDragToCreate);
 
   const timedEvents = useMemo(
     () => getTimedEventsForDate(date),
@@ -135,20 +136,16 @@ export default function TimelineGrid({
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', handlePointerUp);
 
-      // Only show popover if drag was sufficient
-      const state = useCalendarStore.getState();
-      if (!hasMovedEnough && state.pendingEvent?.isDragging) {
-        // Drag-to-create was successful, popover should appear
-        // User must enter a title to create the event
-      } else if (!hasMovedEnough) {
-        // Drag was too short, cancel any pending drag-to-create
+      if (hasMovedEnough) {
+        finishDragToCreate();
+      } else {
         cancelCreatingEvent();
       }
     };
 
     document.addEventListener('pointermove', handlePointerMove);
     document.addEventListener('pointerup', handlePointerUp);
-  }, [date, calculateTimeFromPosition, updateDragToCreate, startDraggingToCreate, cancelCreatingEvent, pendingEvent?.isDragging]);
+  }, [date, calculateTimeFromPosition, updateDragToCreate, startDraggingToCreate, cancelCreatingEvent, finishDragToCreate, pendingEvent?.isDragging]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -266,6 +263,7 @@ export default function TimelineGrid({
               hourHeight={hourHeight}
               timeColumnWidth={timeColumnWidth}
               title={pendingEvent.title}
+              isDragging={pendingEvent.isDragging === true}
             />
           )}
         </div>

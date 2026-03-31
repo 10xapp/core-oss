@@ -73,6 +73,9 @@ export default function WeekView({
   const cancelCreatingEvent = useCalendarStore(
     (state) => state.cancelCreatingEvent,
   );
+  const finishDragToCreate = useCalendarStore(
+    (state) => state.finishDragToCreate,
+  );
 
   const weekStart = useMemo(() => startOfWeek(selectedDate), [selectedDate]);
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
@@ -193,13 +196,9 @@ export default function WeekView({
         document.removeEventListener("pointermove", handlePointerMove);
         document.removeEventListener("pointerup", handlePointerUp);
 
-        // Only show popover if drag was sufficient
-        const state = useCalendarStore.getState();
-        if (!hasMovedEnough && state.pendingEvent?.isDragging) {
-          // Drag-to-create was successful, popover should appear
-          // User must enter a title to create the event
-        } else if (!hasMovedEnough) {
-          // Drag was too short, cancel any pending drag-to-create
+        if (hasMovedEnough) {
+          finishDragToCreate();
+        } else {
           cancelCreatingEvent();
         }
       };
@@ -213,6 +212,7 @@ export default function WeekView({
       updateDragToCreate,
       startDraggingToCreate,
       cancelCreatingEvent,
+      finishDragToCreate,
       pendingEvent?.isDragging,
     ],
   );
@@ -473,6 +473,7 @@ export default function WeekView({
                       hourHeight={HOUR_HEIGHT}
                       timeColumnWidth={TIME_COLUMN_WIDTH}
                       title={pendingEvent.title}
+                      isDragging={pendingEvent.isDragging === true}
                     />
                   )}
                 </div>
@@ -505,7 +506,7 @@ function CurrentTimeIndicatorWeek({
 
   return (
     <div
-      className="absolute pointer-events-none z-20"
+      className="absolute pointer-events-none z-[110]"
       style={{
         top: topPosition,
         left: -circleSize / 2,

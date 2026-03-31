@@ -117,6 +117,8 @@ interface CalendarState {
     triggerRect: DOMRect,
   ) => void;
   updateDragToCreate: (endHour: number, endMinute: number) => void;
+  /** Call when pointer-up ends drag-to-create so UI can stop spring-animating the preview */
+  finishDragToCreate: () => void;
 
   // Event actions
   addEvent: (event: CalendarEvent) => void;
@@ -766,6 +768,13 @@ export const useCalendarStore = create<CalendarState>()(
               endMinute,
             },
           });
+        }
+      },
+
+      finishDragToCreate: () => {
+        const pending = get().pendingEvent;
+        if (pending?.isDragging) {
+          set({ pendingEvent: { ...pending, isDragging: false } });
         }
       },
 

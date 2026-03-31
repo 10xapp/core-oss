@@ -30,7 +30,7 @@ export default function CurrentTimeIndicator({
 
   return (
     <div
-      className="absolute pointer-events-none z-20"
+      className="absolute pointer-events-none z-[110]"
       style={{
         top: topPosition,
         left: 0,
