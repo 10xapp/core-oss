@@ -404,8 +404,9 @@ async def complete_oauth_flow(
     request: Request,
     response: Response,
     body: CompleteOAuthRequest,
-    user_jwt: str = Depends(get_current_user_jwt),
-    current_user_id: str = Depends(get_current_user_id)
+    user_jwt: Annotated[str, Depends(get_current_user_jwt)],
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+    current_user_email: Annotated[str, Depends(get_current_user_email)],
 ):
     """
     Complete OAuth flow - creates user and stores connection in one call.
@@ -423,6 +424,13 @@ async def complete_oauth_flow(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot complete OAuth flow for a different user"
+        )
+
+    # Validate email matches JWT claim to prevent spoofed profile rows
+    if body.email and str(body.email).strip().lower() != current_user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot complete OAuth flow with a different email"
         )
 
     # Validate that at least one auth method is provided
