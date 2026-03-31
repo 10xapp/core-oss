@@ -183,6 +183,12 @@ class Settings(BaseSettings):
     e2b_api_key: str = ""
     e2b_default_template: str = "base"  # Default sandbox template ID
 
+    # Tirith pre-exec scanning (optional, for AI agent sandboxes)
+    tirith_enabled: bool = False           # Set to true to enable scanning
+    tirith_path: str = ""                  # Path to tirith binary inside sandbox; empty = auto-detect
+    tirith_timeout: int = 10               # Seconds to wait for tirith check
+    tirith_fail_mode: str = "open"         # "open" = allow on scanner failure; "closed" = block
+
     # Agent dispatch webhook
     agent_webhook_secret: str = ""  # Shared secret for Supabase webhook validation
 
