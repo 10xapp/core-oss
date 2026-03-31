@@ -120,10 +120,7 @@ celerybeat.pid
 .DS_Store
 Thumbs.db
 .env*.local
-supabase/.temp/pooler-url
-supabase/.temp/postgres-version
-supabase/.temp/project-ref
-supabase/.temp/rest-version
+supabase/.temp/
 
 
 #claude

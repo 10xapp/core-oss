@@ -11,7 +11,6 @@ supabase/
 │   ├── 00003_workspaces.sql              # workspaces, members, apps, app_members + RLS helpers
 │   ├── 00004_email_system.sql            # emails + thread RPCs + FTS
 │   ├── 00005_calendar_system.sql         # calendar_events
-│   ├── 00006_todos_system.sql            # todos, habit_completions + streak RPCs
 │   ├── 00007_files_and_documents.sql     # files, documents, note_attachments, document_versions
 │   ├── 00008_chat_system.sql             # conversations, messages, chat_attachments
 │   ├── 00009_sounds_system.sql           # sounds, playlists, user_listens
