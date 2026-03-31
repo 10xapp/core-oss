@@ -166,7 +166,18 @@ async def test_get_public_shared_resource_rejects_expired_links(monkeypatch):
                 "granted_by": "user-1",
                 "expires_at": expired_at,
             }
-        ]
+        ],
+        "documents": [
+            {
+                "id": "doc-1",
+                "title": "Quarterly Plan",
+                "content": "Secret",
+                "is_folder": False,
+                "created_at": "2026-03-31T00:00:00+00:00",
+                "updated_at": "2026-03-31T00:00:00+00:00",
+                "file": {"r2_key": "docs/doc-1.png", "file_type": "image/png"},
+            }
+        ],
     }
 
     monkeypatch.setattr(
@@ -179,6 +190,54 @@ async def test_get_public_shared_resource_rejects_expired_links(monkeypatch):
         await public_module.get_public_shared_resource("expired-link")
 
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_public_shared_resource_falls_back_to_slug_lookup(monkeypatch):
+    from api.services.permissions import public as public_module
+
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    state = {
+        "permissions": [
+            {
+                "grantee_type": "link",
+                "link_token": "raw-uuid-token",
+                "link_slug": "docs-link",
+                "resource_type": "document",
+                "resource_id": "doc-1",
+                "permission": "read",
+                "granted_by": "user-1",
+                "expires_at": expires_at,
+            }
+        ],
+        "users": [{"id": "user-1", "name": "Jay", "avatar_url": "avatar.png"}],
+        "documents": [
+            {
+                "id": "doc-1",
+                "title": "Quarterly Plan",
+                "content": "Secret",
+                "is_folder": False,
+                "created_at": "2026-03-31T00:00:00+00:00",
+                "updated_at": "2026-03-31T00:00:00+00:00",
+                "file": {"r2_key": "docs/doc-1.png", "file_type": "image/png"},
+            }
+        ],
+    }
+
+    monkeypatch.setattr(
+        public_module,
+        "get_async_service_role_client",
+        AsyncMock(return_value=FakePublicSupabaseClient(state)),
+    )
+    monkeypatch.setattr(public_module, "_enrich_documents_with_image_urls", lambda docs: None)
+
+    # Lookup by slug (not the raw token) — exercises the fallback branch
+    result = await public_module.get_public_shared_resource("docs-link")
+
+    assert result["resource_type"] == "document"
+    assert result["resource_id"] == "doc-1"
+    assert result["permission"] == "read"
+    assert result["shared_by"]["name"] == "Jay"
 
 
 @pytest.mark.asyncio
