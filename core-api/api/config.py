@@ -217,6 +217,20 @@ class Settings(BaseSettings):
     api_env: str = "development"
 
     @model_validator(mode="after")
+    def validate_tirith_settings(self):
+        """Fail fast on invalid Tirith scanning configuration."""
+        self.tirith_fail_mode = self.tirith_fail_mode.strip().lower()
+        self.tirith_path = self.tirith_path.strip()
+
+        if self.tirith_timeout <= 0:
+            raise ValueError("TIRITH_TIMEOUT must be greater than 0")
+
+        if self.tirith_fail_mode not in {"open", "closed"}:
+            raise ValueError("TIRITH_FAIL_MODE must be 'open' or 'closed'")
+
+        return self
+
+    @model_validator(mode="after")
     def validate_token_encryption_settings(self):
         """Fail fast on invalid token-encryption rollout configuration."""
         current_key = self.token_encryption_key
