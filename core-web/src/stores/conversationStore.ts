@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { getConversations, deleteConversation, type Conversation } from '../api/client';
+import { getConversations, deleteConversation, renameConversation, type Conversation } from '../api/client';
 
 interface ConversationState {
   conversations: Conversation[];
@@ -13,7 +13,7 @@ interface ConversationState {
   fetchConversations: () => Promise<void>;
   addConversation: (conversation: Conversation) => void;
   removeConversation: (id: string) => Promise<void>;
-  updateConversationTitle: (id: string, title: string) => void;
+  updateConversationTitle: (id: string, title: string) => Promise<void>;
   setActiveConversationId: (id: string | null) => void;
 }
 
@@ -69,13 +69,19 @@ export const useConversationStore = create<ConversationState>()(
         }
       },
 
-      updateConversationTitle: (id: string, title: string) => {
+      updateConversationTitle: async (id: string, title: string) => {
         const { conversations } = get();
         set({
           conversations: conversations.map((c) =>
             c.id === id ? { ...c, title } : c
           ),
         });
+        try {
+          await renameConversation(id, title);
+        } catch (err) {
+          set({ conversations });
+          console.error('Failed to rename conversation:', err);
+        }
       },
 
       setActiveConversationId: (id: string | null) => {
