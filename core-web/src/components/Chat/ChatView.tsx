@@ -241,6 +241,14 @@ export default function ChatView() {
     // Set active conversation for sidebar highlighting
     setActiveConversationId(urlConversationId);
 
+    // Clear stale streaming state from previous conversation
+    streamingConversationRef.current = null;
+    builderRef.current = null;
+    setStreamingContent('');
+    setStreamingParts([]);
+    setStreamStatus(null);
+    setIsWaitingForResponse(false);
+
     async function loadMessages() {
       setLoadingMessages(true);
       try {
