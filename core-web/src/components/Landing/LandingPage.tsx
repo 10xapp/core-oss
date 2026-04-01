@@ -276,10 +276,10 @@ export default function LandingPage() {
                                       { time: "11:30 AM", title: "Design Review", color: "#34A853" },
                                       { time: "2:00 PM", title: "1:1 with Sarah", color: "#9333EA" },
                                     ].map((evt) => (
-                                      <div key={evt.title} className="flex items-center gap-1.5 bg-[#F4F3F1] rounded px-2 py-1">
+                                      <div key={evt.title} className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1">
                                         <div className="w-0.5 h-4 rounded-full shrink-0" style={{ backgroundColor: evt.color }} />
                                         <div>
-                                          <p className="text-[7px] text-[#00000054]">{evt.time}</p>
+                                          <p className="text-[7px] text-text-tertiary">{evt.time}</p>
                                           <p className="text-[8px] font-medium text-[#000]">{evt.title}</p>
                                         </div>
                                       </div>
@@ -293,7 +293,7 @@ export default function LandingPage() {
                                 </div>
                               </div>
                               <div className="px-6 pb-2 shrink-0">
-                                <div className="border border-[#E7E7E6] rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                                <div className="border border-border-gray rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
                                   <span className="text-[8px] text-text-tertiary flex-1">Message Core...</span>
                                   <div className="w-3.5 h-3.5 bg-black/8 rounded flex items-center justify-center">
                                     <svg className="w-2 h-2 text-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -357,7 +357,7 @@ export default function LandingPage() {
                                 ))}
                               </div>
                               <div className="px-2 pb-1.5 shrink-0">
-                                <div className="border border-[#E7E7E6] rounded-lg px-2 py-1.5 flex items-center gap-1.5">
+                                <div className="border border-border-gray rounded-lg px-2 py-1.5 flex items-center gap-1.5">
                                   <span className="text-[8px] text-text-tertiary flex-1">Message # general...</span>
                                   <div className="w-3.5 h-3.5 bg-black/8 rounded flex items-center justify-center">
                                     <svg className="w-2 h-2 text-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>

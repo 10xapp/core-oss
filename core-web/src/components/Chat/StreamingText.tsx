@@ -84,7 +84,7 @@ const defaultMarkdownComponents: Components = {
     const isInline = !match && !codeString.includes('\n');
     if (isInline) {
       return (
-        <code className="bg-[#EAEAEA] px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
+        <code className="bg-border-light px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
           {children}
         </code>
       );
@@ -139,7 +139,7 @@ const compactMarkdownComponents: Components = {
     const isInline = !match && !codeString.includes('\n');
     if (isInline) {
       return (
-        <code className="bg-[#EAEAEA] px-1 py-0.5 rounded text-xs font-mono text-text-body" {...props}>
+        <code className="bg-border-light px-1 py-0.5 rounded text-xs font-mono text-text-body" {...props}>
           {children}
         </code>
       );

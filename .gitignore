@@ -43,8 +43,8 @@ logs/
 npm-debug.log*
 
 # Supabase local
-supabase/.temp/
-supabase/.branches/
+**/supabase/.temp/
+**/supabase/.branches/
 
 # Vercel
 .vercel

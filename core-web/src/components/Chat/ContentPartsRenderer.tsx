@@ -93,7 +93,7 @@ const markdownComponents: Components = {
 
     if (isInline) {
       return (
-        <code className="bg-[#EAEAEA] px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
+        <code className="bg-border-light px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
           {children}
         </code>
       );

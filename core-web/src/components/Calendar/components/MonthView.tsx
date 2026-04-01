@@ -308,7 +308,7 @@ export default function MonthView({
                               onClick={(e) => handleEventClick(e, event)}
                               className="w-full h-5 text-left px-1.5 rounded text-xs truncate transition-opacity hover:opacity-80 flex items-center"
                               style={{
-                                backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
+                                backgroundColor: isOutlined ? 'var(--color-bg-white)' : palette.bg,
                                 color: palette.title,
                                 border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
                                 textDecoration: isDeclined ? 'line-through' : undefined,
