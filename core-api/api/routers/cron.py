@@ -200,7 +200,8 @@ def _get_batch_bucket(now: Optional[datetime] = None) -> str:
 
 
 def _hash_connection_ids(connection_ids: List[str]) -> str:
-    return hashlib.sha1(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
+    # Deterministic queue dedup fingerprint, not security hashing.
+    return hashlib.sha256(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
 
 
 def _build_batch_token(connection_ids: List[str], bucket: str) -> str:

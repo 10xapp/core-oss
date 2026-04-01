@@ -257,7 +257,8 @@ def _run_batch(
 
 
 def _hash_connection_ids(connection_ids: List[str]) -> str:
-    return hashlib.sha1(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
+    # Deterministic queue dedup fingerprint, not security hashing.
+    return hashlib.sha256(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
 
 
 def _resolve_batch_token(payload: SyncPayload) -> str:
