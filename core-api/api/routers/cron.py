@@ -28,6 +28,7 @@ CRON JOB SCHEDULE:
 """
 from fastapi import APIRouter, HTTPException, status, Header
 from typing import Optional
+import hashlib
 import hmac
 import logging
 import os
@@ -182,6 +183,37 @@ def is_cron_batch_mode_enabled() -> bool:
     return value not in {"0", "false", "no", "off"}
 
 
+def get_cron_batch_size() -> int:
+    """Return incremental-sync batch size, bounded to safe worker-sized chunks."""
+    value = os.getenv("CRON_BATCH_SIZE", "100").strip()
+    try:
+        batch_size = int(value)
+    except (TypeError, ValueError):
+        return 100
+
+    return batch_size if 1 <= batch_size <= 250 else 100
+
+
+def _get_batch_bucket(now: Optional[datetime] = None) -> str:
+    timestamp = now or datetime.now(timezone.utc)
+    return timestamp.strftime("%Y%m%d%H%M")
+
+
+def _hash_connection_ids(connection_ids: List[str]) -> str:
+    return hashlib.sha1(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
+
+
+def _build_batch_token(connection_ids: List[str], bucket: str) -> str:
+    return f"{bucket}-{_hash_connection_ids(connection_ids)}"
+
+
+def _chunk_connection_ids(connection_ids: List[str], batch_size: int) -> List[List[str]]:
+    return [
+        connection_ids[idx:idx + batch_size]
+        for idx in range(0, len(connection_ids), batch_size)
+    ]
+
+
 @router.get("/incremental-sync", response_model=IncrementalSyncResponse)
 async def cron_incremental_sync(authorization: str = Header(None)):
     """
@@ -276,10 +308,11 @@ async def cron_incremental_sync(authorization: str = Header(None)):
 
         # --- Queue path: batched fanout (default) ---
         if use_queue and batch_mode:
-            google_ids = [c['id'] for c in stale_connections if c.get('provider') == 'google']
-            microsoft_ids = [c['id'] for c in stale_connections if c.get('provider') == 'microsoft']
+            google_ids = sorted(c['id'] for c in stale_connections if c.get('provider') == 'google')
+            microsoft_ids = sorted(c['id'] for c in stale_connections if c.get('provider') == 'microsoft')
             scheduled_connection_ids = set()
-            dedup_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+            dedup_bucket = _get_batch_bucket()
+            batch_size = get_cron_batch_size()
 
             batch_jobs = [
                 ("sync-gmail", google_ids),
@@ -291,14 +324,24 @@ async def cron_incremental_sync(authorization: str = Header(None)):
             for job_type, ids in batch_jobs:
                 if not ids:
                     continue
-                dedup_id = f"batch-{job_type}-{dedup_bucket}"
-                if queue_client.enqueue_batch(job_type, ids, dedup_id=dedup_id):
-                    jobs_enqueued += 1
-                    scheduled_connection_ids.update(ids)
-                else:
-                    jobs_failed += 1
-                    error_count += 1
-                    logger.warning(f"⚠️ Queue publish failed for batch job {job_type} ({len(ids)} IDs)")
+                for chunk_ids in _chunk_connection_ids(ids, batch_size):
+                    batch_token = _build_batch_token(chunk_ids, dedup_bucket)
+                    dedup_id = f"batch-{job_type}-{batch_token}"
+                    if queue_client.enqueue_batch(
+                        job_type,
+                        chunk_ids,
+                        extra={"batch_token": batch_token},
+                        dedup_id=dedup_id,
+                    ):
+                        jobs_enqueued += 1
+                        scheduled_connection_ids.update(chunk_ids)
+                    else:
+                        jobs_failed += 1
+                        error_count += 1
+                        logger.warning(
+                            f"⚠️ Queue publish failed for batch job {job_type} "
+                            f"({len(chunk_ids)} IDs, token={batch_token})"
+                        )
 
             success_count = len(scheduled_connection_ids)
 

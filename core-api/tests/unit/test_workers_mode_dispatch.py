@@ -113,6 +113,7 @@ def test_run_batch_respects_time_budget(monkeypatch):
     assert result["processed"] == 0
     assert result["budget_exhausted"] is True
     assert result["remaining"] == 2
+    assert result["remaining_ids"] == ["a", "b"]
 
 
 def test_worker_sync_gmail_routes_webhook_mode():
@@ -138,11 +139,158 @@ def test_worker_sync_gmail_routes_batch_mode():
 
     payload = workers.SyncPayload(connection_ids=["conn-1", "conn-2"])
 
-    with patch.object(workers, "_run_batch", return_value={"status": "ok", "processed": 2}) as batch_mock:
+    with patch.object(workers, "_run_batch_endpoint", return_value={"status": "ok", "processed": 2}) as batch_mock:
         result = workers.worker_sync_gmail(payload)
 
     assert result["status"] == "ok"
     batch_mock.assert_called_once()
+    assert batch_mock.call_args.args[0] == "sync-gmail"
+    assert batch_mock.call_args.args[1] == payload
+    assert callable(batch_mock.call_args.args[2])
+
+
+def test_run_batch_endpoint_reenqueues_budget_tail(monkeypatch):
+    from api.routers import workers
+
+    payload = workers.SyncPayload(
+        connection_ids=["conn-1", "conn-2", "conn-3"],
+        batch_token="202604011200-abc123",
+    )
+    queue_client_mock = MagicMock()
+    queue_client_mock.enqueue_batch.return_value = True
+
+    monkeypatch.setattr(workers, "queue_client", queue_client_mock)
+    monkeypatch.setattr(
+        workers,
+        "_run_batch",
+        lambda *_args, **_kwargs: {
+            "status": "ok",
+            "processed": 1,
+            "skipped": 0,
+            "errors": 0,
+            "failed_ids": [],
+            "budget_exhausted": True,
+            "remaining": 2,
+            "remaining_ids": ["conn-2", "conn-3"],
+            "duration_seconds": 1.0,
+        },
+    )
+
+    result = workers._run_batch_endpoint("sync-gmail", payload, lambda _: {"status": "ok"})
+
+    assert result["status"] == "ok"
+    assert result["continued"] is True
+    assert result["re_enqueued"] == 2
+    assert result["remaining"] == 2
+    assert "remaining_ids" not in result
+    queue_client_mock.enqueue_batch.assert_called_once()
+    assert queue_client_mock.enqueue_batch.call_args.args == ("sync-gmail", ["conn-2", "conn-3"])
+    assert queue_client_mock.enqueue_batch.call_args.kwargs["extra"]["batch_token"] == "202604011200-abc123"
+    assert queue_client_mock.enqueue_batch.call_args.kwargs["dedup_id"] == (
+        workers._build_continuation_dedup_id("sync-gmail", "202604011200-abc123", ["conn-2", "conn-3"])
+    )
+
+
+def test_run_batch_endpoint_raises_when_continuation_enqueue_fails(monkeypatch):
+    from api.routers import workers
+
+    payload = workers.SyncPayload(
+        connection_ids=["conn-1", "conn-2"],
+        batch_token="202604011200-abc123",
+    )
+    queue_client_mock = MagicMock()
+    queue_client_mock.enqueue_batch.return_value = False
+
+    monkeypatch.setattr(workers, "queue_client", queue_client_mock)
+    monkeypatch.setattr(
+        workers,
+        "_run_batch",
+        lambda *_args, **_kwargs: {
+            "status": "ok",
+            "processed": 1,
+            "skipped": 0,
+            "errors": 0,
+            "failed_ids": [],
+            "budget_exhausted": True,
+            "remaining": 1,
+            "remaining_ids": ["conn-2"],
+            "duration_seconds": 1.0,
+        },
+    )
+
+    with pytest.raises(workers.HTTPException) as exc_info:
+        workers._run_batch_endpoint("sync-gmail", payload, lambda _: {"status": "ok"})
+
+    assert exc_info.value.status_code == 500
+    queue_client_mock.enqueue_batch.assert_called_once()
+
+
+def test_run_batch_endpoint_raises_on_zero_progress_budget_exhaustion(monkeypatch):
+    from api.routers import workers
+
+    payload = workers.SyncPayload(
+        connection_ids=["conn-1", "conn-2"],
+        batch_token="202604011200-abc123",
+    )
+    queue_client_mock = MagicMock()
+
+    monkeypatch.setattr(workers, "queue_client", queue_client_mock)
+    monkeypatch.setattr(
+        workers,
+        "_run_batch",
+        lambda *_args, **_kwargs: {
+            "status": "ok",
+            "processed": 0,
+            "skipped": 0,
+            "errors": 0,
+            "failed_ids": [],
+            "budget_exhausted": True,
+            "remaining": 2,
+            "remaining_ids": ["conn-1", "conn-2"],
+            "duration_seconds": 1.0,
+        },
+    )
+
+    with pytest.raises(workers.HTTPException) as exc_info:
+        workers._run_batch_endpoint("sync-gmail", payload, lambda _: {"status": "ok"})
+
+    assert exc_info.value.status_code == 500
+    queue_client_mock.enqueue_batch.assert_not_called()
+
+
+def test_run_batch_endpoint_keeps_partial_status_for_item_failures(monkeypatch):
+    from api.routers import workers
+
+    payload = workers.SyncPayload(
+        connection_ids=["conn-1", "conn-2"],
+        batch_token="202604011200-abc123",
+    )
+    queue_client_mock = MagicMock()
+    queue_client_mock.enqueue_batch.return_value = True
+
+    monkeypatch.setattr(workers, "queue_client", queue_client_mock)
+    monkeypatch.setattr(
+        workers,
+        "_run_batch",
+        lambda *_args, **_kwargs: {
+            "status": "partial",
+            "processed": 1,
+            "skipped": 0,
+            "errors": 1,
+            "failed_ids": ["conn-1"],
+            "budget_exhausted": True,
+            "remaining": 1,
+            "remaining_ids": ["conn-2"],
+            "duration_seconds": 1.0,
+        },
+    )
+
+    result = workers._run_batch_endpoint("sync-gmail", payload, lambda _: {"status": "ok"})
+
+    assert result["status"] == "partial"
+    assert result["continued"] is True
+    assert result["re_enqueued"] == 1
+    queue_client_mock.enqueue_batch.assert_called_once()
 
 
 def test_worker_sync_calendar_routes_webhook_mode():

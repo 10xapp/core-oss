@@ -4,6 +4,7 @@ Worker endpoints — process sync jobs delivered by QStash.
 Each endpoint supports single-connection, batch, webhook-incremental, and
 initial-sync modes while keeping runtime within Vercel's limits.
 """
+import hashlib
 import logging
 import time
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from qstash.errors import SignatureError
 
 from api.config import settings
 from api.routers.cron import verify_cron_auth
+from lib.queue import queue_client
 from lib.supabase_client import get_service_role_client
 from lib.token_encryption import decrypt_ext_connection_tokens
 
@@ -56,6 +58,7 @@ class SyncPayload(BaseModel):
     days_past: Optional[int] = None
     days_future: Optional[int] = None
     max_results: Optional[int] = None
+    batch_token: Optional[str] = None
 
     class Config:
         extra = "allow"
@@ -127,6 +130,8 @@ class WorkerResponse(BaseModel):
     remaining: Optional[int] = None
     duration_seconds: Optional[float] = None
     analyzed_count: Optional[int] = None
+    continued: Optional[bool] = None
+    re_enqueued: Optional[int] = None
 
     class Config:
         extra = "allow"
@@ -209,11 +214,13 @@ def _run_batch(
     failed_ids: List[str] = []
     budget_exhausted = False
     remaining = 0
+    remaining_ids: List[str] = []
 
     for idx, connection_id in enumerate(connection_ids):
         if time.time() - started >= BATCH_TIME_BUDGET_SECONDS:
             budget_exhausted = True
-            remaining = len(connection_ids) - idx
+            remaining_ids = connection_ids[idx:]
+            remaining = len(remaining_ids)
             logger.info(
                 f"[Worker] {worker_name} batch budget exhausted "
                 f"after {processed + skipped + errors} items"
@@ -244,8 +251,83 @@ def _run_batch(
         "failed_ids": failed_ids,
         "budget_exhausted": budget_exhausted,
         "remaining": remaining,
+        "remaining_ids": remaining_ids,
         "duration_seconds": duration,
     }
+
+
+def _hash_connection_ids(connection_ids: List[str]) -> str:
+    return hashlib.sha1(",".join(connection_ids).encode("utf-8")).hexdigest()[:12]
+
+
+def _resolve_batch_token(payload: SyncPayload) -> str:
+    if payload.batch_token:
+        return payload.batch_token
+    connection_ids = payload.connection_ids or []
+    return f"legacy-{_hash_connection_ids(connection_ids)}"
+
+
+def _build_continuation_dedup_id(
+    job_type: str,
+    batch_token: str,
+    connection_ids: List[str],
+) -> str:
+    return f"continue-{job_type}-{batch_token}-{_hash_connection_ids(connection_ids)}"
+
+
+def _maybe_continue_batch(
+    job_type: str,
+    payload: SyncPayload,
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    remaining_ids = list(result.get("remaining_ids") or [])
+
+    if not result.get("budget_exhausted") or not remaining_ids:
+        return result
+
+    attempted = int(result.get("processed") or 0) + int(result.get("skipped") or 0) + int(result.get("errors") or 0)
+    if attempted == 0:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{job_type} batch exhausted time budget before processing any items",
+        )
+
+    batch_token = _resolve_batch_token(payload)
+    continuation_dedup_id = _build_continuation_dedup_id(job_type, batch_token, remaining_ids)
+
+    payload_extra = payload.model_dump(
+        exclude_none=True,
+        exclude={"connection_id", "connection_ids"},
+    )
+    payload_extra["batch_token"] = batch_token
+
+    if not queue_client.enqueue_batch(
+        job_type,
+        remaining_ids,
+        extra=payload_extra,
+        dedup_id=continuation_dedup_id,
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail=f"{job_type} batch continuation enqueue failed",
+        )
+
+    response = dict(result)
+    response["continued"] = True
+    response["re_enqueued"] = len(remaining_ids)
+    response["remaining"] = len(remaining_ids)
+    return response
+
+
+def _run_batch_endpoint(
+    job_type: str,
+    payload: SyncPayload,
+    processor: Callable[[str], Dict[str, Any]],
+) -> Dict[str, Any]:
+    result = _run_batch(payload.connection_ids or [], processor, job_type)
+    continued_result = _maybe_continue_batch(job_type, payload, result)
+    continued_result.pop("remaining_ids", None)
+    return continued_result
 
 
 def _sync_single_gmail(
@@ -519,7 +601,11 @@ def worker_sync_gmail(
     """Sync Gmail (single, batch, webhook-incremental, initial)."""
 
     if payload.connection_ids:
-        return _run_batch(payload.connection_ids, lambda cid: _sync_single_gmail(cid, payload), "sync-gmail")
+        return _run_batch_endpoint(
+            "sync-gmail",
+            payload,
+            lambda cid: _sync_single_gmail(cid, payload),
+        )
 
     if payload.history_id or payload.email_address:
         result = _process_gmail_webhook(payload)
@@ -542,10 +628,10 @@ def worker_sync_calendar(
     """Sync Calendar (single, batch, webhook-incremental, initial)."""
 
     if payload.connection_ids:
-        return _run_batch(
-            payload.connection_ids,
-            lambda cid: _sync_single_calendar(cid, payload),
+        return _run_batch_endpoint(
             "sync-calendar",
+            payload,
+            lambda cid: _sync_single_calendar(cid, payload),
         )
 
     if payload.channel_id or payload.resource_state or payload.message_number:
@@ -569,10 +655,10 @@ def worker_sync_outlook(
     """Sync Outlook mail (single, batch, initial)."""
 
     if payload.connection_ids:
-        return _run_batch(
-            payload.connection_ids,
-            lambda cid: _sync_single_outlook(cid, payload),
+        return _run_batch_endpoint(
             "sync-outlook",
+            payload,
+            lambda cid: _sync_single_outlook(cid, payload),
         )
 
     if not payload.connection_id:
@@ -591,10 +677,10 @@ def worker_sync_outlook_calendar(
     """Sync Outlook Calendar (single, batch, initial)."""
 
     if payload.connection_ids:
-        return _run_batch(
-            payload.connection_ids,
-            lambda cid: _sync_single_outlook_calendar(cid, payload),
+        return _run_batch_endpoint(
             "sync-outlook-calendar",
+            payload,
+            lambda cid: _sync_single_outlook_calendar(cid, payload),
         )
 
     if not payload.connection_id:

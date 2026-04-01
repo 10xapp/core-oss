@@ -84,3 +84,30 @@ def test_enqueue_batch_passes_connection_ids(monkeypatch):
     assert captured["payload"] == {"connection_ids": ["c1", "c2"]}
     assert captured["dedup_id"] is None
 
+
+def test_enqueue_batch_preserves_extra_payload(monkeypatch):
+    from lib.queue import QueueClient
+
+    client = QueueClient()
+    captured = {}
+
+    def fake_enqueue(job_type, payload, dedup_id=None):
+        captured["job_type"] = job_type
+        captured["payload"] = payload
+        captured["dedup_id"] = dedup_id
+        return True
+
+    monkeypatch.setattr(client, "enqueue", fake_enqueue)
+
+    assert client.enqueue_batch(
+        "sync-gmail",
+        ["c1", "c2"],
+        extra={"batch_token": "202604011200-abc123"},
+        dedup_id="batch-sync-gmail-202604011200-abc123",
+    ) is True
+    assert captured["job_type"] == "sync-gmail"
+    assert captured["payload"] == {
+        "connection_ids": ["c1", "c2"],
+        "batch_token": "202604011200-abc123",
+    }
+    assert captured["dedup_id"] == "batch-sync-gmail-202604011200-abc123"
