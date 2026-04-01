@@ -152,7 +152,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
     );
     if (imageFile) {
       e.preventDefault();
-      uploadImageFile(imageFile);
+      void uploadImageFile(imageFile);
     }
   };
 
