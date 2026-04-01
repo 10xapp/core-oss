@@ -309,8 +309,8 @@ async def cron_incremental_sync(authorization: str = Header(None)):
 
         # --- Queue path: batched fanout (default) ---
         if use_queue and batch_mode:
-            google_ids = sorted(c['id'] for c in stale_connections if c.get('provider') == 'google')
-            microsoft_ids = sorted(c['id'] for c in stale_connections if c.get('provider') == 'microsoft')
+            google_ids = sorted(str(c['id']) for c in stale_connections if c.get('provider') == 'google')
+            microsoft_ids = sorted(str(c['id']) for c in stale_connections if c.get('provider') == 'microsoft')
             scheduled_connection_ids = set()
             dedup_bucket = _get_batch_bucket()
             batch_size = get_cron_batch_size()
