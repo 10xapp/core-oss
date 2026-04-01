@@ -243,11 +243,36 @@ export default function ChatView() {
 
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let pollTimeout: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    async function pollForReply(convId: string) {
+      if (cancelled) return;
+      try {
+        const data = await getMessages(convId);
+        if (data.at(-1)?.role === 'assistant') {
+          if (pollTimer) clearInterval(pollTimer);
+          if (pollTimeout) clearTimeout(pollTimeout);
+          setMessages(data.map((msg: Message) => ({
+            id: msg.id, role: msg.role, content: msg.content, content_parts: msg.content_parts,
+          })));
+          setIsWaitingForResponse(false);
+          requestAnimationFrame(() => {
+            const container = scrollContainerRef.current;
+            if (container) container.scrollTop = container.scrollHeight;
+          });
+        }
+      } catch {
+        if (pollTimer) clearInterval(pollTimer);
+        if (pollTimeout) clearTimeout(pollTimeout);
+        setIsWaitingForResponse(false);
+      }
+    }
 
     async function loadMessages() {
       setLoadingMessages(true);
       try {
         const data = await getMessages(urlConversationId!);
+        if (cancelled) return;
         setMessages(
           data.map((msg: Message) => ({
             id: msg.id,
@@ -264,56 +289,29 @@ export default function ChatView() {
           }
         });
 
-        // If the last message is a recent user message, show the
-        // thinking indicator and poll until the response appears.
-        const lastRaw = data[data.length - 1];
+        // If the last message is a recent user message, poll until
+        // it appears.
+        const lastRaw = data.at(-1);
         const isRecent = lastRaw?.created_at && (Date.now() - new Date(lastRaw.created_at).getTime()) < 60000;
-        if (lastRaw && lastRaw.role === 'user' && isRecent) {
+        if (lastRaw?.role === 'user' && isRecent) {
           setIsWaitingForResponse(true);
-          pollTimer = setInterval(async () => {
-            try {
-              const fresh = await getMessages(urlConversationId!);
-              const freshLast = fresh[fresh.length - 1];
-              if (freshLast && freshLast.role === 'assistant') {
-                if (pollTimer) clearInterval(pollTimer);
-                if (pollTimeout) clearTimeout(pollTimeout);
-                setMessages(
-                  fresh.map((msg: Message) => ({
-                    id: msg.id,
-                    role: msg.role,
-                    content: msg.content,
-                    content_parts: msg.content_parts,
-                  }))
-                );
-                setIsWaitingForResponse(false);
-                requestAnimationFrame(() => {
-                  const container = scrollContainerRef.current;
-                  if (container) {
-                    container.scrollTop = container.scrollHeight;
-                  }
-                });
-              }
-            } catch {
-              if (pollTimer) clearInterval(pollTimer);
-              setIsWaitingForResponse(false);
-            }
-          }, 5000);
-          // Stop polling after 60s
+          pollTimer = setInterval(() => pollForReply(urlConversationId!), 5000);
           pollTimeout = setTimeout(() => {
             if (pollTimer) clearInterval(pollTimer);
-            setIsWaitingForResponse(false);
+            if (!cancelled) setIsWaitingForResponse(false);
           }, 60000);
         }
       } catch (err) {
         console.error('Failed to load messages:', err);
       } finally {
-        setLoadingMessages(false);
+        if (!cancelled) setLoadingMessages(false);
       }
     }
 
     loadMessages();
 
     return () => {
+      cancelled = true;
       if (pollTimer) clearInterval(pollTimer);
       if (pollTimeout) clearTimeout(pollTimeout);
     };
