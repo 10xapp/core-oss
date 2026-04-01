@@ -79,7 +79,12 @@ export const useConversationStore = create<ConversationState>()(
         try {
           await renameConversation(id, title);
         } catch (err) {
-          set({ conversations });
+          const oldTitle = conversations.find(c => c.id === id)?.title;
+          set({
+            conversations: get().conversations.map(c =>
+              c.id === id ? { ...c, title: oldTitle ?? c.title } : c
+            ),
+          });
           console.error('Failed to rename conversation:', err);
         }
       },
