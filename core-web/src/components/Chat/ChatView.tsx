@@ -241,6 +241,9 @@ export default function ChatView() {
     // Set active conversation for sidebar highlighting
     setActiveConversationId(urlConversationId);
 
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let pollTimeout: ReturnType<typeof setTimeout> | null = null;
+
     async function loadMessages() {
       setLoadingMessages(true);
       try {
@@ -260,6 +263,47 @@ export default function ChatView() {
             container.scrollTop = container.scrollHeight;
           }
         });
+
+        // If the last message is a recent user message, show the
+        // thinking indicator and poll until the response appears.
+        const lastRaw = data[data.length - 1];
+        const isRecent = lastRaw?.created_at && (Date.now() - new Date(lastRaw.created_at).getTime()) < 60000;
+        if (lastRaw && lastRaw.role === 'user' && isRecent) {
+          setIsWaitingForResponse(true);
+          pollTimer = setInterval(async () => {
+            try {
+              const fresh = await getMessages(urlConversationId!);
+              const freshLast = fresh[fresh.length - 1];
+              if (freshLast && freshLast.role === 'assistant') {
+                if (pollTimer) clearInterval(pollTimer);
+                if (pollTimeout) clearTimeout(pollTimeout);
+                setMessages(
+                  fresh.map((msg: Message) => ({
+                    id: msg.id,
+                    role: msg.role,
+                    content: msg.content,
+                    content_parts: msg.content_parts,
+                  }))
+                );
+                setIsWaitingForResponse(false);
+                requestAnimationFrame(() => {
+                  const container = scrollContainerRef.current;
+                  if (container) {
+                    container.scrollTop = container.scrollHeight;
+                  }
+                });
+              }
+            } catch {
+              if (pollTimer) clearInterval(pollTimer);
+              setIsWaitingForResponse(false);
+            }
+          }, 5000);
+          // Stop polling after 60s
+          pollTimeout = setTimeout(() => {
+            if (pollTimer) clearInterval(pollTimer);
+            setIsWaitingForResponse(false);
+          }, 60000);
+        }
       } catch (err) {
         console.error('Failed to load messages:', err);
       } finally {
@@ -268,6 +312,11 @@ export default function ChatView() {
     }
 
     loadMessages();
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (pollTimeout) clearTimeout(pollTimeout);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlConversationId, setActiveConversationId, hasChattedThisSession]);
 
