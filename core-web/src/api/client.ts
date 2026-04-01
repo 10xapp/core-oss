@@ -1537,6 +1537,13 @@ export async function deleteConversation(id: string): Promise<void> {
   await api(`/chat/conversations/${id}`, { method: 'DELETE' });
 }
 
+export async function renameConversation(id: string, title: string): Promise<Conversation> {
+  return api<Conversation>(`/chat/conversations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  });
+}
+
 export async function getMessages(conversationId: string): Promise<Message[]> {
   return api<Message[]>(`/chat/conversations/${conversationId}/messages`);
 }
