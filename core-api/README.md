@@ -33,6 +33,12 @@ cp .env.example .env
 
 ### Environment Variables
 
+By default the app loads `.env`. Override with `ENV_FILE` to use a different file:
+
+```bash
+ENV_FILE=.env.test make start
+```
+
 Create a `.env` file with these variables:
 
 ```env

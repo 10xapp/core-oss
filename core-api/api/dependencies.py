@@ -157,6 +157,30 @@ async def get_current_user_id(
     return user_id
 
 
+def get_current_user_email(
+    token_and_payload: Tuple[str, Dict[str, Any]] = Depends(get_validated_token_and_payload)
+) -> str:
+    """
+    Extract the user's email from the validated Supabase JWT.
+
+    Returns:
+        str: The normalized email from the JWT claims
+
+    Raises:
+        HTTPException: If email is missing from token
+    """
+    payload = token_and_payload[1]
+    user_email = payload.get("email")
+
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: missing user email",
+        )
+
+    return str(user_email).strip().lower()
+
+
 async def get_optional_user_jwt(
     authorization: Optional[str] = Header(None)
 ) -> Optional[str]:

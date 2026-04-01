@@ -65,9 +65,15 @@ async def test_get_document_by_id_owner_updates_last_opened(monkeypatch):
     qb.update.side_effect = _update_side_effect
     client.table.return_value = qb
     monkeypatch.setattr(mod, "get_authenticated_async_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(
+        mod,
+        "get_public_profiles_by_ids",
+        AsyncMock(return_value={"u1": {"id": "u1", "name": "Owner", "avatar_url": None}}),
+    )
 
     doc = await mod.get_document_by_id("u1", "jwt", "d1")
     assert doc and doc["id"] == "d1"
+    assert doc["owner"]["name"] == "Owner"
     # Ensure update() was invoked to set last_opened_at for owner docs
     assert update_called["v"] is True
 

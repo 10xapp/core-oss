@@ -14,7 +14,7 @@ import logging
 
 import httpx
 
-from lib.supabase_client import supabase, get_authenticated_supabase_client
+from lib.supabase_client import get_authenticated_supabase_client, supabase
 from lib.token_encryption import encrypt_token_fields
 from api.services.provider_factory import ProviderFactory
 from api.config import settings
@@ -399,31 +399,32 @@ class AuthService:
     """Service class for authentication operations"""
 
     @staticmethod
-    def create_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_user(user_data: Dict[str, Any], user_jwt: str) -> Dict[str, Any]:
         """
         Create a new user in the database.
         Returns existing user if already exists.
         """
         user_id = user_data.get('id')
-        
+        auth_supabase = get_authenticated_supabase_client(user_jwt)
+
         # Check if user already exists
-        existing = supabase.table('users').select('*').eq('id', user_id).execute()
-        
+        existing = auth_supabase.table('users').select('*').eq('id', user_id).maybe_single().execute()
+
         if existing.data:
             logger.info(f"User {user_id} already exists")
             return {
                 "message": "User already exists",
-                "user": existing.data[0]
+                "user": existing.data
             }
-        
+
         # Create new user
-        result = supabase.table('users').insert({
+        result = auth_supabase.table('users').insert({
             'id': user_data.get('id'),
             'email': user_data.get('email'),
             'name': user_data.get('name'),
             'avatar_url': user_data.get('avatar_url'),
         }).execute()
-        
+
         logger.info(f"Created new user: {user_id}")
         return {
             "message": "User created successfully",

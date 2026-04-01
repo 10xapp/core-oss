@@ -3,12 +3,13 @@ Comment service - CRUD operations for project issue comments.
 
 Provides GitHub-style flat, chronological comments on issues with reactions.
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, cast
 import logging
 from lib.supabase_client import get_authenticated_async_client
 from api.services.notifications.subscriptions import subscribe
 from api.services.notifications.create import notify_subscribers, NotificationType
 from api.services.notifications.helpers import get_actor_info
+from api.services.users import attach_public_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +71,14 @@ async def get_comments(
 
     # Get comments with user info
     result = await supabase.table("project_issue_comments")\
-        .select("*, user:users(id, email, name, avatar_url)")\
+        .select("*")\
         .eq("issue_id", issue_id)\
         .order("created_at")\
         .range(offset, offset + limit - 1)\
         .execute()
 
     comments = result.data or []
+    await attach_public_profiles(comments)
 
     # Get reactions for all comments in one query
     if comments:
@@ -157,12 +159,13 @@ async def create_comment(
 
     # Fetch with user info
     full_result = await supabase.table("project_issue_comments")\
-        .select("*, user:users(id, email, name, avatar_url)")\
+        .select("*")\
         .eq("id", comment["id"])\
         .single()\
         .execute()
 
-    comment = full_result.data
+    comment = cast(Dict[str, Any], full_result.data)
+    await attach_public_profiles([comment])
     comment["reactions"] = []
 
     # Auto-subscribe commenter and notify subscribers
@@ -222,7 +225,7 @@ async def update_comment(
             "edited_at": "now()",
         })\
         .eq("id", comment_id)\
-        .select("*, user:users(id, email, name, avatar_url)")\
+        .select("*")\
         .single()\
         .execute()
 
@@ -230,6 +233,7 @@ async def update_comment(
         raise ValueError(f"Comment not found or unauthorized: {comment_id}")
 
     comment = result.data
+    await attach_public_profiles([comment])
 
     # Get reactions (separate query - can't be combined with update)
     reactions_result = await supabase.table("project_comment_reactions")\

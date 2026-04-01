@@ -5,6 +5,7 @@ from typing import Dict
 
 from lib.tools.base import ToolCategory, ToolContext, ToolResult, display_result, success, error
 from lib.tools.registry import tool
+from api.services.users import attach_public_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ def _format_message(msg: Dict) -> Dict:
     """Format a single channel message for AI consumption."""
     sender = None
     if msg.get("user"):
-        sender = msg["user"].get("name") or msg["user"].get("email", "Unknown")
+        sender = msg["user"].get("name") or "Unknown"
     elif msg.get("agent"):
         sender = msg["agent"].get("name", "Agent")
 
@@ -51,7 +52,6 @@ _MESSAGE_SELECT = (
     "id, content, created_at, channel_id, user_id, agent_id, "
     "thread_parent_id, reply_count, "
     "channel:channels(id, name, workspace_app:workspace_apps(workspace:workspaces(name))), "
-    "user:users(id, name, email, avatar_url), "
     "agent:agent_instances(id, name, avatar_url)"
 )
 
@@ -103,6 +103,8 @@ async def search_messages(args: Dict, ctx: ToolContext) -> ToolResult:
 
         if not messages:
             return success({"messages": [], "count": 0}, f"No messages found for '{query}'")
+
+        await attach_public_profiles(messages)
 
         formatted = [_format_message(msg) for msg in messages]
 
@@ -217,6 +219,8 @@ async def get_channel_history(args: Dict, ctx: ToolContext) -> ToolResult:
             after_msgs = after_result.data or []
             messages = before_msgs + after_msgs
 
+            await attach_public_profiles(messages)
+
             formatted = [_format_message(msg) for msg in messages]
             return success(
                 {
@@ -244,6 +248,8 @@ async def get_channel_history(args: Dict, ctx: ToolContext) -> ToolResult:
 
         has_more = len(raw) > limit
         messages = list(reversed(raw[:limit]))  # chronological order
+
+        await attach_public_profiles(messages)
 
         formatted = [_format_message(msg) for msg in messages]
 

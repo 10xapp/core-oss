@@ -78,24 +78,8 @@ async def _get_user_record(user_id: str) -> Dict[str, Any]:
 
 
 async def _get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
-    client = await get_async_service_role_client()
-    result = await client.table("users") \
-        .select("id, email, name") \
-        .eq("email", email) \
-        .limit(1) \
-        .execute()
-    rows = result.data if result else []
-    if rows:
-        return rows[0]
-
-    # Fallback for installations where historical user emails were not normalized.
-    fallback = await client.table("users") \
-        .select("id, email, name") \
-        .ilike("email", email) \
-        .limit(1) \
-        .execute()
-    fallback_rows = fallback.data if fallback else []
-    return fallback_rows[0] if fallback_rows else None
+    from api.services.users import get_auth_user_by_email
+    return await get_auth_user_by_email(email)
 
 
 async def _is_workspace_member(workspace_id: str, user_id: str) -> bool:
@@ -583,6 +567,17 @@ def _assert_pending_or_gone(invitation: Dict[str, Any]) -> None:
     raise HTTPException(status_code=status.HTTP_410_GONE, detail=f"Invitation is {status_value}")
 
 
+async def _get_authenticated_user_email(
+    user_id: str,
+    claimed_email: Optional[str] = None,
+) -> str:
+    if claimed_email:
+        return _normalize_email(claimed_email)
+
+    user = await _get_user_record(user_id)
+    return _normalize_email(user["email"])
+
+
 async def _accept_invitation(
     invitation: Dict[str, Any],
     user_id: str,
@@ -662,32 +657,33 @@ async def _accept_invitation(
 async def accept_workspace_invitation(
     invitation_id: str,
     user_id: str,
+    user_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Accept invitation by invitation id."""
     invitation = await _get_invitation_or_404(invitation_id=invitation_id)
-    user = await _get_user_record(user_id)
-    return await _accept_invitation(invitation, user_id=user_id, user_email=user["email"])
+    authenticated_email = await _get_authenticated_user_email(user_id, user_email)
+    return await _accept_invitation(invitation, user_id=user_id, user_email=authenticated_email)
 
 
 async def accept_workspace_invitation_by_token(
     token: str,
     user_id: str,
+    user_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Accept invitation by token."""
     invitation = await _get_invitation_or_404(token=token)
-    user = await _get_user_record(user_id)
-    return await _accept_invitation(invitation, user_id=user_id, user_email=user["email"])
+    authenticated_email = await _get_authenticated_user_email(user_id, user_email)
+    return await _accept_invitation(invitation, user_id=user_id, user_email=authenticated_email)
 
 
 async def decline_workspace_invitation(
     invitation_id: str,
     user_id: str,
+    user_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Decline an invitation by id (recipient only)."""
     invitation = await _get_invitation_or_404(invitation_id=invitation_id)
-    user = await _get_user_record(user_id)
-
-    normalized_user_email = _normalize_email(user["email"])
+    normalized_user_email = await _get_authenticated_user_email(user_id, user_email)
     normalized_invite_email = _normalize_email(invitation.get("email") or "")
     if normalized_user_email != normalized_invite_email:
         raise HTTPException(
@@ -818,10 +814,10 @@ async def get_workspace_invitation_share_link(
 
 async def resolve_post_signup_pending_invitations(
     user_id: str,
+    user_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Find pending invitations for the authenticated user and ensure notifications."""
-    user = await _get_user_record(user_id)
-    normalized_email = _normalize_email(user["email"])
+    normalized_email = await _get_authenticated_user_email(user_id, user_email)
 
     client = await get_async_service_role_client()
 

@@ -1,12 +1,13 @@
 """
 Authentication router - HTTP endpoints for auth operations
 """
-from fastapi import APIRouter, HTTPException, Request, Response, status, Depends
+from typing import Annotated, Optional, List, Dict, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List, Dict, Any
 from api.services.auth import AuthService
 from api.services.workspaces.invitations import resolve_post_signup_pending_invitations
-from api.dependencies import get_current_user_jwt, get_current_user_id
+from api.dependencies import get_current_user_email, get_current_user_jwt, get_current_user_id
 from api.exceptions import handle_api_exception
 from api.schemas import MessageResponse
 from api.config import settings
@@ -271,7 +272,9 @@ class UpdateEmailAccountRequest(BaseModel):
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user: UserCreate,
-    current_user_id: str = Depends(get_current_user_id)
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+    current_user_email: Annotated[str, Depends(get_current_user_email)],
+    user_jwt: Annotated[str, Depends(get_current_user_jwt)],
 ):
     """
     Create a new user in the database.
@@ -287,8 +290,15 @@ async def create_user(
             detail="Cannot create user for a different user ID"
         )
 
+    # Validate email matches JWT claim to prevent spoofed profile rows
+    if str(user.email).strip().lower() != current_user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot create user with a different email"
+        )
+
     try:
-        return AuthService.create_user(user.model_dump())
+        return AuthService.create_user(user.model_dump(), user_jwt)
     except Exception as e:
         handle_api_exception(e, "Failed to create user", logger)
 
@@ -394,8 +404,9 @@ async def complete_oauth_flow(
     request: Request,
     response: Response,
     body: CompleteOAuthRequest,
-    user_jwt: str = Depends(get_current_user_jwt),
-    current_user_id: str = Depends(get_current_user_id)
+    user_jwt: Annotated[str, Depends(get_current_user_jwt)],
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+    current_user_email: Annotated[str, Depends(get_current_user_email)],
 ):
     """
     Complete OAuth flow - creates user and stores connection in one call.
@@ -413,6 +424,13 @@ async def complete_oauth_flow(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot complete OAuth flow for a different user"
+        )
+
+    # Validate email matches JWT claim to prevent spoofed profile rows
+    if body.email and str(body.email).strip().lower() != current_user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot complete OAuth flow with a different email"
         )
 
     # Validate that at least one auth method is provided
@@ -455,7 +473,8 @@ async def complete_oauth_flow(
 
 @router.post("/post-signup", response_model=PostSignupResponse)
 async def post_signup_endpoint(
-    current_user_id: str = Depends(get_current_user_id),
+    current_user_id: Annotated[str, Depends(get_current_user_id)],
+    current_user_email: Annotated[str, Depends(get_current_user_email)],
 ):
     """
     Resolve pending workspace invitations after authentication bootstrap.
@@ -464,7 +483,7 @@ async def post_signup_endpoint(
     both materialize invitation notifications for existing pending invites.
     """
     try:
-        return await resolve_post_signup_pending_invitations(current_user_id)
+        return await resolve_post_signup_pending_invitations(current_user_id, current_user_email)
     except HTTPException:
         raise
     except Exception as e:

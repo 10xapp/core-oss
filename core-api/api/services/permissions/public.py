@@ -1,7 +1,8 @@
 """Public (unauthenticated) share link resolution."""
 from __future__ import annotations
 
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, cast
 import logging
 
 from fastapi import HTTPException, status
@@ -14,6 +15,60 @@ logger = logging.getLogger(__name__)
 
 # Presigned URL expiration for public file shares (1 hour)
 _PUBLIC_FILE_URL_EXPIRY = 3600
+
+
+def _parse_db_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+
+    cleaned = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(cleaned)
+    except Exception:
+        return None
+
+
+async def _get_share_link_row(client: Any, token: str) -> Optional[Dict[str, Any]]:
+    """Resolve a link token or slug through the permissions table.
+
+    Public rendering already runs with service-role access, so this path avoids
+    depending on the raw SECURITY DEFINER RPC payload while preserving the same
+    token-first lookup semantics as the SQL functions.
+    """
+    base_query = (
+        client.table("permissions")
+        .select("resource_type, resource_id, permission, granted_by, expires_at")
+        .eq("grantee_type", "link")
+    )
+
+    token_result = await (
+        base_query
+        .eq("link_token", token)
+        .limit(1)
+        .execute()
+    )
+    token_rows = token_result.data or []
+    if token_rows:
+        row = cast(Dict[str, Any], token_rows[0])
+    else:
+        slug_result = await (
+            client.table("permissions")
+            .select("resource_type, resource_id, permission, granted_by, expires_at")
+            .eq("grantee_type", "link")
+            .eq("link_slug", token.lower())
+            .limit(1)
+            .execute()
+        )
+        slug_rows = slug_result.data or []
+        if not slug_rows:
+            return None
+        row = cast(Dict[str, Any], slug_rows[0])
+
+    expires_at = _parse_db_timestamp(row.get("expires_at"))
+    if expires_at is not None and expires_at < datetime.now(timezone.utc):
+        return None
+
+    return row
 
 
 async def _fetch_shared_by(user_id: Optional[str]) -> Optional[Dict[str, str]]:
@@ -36,24 +91,16 @@ async def get_public_shared_resource(token: str) -> Dict[str, Any]:
     storage paths, or user PII beyond the sharer's display name.
     """
     client = await get_async_service_role_client()
-    result = await client.rpc("validate_share_link", {"p_link_token": token}).execute()
-
-    payload: Any = result.data
-    if isinstance(payload, list):
-        payload = payload[0] if payload else None
-
-    if not payload:
+    link_row = await _get_share_link_row(client, token)
+    if not link_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share link not found")
 
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid share link response")
-
-    resource_type = payload.get("resource_type")
-    resource_id = payload.get("resource_id")
+    resource_type = link_row.get("resource_type")
+    resource_id = link_row.get("resource_id")
     if not resource_type or not resource_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid share link response")
 
-    shared_by = await _fetch_shared_by(payload.get("granted_by"))
+    shared_by = await _fetch_shared_by(link_row.get("granted_by"))
 
     if resource_type in ("document", "folder"):
         doc_result = await client.table("documents") \
@@ -71,6 +118,7 @@ async def get_public_shared_resource(token: str) -> Dict[str, Any]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder sharing is not supported for public links")
 
         # Enrich image URLs (needs file.r2_key + file.file_type), then strip internal data
+        doc = cast(Dict[str, Any], doc)
         _enrich_documents_with_image_urls([doc])
         doc.pop("file", None)
         doc.pop("is_folder", None)
@@ -78,7 +126,7 @@ async def get_public_shared_resource(token: str) -> Dict[str, Any]:
         return {
             "resource_type": "document",
             "resource_id": resource_id,
-            "permission": payload.get("permission"),
+            "permission": link_row.get("permission"),
             "shared_by": shared_by,
             "document": doc,
         }
@@ -104,7 +152,7 @@ async def get_public_shared_resource(token: str) -> Dict[str, Any]:
         return {
             "resource_type": "file",
             "resource_id": resource_id,
-            "permission": payload.get("permission"),
+            "permission": link_row.get("permission"),
             "shared_by": shared_by,
             "file": {
                 "id": file_row["id"],

@@ -547,6 +547,43 @@ def setup_watches_for_user(user_id: str, user_jwt: str) -> Dict[str, Any]:
 # These functions don't require user_jwt - they use service role credentials
 # =============================================================================
 
+def _check_and_renew_existing_gmail_watch(
+    watch_row: Dict[str, Any],
+    user_id: str,
+    connection_id: str,
+    gmail_service,
+    service_supabase,
+) -> Optional[Dict[str, Any]]:
+    """Check an existing watch. Return a healthy-result dict to short-circuit, or None to proceed with renewal."""
+    expiration = datetime.fromisoformat(watch_row['expiration'].replace('Z', '+00:00'))
+    hours_until_expiry = (expiration - datetime.now(timezone.utc)).total_seconds() / 3600
+
+    if hours_until_expiry > 24:
+        logger.info(f"✅ Gmail watch healthy for connection {connection_id[:8]}... ({hours_until_expiry:.1f}h remaining)")
+        return {
+            'success': True,
+            'provider': 'gmail',
+            'message': 'Watch already exists and is healthy',
+            'hours_remaining': hours_until_expiry,
+        }
+
+    logger.info(f"🔄 Gmail watch expiring soon for user {user_id[:8]}..., renewing")
+    # Stop the old watch with Gmail first to prevent duplicate notifications
+    try:
+        gmail_service.users().stop(userId='me').execute()
+        logger.info(f"🛑 Stopped old Gmail watch before renewal for user {user_id[:8]}...")
+    except HttpError as e:
+        logger.warning(f"⚠️ Could not stop old Gmail watch (may already be expired): {e}")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not stop old Gmail watch: {e}")
+    # Deactivate old watch in DB
+    service_supabase.table('push_subscriptions')\
+        .update({'is_active': False})\
+        .eq('id', watch_row['id'])\
+        .execute()
+    return None
+
+
 def start_gmail_watch_service_role(
     user_id: str,
     gmail_service,
@@ -576,25 +613,11 @@ def start_gmail_watch_service_role(
             .execute()
 
         if existing.data:
-            expiration = datetime.fromisoformat(existing.data[0]['expiration'].replace('Z', '+00:00'))
-            time_until_expiry = expiration - datetime.now(timezone.utc)
-            hours_until_expiry = time_until_expiry.total_seconds() / 3600
-
-            if hours_until_expiry > 24:
-                logger.info(f"✅ Gmail watch healthy for connection {connection_id[:8]}... ({hours_until_expiry:.1f}h remaining)")
-                return {
-                    'success': True,
-                    'provider': 'gmail',
-                    'message': 'Watch already exists and is healthy',
-                    'hours_remaining': hours_until_expiry
-                }
-
-            logger.info(f"🔄 Gmail watch expiring soon for user {user_id[:8]}..., renewing")
-            # Deactivate old watch
-            service_supabase.table('push_subscriptions')\
-                .update({'is_active': False})\
-                .eq('id', existing.data[0]['id'])\
-                .execute()
+            healthy_result = _check_and_renew_existing_gmail_watch(
+                existing.data[0], user_id, connection_id, gmail_service, service_supabase
+            )
+            if healthy_result is not None:
+                return healthy_result
 
         # Check Pub/Sub topic configuration
         if not settings.google_pubsub_topic:

@@ -1,11 +1,44 @@
 """Channel management service for workspace messaging."""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, cast
 import logging
 from postgrest.exceptions import APIError
 from lib.supabase_client import get_authenticated_async_client
+from api.services.users import get_public_profiles_by_ids
 
 logger = logging.getLogger(__name__)
+
+
+async def _attach_channel_creators(channels: List[Dict[str, Any]]) -> None:
+    created_by_ids = list({
+        channel.get("created_by")
+        for channel in channels
+        if channel.get("created_by")
+    })
+    if not created_by_ids:
+        return
+
+    user_map = await get_public_profiles_by_ids(created_by_ids)
+    for channel in channels:
+        created_by = channel.get("created_by")
+        if created_by:
+            channel["created_by_user"] = user_map.get(created_by, {"id": created_by})
+
+
+async def _attach_dm_participants(channels: List[Dict[str, Any]]) -> None:
+    participant_ids = set()
+    for channel in channels:
+        participant_ids.update(channel.get("dm_participants") or [])
+
+    if not participant_ids:
+        return
+
+    user_map = await get_public_profiles_by_ids(list(participant_ids))
+    for channel in channels:
+        channel["participants"] = [
+            user_map.get(participant_id, {"id": participant_id})
+            for participant_id in (channel.get("dm_participants") or [])
+        ]
 
 
 # =============================================================================
@@ -103,7 +136,7 @@ async def get_channels(
         # Exclude DMs - they're fetched separately via get_user_dms
         result = await (
             supabase.table("channels")
-            .select("*, created_by_user:users!channels_created_by_public_users_fkey(id, email, name, avatar_url)")
+            .select("*")
             .eq("workspace_app_id", workspace_app_id)
             .eq("is_dm", False)
             .order("created_at")
@@ -111,6 +144,7 @@ async def get_channels(
         )
 
         channels = result.data or []
+        await _attach_channel_creators(channels)
         logger.info(f"Retrieved {len(channels)} channels for workspace app {workspace_app_id}")
         return channels
 
@@ -138,14 +172,16 @@ async def get_channel(
     try:
         result = await (
             supabase.table("channels")
-            .select("*, created_by_user:users!channels_created_by_public_users_fkey(id, email, name, avatar_url)")
+            .select("*")
             .eq("id", channel_id)
             .limit(1)
             .execute()
         )
 
         if result.data and len(result.data) > 0:
-            return result.data[0]
+            channel = cast(Dict[str, Any], result.data[0])
+            await _attach_channel_creators([channel])
+            return channel
         return None
 
     except Exception as e:
@@ -521,17 +557,9 @@ async def get_dm_channel(
         )
 
         if result.data and len(result.data) > 0:
-            channel = result.data[0]
+            channel = cast(Dict[str, Any], result.data[0])
 
-            # Fetch participant user info
-            if channel.get("dm_participants"):
-                users_result = await (
-                    supabase.table("users")
-                    .select("id, email, name, avatar_url")
-                    .in_("id", channel["dm_participants"])
-                    .execute()
-                )
-                channel["participants"] = users_result.data or []
+            await _attach_dm_participants([channel])
 
             return channel
         return None
@@ -610,27 +638,7 @@ async def get_user_dms(
                     filtered_dms.append(dm)
             dms = filtered_dms
 
-        # Fetch participant info for all DMs
-        all_participant_ids = set()
-        for dm in dms:
-            if dm.get("dm_participants"):
-                all_participant_ids.update(dm["dm_participants"])
-
-        if all_participant_ids:
-            users_result = await (
-                supabase.table("users")
-                .select("id, email, name, avatar_url")
-                .in_("id", list(all_participant_ids))
-                .execute()
-            )
-            users_by_id = {u["id"]: u for u in (users_result.data or [])}
-
-            # Attach participant info to each DM
-            for dm in dms:
-                dm["participants"] = [
-                    users_by_id.get(pid, {"id": pid})
-                    for pid in (dm.get("dm_participants") or [])
-                ]
+        await _attach_dm_participants(dms)
 
         logger.info(f"Retrieved {len(dms)} DMs for user {user_id}")
         return dms

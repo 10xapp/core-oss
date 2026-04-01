@@ -7,7 +7,7 @@ import logging
 from fastapi import HTTPException, status
 
 from lib.supabase_client import get_authenticated_async_client
-from api.services.users import get_user_by_email
+from api.services.users import get_auth_user_by_email as get_user_by_email
 from api.services.notifications.create import create_notification, NotificationType
 from api.services.notifications.helpers import get_actor_info
 from api.services.permissions.helpers import (

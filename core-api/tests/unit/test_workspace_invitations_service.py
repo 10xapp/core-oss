@@ -317,6 +317,39 @@ async def test_accept_invite_expired_returns_410_and_marks_expired(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_accept_invite_prefers_claimed_email_over_profile_mirror(monkeypatch, invitations_module):
+    state = _base_state()
+    state["users"].append({"id": "user-1", "email": "stale@example.com", "name": "Invitee"})
+    state["workspace_invitations"].append(
+        {
+            "id": "inv-1",
+            "workspace_id": "ws-1",
+            "email": "invitee@example.com",
+            "role": "member",
+            "status": "pending",
+            "token": "token-1",
+            "expires_at": _future_iso(),
+        }
+    )
+
+    fake_client = FakeSupabaseClient(state)
+    monkeypatch.setattr(
+        invitations_module,
+        "get_async_service_role_client",
+        AsyncMock(return_value=fake_client),
+    )
+
+    result = await invitations_module.accept_workspace_invitation(
+        "inv-1",
+        "user-1",
+        user_email="invitee@example.com",
+    )
+
+    assert result["membership_created"] is True
+    assert state["workspace_invitations"][0]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("has_existing_pending", [False, True], ids=["new", "refresh"])
 async def test_create_or_refresh_invite_email_failure_rolls_back(
     has_existing_pending: bool,
@@ -357,6 +390,11 @@ async def test_create_or_refresh_invite_email_failure_rolls_back(
         invitations_module,
         "send_workspace_invitation_email",
         AsyncMock(side_effect=ValueError("resend down")),
+    )
+    monkeypatch.setattr(
+        invitations_module,
+        "_get_user_by_email",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         invitations_module.secrets,
@@ -418,6 +456,11 @@ async def test_duplicate_pending_invite_refreshes_single_row(monkeypatch, invita
         invitations_module,
         "send_workspace_invitation_email",
         AsyncMock(return_value="resend-id"),
+    )
+    monkeypatch.setattr(
+        invitations_module,
+        "_get_user_by_email",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         invitations_module.secrets,
@@ -502,6 +545,11 @@ async def test_create_invite_rejects_personal_workspace(monkeypatch, invitations
         invitations_module,
         "get_user_workspace_role",
         AsyncMock(return_value="owner"),
+    )
+    monkeypatch.setattr(
+        invitations_module,
+        "_get_user_by_email",
+        AsyncMock(return_value=None),
     )
 
     with pytest.raises(HTTPException) as exc_info:

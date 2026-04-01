@@ -1,6 +1,7 @@
 """
 Application configuration settings
 """
+import os
 from cryptography.fernet import Fernet
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -240,9 +241,9 @@ class Settings(BaseSettings):
         return self
 
     class Config:
-        # Load from .env file for local development
-        # In production (Vercel), environment variables are set directly
-        env_file = ".env"
+        # Load from ENV_FILE if set, otherwise .env
+        # Usage: ENV_FILE=.env.test make start
+        env_file = os.getenv("ENV_FILE", ".env")
         env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"  # Ignore extra fields in .env

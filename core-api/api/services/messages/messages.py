@@ -1,14 +1,17 @@
 """Message management service for workspace messaging."""
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, cast
 import logging
 from lib.supabase_client import get_authenticated_async_client
 from lib.supabase_client import get_async_service_role_client
 from lib.r2_client import get_r2_client
 from lib.image_proxy import generate_file_url, is_image_type
 from api.config import settings
+from api.services.users import attach_public_profiles
 
 logger = logging.getLogger(__name__)
+
+_MESSAGE_SELECT = "*, agent:agent_instances(id, name, avatar_url), reactions:message_reactions(*)"
 
 
 def extract_plain_text(blocks: List[Dict[str, Any]]) -> str:
@@ -68,7 +71,7 @@ async def get_messages(
     try:
         query = (
             supabase.table("channel_messages")
-            .select("*, user:users(id, email, name, avatar_url), agent:agent_instances(id, name, avatar_url), reactions:message_reactions(*)")
+            .select(_MESSAGE_SELECT)
             .eq("channel_id", channel_id)
         )
 
@@ -108,6 +111,8 @@ async def get_messages(
         # Reverse to get chronological order
         messages.reverse()
 
+        await attach_public_profiles(messages)
+
         # Enrich file blocks with presigned URLs
         await _enrich_messages_with_file_urls(messages, user_jwt)
 
@@ -138,14 +143,15 @@ async def get_message(
     try:
         result = await (
             supabase.table("channel_messages")
-            .select("*, user:users(id, email, name, avatar_url), agent:agent_instances(id, name, avatar_url), reactions:message_reactions(*)")
+            .select(_MESSAGE_SELECT)
             .eq("id", message_id)
             .limit(1)
             .execute()
         )
 
         if result.data and len(result.data) > 0:
-            message = result.data[0]
+            message = cast(Dict[str, Any], result.data[0])
+            await attach_public_profiles([message])
             await _enrich_messages_with_file_urls([message], user_jwt)
             return message
         return None
@@ -408,7 +414,7 @@ async def get_thread_replies(
     try:
         result = await (
             supabase.table("channel_messages")
-            .select("*, user:users(id, email, name, avatar_url), agent:agent_instances(id, name, avatar_url), reactions:message_reactions(*)")
+            .select(_MESSAGE_SELECT)
             .eq("thread_parent_id", parent_message_id)
             .order("created_at")
             .range(offset, offset + limit - 1)
@@ -416,6 +422,8 @@ async def get_thread_replies(
         )
 
         replies = result.data or []
+
+        await attach_public_profiles(replies)
 
         # Enrich file blocks with presigned URLs
         await _enrich_messages_with_file_urls(replies, user_jwt)

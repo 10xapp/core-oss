@@ -1,9 +1,10 @@
 """Service for retrieving documents."""
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Dict, Any, cast
 from fastapi import HTTPException, status
 from lib.supabase_client import get_authenticated_async_client, get_async_service_role_client
 from lib.image_proxy import generate_file_url, is_image_type
 from api.config import settings
+from api.services.users import get_public_profiles_by_ids
 import logging
 
 logger = logging.getLogger(__name__)
@@ -189,7 +190,7 @@ async def get_document_by_id(user_id: str, user_jwt: str, document_id: str) -> O
         # RLS allows SELECT if user owns it OR has workspace app access (can_access_workspace_app)
         result = await (
             auth_supabase.table("documents")
-            .select("*, file:files(*), owner:users!documents_user_id_fkey(id, email, name, avatar_url)")
+            .select("*, file:files(*)")
             .eq("id", document_id)
             .execute()
         )
@@ -202,8 +203,11 @@ async def get_document_by_id(user_id: str, user_jwt: str, document_id: str) -> O
             if exists.data:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have access to this document")
             return None
-        
-        doc = result.data[0]
+
+        doc = cast(Dict[str, Any], result.data[0])
+        if doc.get("user_id"):
+            owner_map = await get_public_profiles_by_ids([doc["user_id"]])
+            doc["owner"] = owner_map.get(doc["user_id"], {"id": doc["user_id"]})
 
         # Update last_opened_at
         from datetime import datetime, timezone
