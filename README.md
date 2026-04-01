@@ -81,6 +81,28 @@ npm run dev
 # App runs at http://localhost:5173
 ```
 
+### Alternative: Docker Compose
+
+Skip steps 3–4 and run both services with a single command. Requires [Docker](https://docs.docker.com/get-docker/).
+
+```bash
+# 1. Set up env files and database (steps 1–2 above), then:
+docker compose up
+
+# API at http://localhost:8000
+# Frontend at http://localhost:3000
+```
+
+Both services run in development mode with **hot reload** — edit files locally and changes appear immediately without restarting containers.
+
+To customize ports, set `CORE_API_PORT` or `CORE_WEB_PORT` in your shell:
+
+```bash
+CORE_API_PORT=9000 CORE_WEB_PORT=4000 docker compose up
+```
+
+> **Note:** Database migrations still require the [Supabase CLI](https://supabase.com/docs/guides/cli) on your host machine (step 2). The Docker setup handles only the API and frontend.
+
 ## Architecture
 
 ```

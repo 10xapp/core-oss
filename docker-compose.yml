@@ -1,0 +1,31 @@
+services:
+  api:
+    build: ./core-api
+    ports:
+      - "${CORE_API_PORT:-8000}:8000"
+    env_file:
+      - ./core-api/.env
+    volumes:
+      - ./core-api:/app
+      - /app/__pycache__
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    build: ./core-web
+    ports:
+      - "${CORE_WEB_PORT:-3000}:3000"
+    env_file:
+      - ./core-web/.env
+    volumes:
+      - ./core-web:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
