@@ -104,7 +104,11 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    await uploadImageFile(file);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
 
+  const uploadImageFile = async (file: File) => {
     const mimeType = resolveUploadMimeType(file);
     if (!mimeType.startsWith('image/')) return;
 
@@ -138,7 +142,17 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
       console.error('Failed to upload image:', error);
     } finally {
       setIsUploadingImage(false);
-      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const imageFile = Array.from(e.clipboardData.files).find((f) =>
+      f.type.startsWith('image/')
+    );
+    if (imageFile) {
+      e.preventDefault();
+      uploadImageFile(imageFile);
     }
   };
 
@@ -394,6 +408,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
+                  onPaste={handlePaste}
                   rows={6}
                   className="w-full py-1.5 text-[13px] text-gray-700 bg-transparent border-0 focus:outline-none placeholder:text-gray-400 resize-none transition-all"
                   placeholder="Add a description..."
