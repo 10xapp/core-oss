@@ -569,13 +569,28 @@ def _check_and_renew_existing_gmail_watch(
 
     logger.info(f"🔄 Gmail watch expiring soon for user {user_id[:8]}..., renewing")
     # Stop the old watch with Gmail first to prevent duplicate notifications
+    old_watch_stopped = False
     try:
         gmail_service.users().stop(userId='me').execute()
         logger.info(f"🛑 Stopped old Gmail watch before renewal for user {user_id[:8]}...")
+        old_watch_stopped = True
     except HttpError as e:
-        logger.warning(f"⚠️ Could not stop old Gmail watch (may already be expired): {e}")
+        status_code = getattr(getattr(e, "resp", None), "status", None)
+        if status_code in (404, 410):
+            logger.info(f"ℹ️ Old Gmail watch already expired for user {user_id[:8]}...: {e}")
+            old_watch_stopped = True
+        else:
+            logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
     except Exception as e:
-        logger.warning(f"⚠️ Could not stop old Gmail watch: {e}")
+        logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
+
+    if not old_watch_stopped:
+        return {
+            'success': False,
+            'provider': 'gmail',
+            'error': 'Failed to stop old watch; skipping renewal to avoid untracked watches',
+        }
+
     # Deactivate old watch in DB
     service_supabase.table('push_subscriptions')\
         .update({'is_active': False})\
@@ -733,14 +748,33 @@ def start_calendar_watch_service_role(
 
             # Try to stop existing watch with Google
             sub_data = existing.data[0]
+            old_watch_stopped = False
             if sub_data.get('channel_id') and sub_data.get('resource_id'):
                 try:
                     calendar_service.channels().stop(body={
                         'id': sub_data['channel_id'],
                         'resourceId': sub_data['resource_id']
                     }).execute()
+                    old_watch_stopped = True
                 except HttpError as e:
-                    logger.warning(f"⚠️ Could not stop old watch: {e}")
+                    status_code = getattr(getattr(e, "resp", None), "status", None)
+                    if status_code in (404, 410):
+                        logger.info(f"ℹ️ Old Calendar watch already expired for connection {connection_id[:8]}...: {e}")
+                        old_watch_stopped = True
+                    else:
+                        logger.error(f"❌ Failed to stop old Calendar watch for connection {connection_id[:8]}..., skipping renewal: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to stop old Calendar watch for connection {connection_id[:8]}..., skipping renewal: {e}")
+            else:
+                # No channel/resource to stop — treat as already gone
+                old_watch_stopped = True
+
+            if not old_watch_stopped:
+                return {
+                    'success': False,
+                    'provider': 'calendar',
+                    'error': 'Failed to stop old watch; skipping renewal to avoid untracked watches'
+                }
 
             # Deactivate old watch
             service_supabase.table('push_subscriptions')\
