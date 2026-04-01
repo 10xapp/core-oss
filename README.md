@@ -52,6 +52,10 @@ cp core-api/.env.example core-api/.env
 cp core-web/.env.example core-web/.env
 
 # Edit both .env files with your Supabase credentials
+
+# Optional: enable email/password sign-in (skips OAuth setup)
+# In core-web/.env, set:
+#   VITE_ENABLE_EMAIL_AUTH=true
 ```
 
 ### 2. Set up the database
