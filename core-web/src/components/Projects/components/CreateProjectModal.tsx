@@ -84,10 +84,10 @@ export default function CreateProjectModal({
           </button>
           <button
             type="submit"
-            disabled={!name.trim()}
+            disabled={!name.trim() || createBoard.isPending}
             className="px-3 py-2 text-[12px] font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
           >
-            Create
+            {createBoard.isPending ? 'Creating...' : 'Create'}
           </button>
         </div>
       </form>

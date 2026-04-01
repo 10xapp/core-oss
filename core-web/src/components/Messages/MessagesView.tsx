@@ -1174,6 +1174,7 @@ export default function MessagesView() {
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelDescription, setNewChannelDescription] = useState("");
   const [newChannelPrivate, setNewChannelPrivate] = useState(false);
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
   const [workspaceMembers, setWorkspaceMembers] = useState<
@@ -1977,8 +1978,9 @@ export default function MessagesView() {
 
   const handleCreateChannel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChannelName.trim()) return;
+    if (!newChannelName.trim() || isCreatingChannel) return;
 
+    setIsCreatingChannel(true);
     try {
       const channel = await addChannel(
         newChannelName,
@@ -1992,6 +1994,8 @@ export default function MessagesView() {
       navigateToChannel(channel.id);
     } catch (err) {
       console.error("Failed to create channel:", err);
+    } finally {
+      setIsCreatingChannel(false);
     }
   };
 
@@ -3152,10 +3156,10 @@ export default function MessagesView() {
                   </button>
                   <button
                     type="submit"
-                    disabled={!newChannelName.trim()}
+                    disabled={!newChannelName.trim() || isCreatingChannel}
                     className="px-3 py-2 text-[12px] font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
-                    Create
+                    {isCreatingChannel ? 'Creating...' : 'Create'}
                   </button>
                 </div>
               </form>
