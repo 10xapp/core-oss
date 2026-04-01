@@ -60,7 +60,7 @@ function UserMessage({ content, contentParts }: { content: string; contentParts?
           {/* Bubble */}
           {content && (
             <div
-              className={`bg-[#F4F4F4] rounded-[18px] px-4 max-w-[70%] ${isMultiline ? 'py-3' : 'py-1.5'}`}
+              className={`bg-bg-bubble rounded-[18px] px-4 max-w-[70%] ${isMultiline ? 'py-3' : 'py-1.5'}`}
             >
               <div className="whitespace-pre-wrap text-text-body text-[16px] leading-relaxed">
                 {content}

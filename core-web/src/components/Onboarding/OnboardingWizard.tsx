@@ -186,7 +186,7 @@ export default function OnboardingWizard() {
       </div>
 
       {/* Right: colored area with preview */}
-      <div className="w-1/2 bg-[#F9F9F9] hidden md:flex items-center justify-center px-16">
+      <div className="w-1/2 bg-bg-panel hidden md:flex items-center justify-center px-16">
         <OnboardingSidebarPreview
           workspaceName={data.workspaceName || "Your workspace"}
           userName={data.userName || "Your name"}

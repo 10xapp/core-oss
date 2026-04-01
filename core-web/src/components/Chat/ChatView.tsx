@@ -517,7 +517,7 @@ export default function ChatView() {
       )}
     </AnimatePresence>
 
-    <div className="relative flex-1 flex flex-col bg-[#FCFCFC] overflow-hidden rounded-lg">
+    <div className="relative flex-1 flex flex-col bg-bg-surface overflow-hidden rounded-lg">
 
         {/* Main chat area */}
       <div

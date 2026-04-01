@@ -90,7 +90,7 @@ const defaultMarkdownComponents: Components = {
       );
     }
     return (
-      <pre className="bg-[#1e1e1e] rounded-xl p-4 overflow-x-auto my-4">
+      <pre className="bg-bg-code rounded-xl p-4 overflow-x-auto my-4">
         <code className="text-sm font-mono text-gray-100">{codeString}</code>
       </pre>
     );
@@ -145,7 +145,7 @@ const compactMarkdownComponents: Components = {
       );
     }
     return (
-      <pre className="bg-[#1e1e1e] rounded-lg p-3 overflow-x-auto my-2">
+      <pre className="bg-bg-code rounded-lg p-3 overflow-x-auto my-2">
         <code className="text-xs font-mono text-gray-100">{codeString}</code>
       </pre>
     );

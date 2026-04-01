@@ -44,7 +44,7 @@ export default function AgentChatInput({ onSend, disabled, placeholder }: AgentC
 
   return (
     <div className="px-4 pb-4 pt-2">
-      <div className="flex items-end gap-2 rounded-xl border border-border-gray bg-[#F7F8FA] px-3 py-2 focus-within:border-black/20 focus-within:bg-white transition-colors">
+      <div className="flex items-end gap-2 rounded-xl border border-border-gray bg-bg-input px-3 py-2 focus-within:border-black/20 focus-within:bg-white transition-colors">
         <textarea
           ref={textareaRef}
           value={value}

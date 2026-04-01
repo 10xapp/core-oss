@@ -199,7 +199,7 @@ const KanbanColumn = memo(function KanbanColumn({
       <div
         ref={setNodeRef}
         className={`w-80 flex-shrink-0 rounded-md transition-colors duration-200 ${
-          isOver ? "bg-[#F0F1F3] ring-2 ring-green-300" : "bg-[#F9F9F9]"
+          isOver ? "bg-bg-hover ring-2 ring-green-300" : "bg-bg-panel"
         }`}
       >
         <div className="flex items-center justify-between px-4 py-3">
@@ -221,7 +221,7 @@ const KanbanColumn = memo(function KanbanColumn({
       {/* Column wrapper with background */}
       <div
         className={`flex-1 flex flex-col rounded-md px-2 pt-2 pb-2 transition-colors duration-200 ${
-          isOver ? "bg-[#F0F1F3]" : "bg-[#F9F9F9]"
+          isOver ? "bg-bg-hover" : "bg-bg-panel"
         }`}
       >
         {/* Column Header */}

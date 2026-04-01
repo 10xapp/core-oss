@@ -223,8 +223,7 @@ export default function WeekView({
       <div
         ref={scrollRef}
         id="calendar-scroll-container"
-        className="flex-1 overflow-y-auto"
-        style={{ backgroundColor: "#FCFCFC" }}
+        className="flex-1 overflow-y-auto bg-bg-surface"
       >
         {/* Week header with day names and dates - sticky at top */}
         <div className="sticky top-0 z-30 border-b border-gray-200 bg-white">

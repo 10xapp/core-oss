@@ -14,7 +14,7 @@ function UserMessage({ content }: { content: string }) {
   return (
     <div className="py-1.5 px-3">
       <div className="flex justify-end">
-        <div className={`bg-[#F7F8FA] px-4 py-2 max-w-[85%] ${isShort ? 'rounded-full' : 'rounded-2xl'}`}>
+        <div className={`bg-bg-input px-4 py-2 max-w-[85%] ${isShort ? 'rounded-full' : 'rounded-2xl'}`}>
           <p className="text-text-body whitespace-pre-wrap text-sm leading-relaxed">
             {content}
           </p>

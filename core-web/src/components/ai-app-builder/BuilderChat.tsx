@@ -211,7 +211,7 @@ export default function BuilderChat() {
           <div key={msg.id} className="mb-4">
             {msg.role === "user" ? (
               <div className="flex justify-end">
-                <div className="bg-[#F4F4F4] rounded-[18px] px-4 py-2.5 max-w-[85%] text-sm text-text-body">
+                <div className="bg-bg-bubble rounded-[18px] px-4 py-2.5 max-w-[85%] text-sm text-text-body">
                   {msg.content}
                 </div>
               </div>

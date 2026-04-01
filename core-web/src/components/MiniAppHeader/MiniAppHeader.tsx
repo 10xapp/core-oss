@@ -10,7 +10,7 @@ import NotificationsPanel from '../NotificationsPanel/NotificationsPanel';
 const iconBtn =
   'w-7 h-7 flex items-center justify-center rounded-md transition-all outline-none focus:outline-none';
 const iconBtnActive = 'bg-gray-100 text-black';
-const iconBtnInactive = 'text-[#323232] hover:bg-gray-50';
+const iconBtnInactive = 'text-text-icon hover:bg-gray-50';
 
 /**
  * HeaderButtons - Inline buttons for AI chat, notifications, and settings

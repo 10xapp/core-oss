@@ -35,6 +35,7 @@ p {
   --color-text-success: #589F72;
   --color-text-danger: #EA6B6B;
   --color-text-warning: #F0A442;
+  --color-text-icon: #323232;
 
   /* Background */
   --color-bg-info-light: #F0F7FF;
@@ -43,11 +44,19 @@ p {
   --color-bg-warning-light: #FDF4E7;
   --color-bg-white: #FFFFFF;
   --color-bg-light: #FDFDFD;
+  --color-bg-surface: #FCFCFC;
+  --color-bg-panel: #F9F9F9;
+  --color-bg-bubble: #F4F4F4;
+  --color-bg-input: #F7F8FA;
+  --color-bg-hover: #F0F1F3;
   --color-bg-gray: #F4F3F1;
   --color-bg-gray-dark: #E5E7EB;
   --color-bg-shell: #F6F6F6;
+  --color-bg-sidebar: #E3E3E5;
   --color-bg-main-sidebar: #E8EBF0;
   --color-bg-mini-app: #EAEAEA;
+  --color-bg-code: #1E1E1E;
+  --color-bg-code-header: #2D2D2D;
   --color-bg-dark: #000000;
   --color-bg-black: #000000;
 
