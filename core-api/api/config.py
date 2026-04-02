@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     e2b_api_key: str = ""
     e2b_default_template: str = "base"  # Default sandbox template ID
 
+    # Google webhook verification token (set on Pub/Sub push URL and Calendar watch)
+    google_webhook_token: str = ""
+
     # Agent dispatch webhook
     agent_webhook_secret: str = ""  # Shared secret for Supabase webhook validation
 
