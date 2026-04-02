@@ -2,7 +2,7 @@
 Webhooks router - Receives push notifications from external services
 Thin layer that handles HTTP concerns and delegates to services.
 """
-from fastapi import APIRouter, Request, Header, Query, Response
+from fastapi import APIRouter, HTTPException, Request, Header, Query, Response
 from fastapi.responses import PlainTextResponse
 from typing import Optional
 import asyncio
@@ -88,7 +88,7 @@ async def gmail_webhook(request: Request, token: Optional[str] = Query(None)):
         # Verify the request came from our configured Pub/Sub subscription
         if not _verify_google_webhook_token(token):
             logger.warning("Gmail webhook rejected: invalid or missing token")
-            return {"status": "error", "message": "Unauthorized"}
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
         # Parse Pub/Sub message format
         body = await request.json()
@@ -196,7 +196,7 @@ async def calendar_webhook(
         # Verify the request came from a watch we created
         if not _verify_google_webhook_token(x_goog_channel_token):
             logger.warning(f"Calendar webhook rejected: invalid or missing token (channel={x_goog_channel_id})")
-            return {"status": "error", "message": "Unauthorized"}
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
         logger.info(f"Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
 

@@ -83,6 +83,7 @@ def test_start_calendar_watch_service_role_permanent_failure_logs_warning_not_er
 
     with patch("api.services.syncs.watch_manager.settings", SimpleNamespace(
         webhook_base_url="https://core-api.test",
+        google_webhook_token="test-token",
     )):
         with patch("api.services.syncs.watch_manager.logger") as logger_mock:
             result = start_calendar_watch_service_role(
@@ -147,6 +148,7 @@ def test_start_calendar_watch_service_role_transient_failure_still_logs_error():
 
     with patch("api.services.syncs.watch_manager.settings", SimpleNamespace(
         webhook_base_url="https://core-api.test",
+        google_webhook_token="test-token",
     )):
         with patch("api.services.syncs.watch_manager.logger") as logger_mock:
             result = start_calendar_watch_service_role(

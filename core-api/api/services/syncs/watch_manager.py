@@ -262,8 +262,9 @@ def start_calendar_watch(
             'expiration': expiration_ms,
         }
         # Include verification token so we can authenticate incoming notifications
-        if settings.google_webhook_token:
-            request_body['token'] = settings.google_webhook_token
+        if not settings.google_webhook_token:
+            raise ValueError("GOOGLE_WEBHOOK_TOKEN is required for Calendar webhook watches")
+        request_body['token'] = settings.google_webhook_token
 
         logger.info(f"Starting Calendar watch for user {user_id} with channel {channel_id}")
         

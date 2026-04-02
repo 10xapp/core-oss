@@ -4,7 +4,6 @@ Sandbox file browsing — list and read files from a running E2B sandbox.
 import asyncio
 import logging
 import posixpath
-import re
 import shlex
 from typing import List, Dict, Any
 
