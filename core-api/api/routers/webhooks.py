@@ -84,12 +84,12 @@ async def gmail_webhook(request: Request, token: Optional[str] = Query(None)):
 
     Returns 200 immediately to acknowledge receipt (required by Pub/Sub).
     """
-    try:
-        # Verify the request came from our configured Pub/Sub subscription
-        if not _verify_google_webhook_token(token):
-            logger.warning("Gmail webhook rejected: invalid or missing token")
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    # Verify BEFORE the try/except that returns 200 on all errors
+    if not _verify_google_webhook_token(token):
+        logger.warning("Gmail webhook rejected: invalid or missing token")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
+    try:
         # Parse Pub/Sub message format
         body = await request.json()
 
@@ -192,12 +192,12 @@ async def calendar_webhook(
 
     Returns 200 immediately to acknowledge receipt (required by Google).
     """
-    try:
-        # Verify the request came from a watch we created
-        if not _verify_google_webhook_token(x_goog_channel_token):
-            logger.warning(f"Calendar webhook rejected: invalid or missing token (channel={x_goog_channel_id})")
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    # Verify BEFORE the try/except that returns 200 on all errors
+    if not _verify_google_webhook_token(x_goog_channel_token):
+        logger.warning(f"Calendar webhook rejected: invalid or missing token (channel={x_goog_channel_id})")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
+    try:
         logger.info(f"Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
 
         # Try to enqueue via QStash for async processing
