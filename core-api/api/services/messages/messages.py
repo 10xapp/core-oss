@@ -519,6 +519,15 @@ async def _enrich_messages_with_file_urls_legacy(messages: List[Dict[str, Any]],
     if not messages:
         return
 
+    has_file_blocks = any(
+        isinstance(block, dict) and block.get("type") == "file"
+        for msg in messages
+        for block in (msg.get("blocks") or [])
+        if isinstance(msg.get("blocks"), list)
+    )
+    if not has_file_blocks:
+        return
+
     admin = await get_async_service_role_client()
     r2 = get_r2_client()
 
