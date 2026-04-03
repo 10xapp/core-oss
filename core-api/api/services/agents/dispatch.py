@@ -138,6 +138,10 @@ def create_sandbox(agent: Dict[str, Any]) -> Tuple[str, Sandbox]:
             "SUPABASE_URL": settings.supabase_url,
             "SUPABASE_SERVICE_ROLE_KEY": settings.supabase_service_role_key,
             "ANTHROPIC_API_KEY": settings.anthropic_api_key,
+            "TIRITH_ENABLED": str(settings.tirith_enabled).lower(),
+            "TIRITH_PATH": settings.tirith_path,
+            "TIRITH_TIMEOUT": str(settings.tirith_timeout),
+            "TIRITH_FAIL_MODE": settings.tirith_fail_mode,
         },
         api_key=api_key,
     )
