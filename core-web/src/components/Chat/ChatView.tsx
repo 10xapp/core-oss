@@ -241,10 +241,38 @@ export default function ChatView() {
     // Set active conversation for sidebar highlighting
     setActiveConversationId(urlConversationId);
 
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let pollTimeout: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    async function pollForReply(convId: string) {
+      if (cancelled) return;
+      try {
+        const data = await getMessages(convId);
+        if (data.at(-1)?.role === 'assistant') {
+          if (pollTimer) clearInterval(pollTimer);
+          if (pollTimeout) clearTimeout(pollTimeout);
+          setMessages(data.map((msg: Message) => ({
+            id: msg.id, role: msg.role, content: msg.content, content_parts: msg.content_parts,
+          })));
+          setIsWaitingForResponse(false);
+          requestAnimationFrame(() => {
+            const container = scrollContainerRef.current;
+            if (container) container.scrollTop = container.scrollHeight;
+          });
+        }
+      } catch {
+        if (pollTimer) clearInterval(pollTimer);
+        if (pollTimeout) clearTimeout(pollTimeout);
+        setIsWaitingForResponse(false);
+      }
+    }
+
     async function loadMessages() {
       setLoadingMessages(true);
       try {
         const data = await getMessages(urlConversationId!);
+        if (cancelled) return;
         setMessages(
           data.map((msg: Message) => ({
             id: msg.id,
@@ -260,14 +288,33 @@ export default function ChatView() {
             container.scrollTop = container.scrollHeight;
           }
         });
+
+        // If the last message is a recent user message, poll until
+        // it appears.
+        const lastRaw = data.at(-1);
+        const isRecent = lastRaw?.created_at && (Date.now() - new Date(lastRaw.created_at).getTime()) < 60000;
+        if (lastRaw?.role === 'user' && isRecent) {
+          setIsWaitingForResponse(true);
+          pollTimer = setInterval(() => pollForReply(urlConversationId!), 5000);
+          pollTimeout = setTimeout(() => {
+            if (pollTimer) clearInterval(pollTimer);
+            if (!cancelled) setIsWaitingForResponse(false);
+          }, 60000);
+        }
       } catch (err) {
         console.error('Failed to load messages:', err);
       } finally {
-        setLoadingMessages(false);
+        if (!cancelled) setLoadingMessages(false);
       }
     }
 
     loadMessages();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (pollTimeout) clearTimeout(pollTimeout);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlConversationId, setActiveConversationId, hasChattedThisSession]);
 
