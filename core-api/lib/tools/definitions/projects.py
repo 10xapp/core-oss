@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any, Dict, List
 
 from lib.tools.base import ToolCategory, ToolContext, ToolResult, error, staged_result, success
@@ -186,6 +187,19 @@ def _parse_issue_priority(raw_value: Any) -> tuple[int | None, str | None]:
     return priority, None
 
 
+def _parse_issue_due_at(raw_value: Any) -> tuple[str | None, str | None]:
+    """Validate and normalize an optional issue due date."""
+    if raw_value is None:
+        return None, None
+
+    try:
+        due_at = datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+    except ValueError:
+        return None, "due_at must be a valid ISO 8601 datetime"
+
+    return due_at.isoformat(), None
+
+
 def _resolve_target_state(
     states: List[Dict[str, Any]],
     requested_state_id: Any,
@@ -271,8 +285,11 @@ async def create_project_issue(args: Dict, ctx: ToolContext) -> ToolResult:
         return error(priority_error)
     if priority is not None:
         staged_args["priority"] = priority
-    if args.get("due_at") is not None:
-        staged_args["due_at"] = args["due_at"]
+    due_at, due_at_error = _parse_issue_due_at(args.get("due_at"))
+    if due_at_error:
+        return error(due_at_error)
+    if due_at is not None:
+        staged_args["due_at"] = due_at
 
     return staged_result(
         "create_project_issue",
