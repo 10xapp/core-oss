@@ -916,130 +916,173 @@ async def _resolve_workspace_app(user_id: str, user_jwt: str, app_type: str, wor
     return app
 
 
+async def _run_action_in_executor(callback):
+    """Run a synchronous action service call in the shared executor."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_action_executor, callback)
+
+
+async def _execute_create_calendar_event_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.calendar.create_event import create_event
+
+    user_timezone = data.get("user_timezone")
+    event_data = {
+        "title": data.get("summary", ""),
+        "start_time": data.get("start_time"),
+        "end_time": data.get("end_time"),
+        "description": data.get("description"),
+        "location": data.get("location"),
+        "attendees": data.get("attendees", []),
+        "is_all_day": data.get("is_all_day", False),
+    }
+    result = await _run_action_in_executor(
+        lambda: create_event(user_id, event_data, user_jwt, user_timezone=user_timezone)
+    )
+    return {
+        "synced_to_external": result.get("synced_to_external", False),
+        "provider": result.get("provider"),
+        "sync_error": result.get("sync_error"),
+        "account_email": result.get("event", {}).get("ext_connection_id"),
+    }
+
+
+async def _execute_send_email_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.email.send_email import send_email
+
+    await _run_action_in_executor(
+        lambda: send_email(
+            user_id=user_id,
+            user_jwt=user_jwt,
+            to=data.get("to", ""),
+            subject=data.get("subject", ""),
+            body=data.get("body", ""),
+        )
+    )
+
+
+async def _execute_update_calendar_event_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.calendar.update_event import update_event
+
+    event_id = data.get("event_id")
+    user_timezone = data.get("user_timezone")
+    if not event_id:
+        raise ValueError("event_id is required for update_calendar_event")
+
+    event_data = {
+        key: value for key, value in data.items()
+        if key in ("summary", "start_time", "end_time", "description", "location")
+        and value is not None
+    }
+    if "summary" in event_data:
+        event_data["title"] = event_data.pop("summary")
+
+    await _run_action_in_executor(
+        lambda: update_event(event_id, event_data, user_id, user_jwt, user_timezone=user_timezone)
+    )
+
+
+async def _execute_delete_calendar_event_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.calendar.delete_event import delete_event
+
+    event_id = data.get("event_id")
+    if not event_id:
+        raise ValueError("event_id is required for delete_calendar_event")
+
+    await _run_action_in_executor(lambda: delete_event(event_id, user_id, user_jwt))
+
+
+async def _execute_create_document_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.documents.create_document import create_document
+
+    files_app = await _resolve_workspace_app(user_id, user_jwt, "files", data.get("workspace_id"))
+
+    doc = await create_document(
+        user_id=user_id,
+        user_jwt=user_jwt,
+        workspace_app_id=files_app["id"],
+        title=data.get("title", "Untitled"),
+        content=data.get("content", ""),
+        parent_id=data.get("parent_id"),
+    )
+    return {"document_id": doc["id"], "workspace_id": doc.get("workspace_id")}
+
+
+def _parse_action_priority(raw_value: Any) -> int | None:
+    """Parse project issue priority and raise a user-facing validation error when invalid."""
+    if raw_value is None:
+        return None
+
+    try:
+        priority = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("priority must be an integer between 0 and 4") from exc
+
+    if not 0 <= priority <= 4:
+        raise ValueError("priority must be an integer between 0 and 4")
+
+    return priority
+
+
+def _parse_action_due_at(raw_value: Any) -> datetime | None:
+    """Parse an optional due date in ISO 8601 format."""
+    if raw_value is None:
+        return None
+
+    try:
+        return datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("due_at must be a valid ISO 8601 datetime") from exc
+
+
+async def _execute_create_project_issue_action(data: Dict[str, Any], user_id: str, user_jwt: str):
+    from api.services.projects import create_issue
+
+    board_id = data.get("board_id")
+    state_id = data.get("state_id")
+    title = (data.get("title") or "").strip()
+
+    if not board_id:
+        raise ValueError("board_id is required for create_project_issue")
+    if not state_id:
+        raise ValueError("state_id is required for create_project_issue")
+    if not title:
+        raise ValueError("title is required for create_project_issue")
+
+    priority = _parse_action_priority(data.get("priority"))
+    due_at = _parse_action_due_at(data.get("due_at"))
+
+    issue = await create_issue(
+        user_id=user_id,
+        user_jwt=user_jwt,
+        board_id=board_id,
+        state_id=state_id,
+        title=title,
+        description=data.get("description"),
+        priority=priority if priority is not None else 0,
+        due_at=due_at,
+    )
+    return {
+        "issue_id": issue["id"],
+        "board_id": issue.get("board_id"),
+        "workspace_id": issue.get("workspace_id"),
+        "number": issue.get("number"),
+        "title": issue.get("title"),
+    }
+
+
 async def _execute_action(action_type: str, data: Dict[str, Any], user_id: str, user_jwt: str):
     """Dispatch a staged action to the appropriate service function."""
-    loop = asyncio.get_event_loop()
+    handlers = {
+        "create_calendar_event": _execute_create_calendar_event_action,
+        "send_email": _execute_send_email_action,
+        "update_calendar_event": _execute_update_calendar_event_action,
+        "delete_calendar_event": _execute_delete_calendar_event_action,
+        "create_document": _execute_create_document_action,
+        "create_project_issue": _execute_create_project_issue_action,
+    }
 
-    if action_type == "create_calendar_event":
-        from api.services.calendar.create_event import create_event
-        user_timezone = data.get("user_timezone")
-        event_data = {
-            "title": data.get("summary", ""),
-            "start_time": data.get("start_time"),
-            "end_time": data.get("end_time"),
-            "description": data.get("description"),
-            "location": data.get("location"),
-            "attendees": data.get("attendees", []),
-            "is_all_day": data.get("is_all_day", False),
-        }
-        # create_event is synchronous — run in thread pool
-        result = await loop.run_in_executor(
-            _action_executor,
-            lambda: create_event(user_id, event_data, user_jwt, user_timezone=user_timezone)
-        )
-        # Surface sync status so frontend can warn if Google/Outlook sync failed
-        return {
-            "synced_to_external": result.get("synced_to_external", False),
-            "provider": result.get("provider"),
-            "sync_error": result.get("sync_error"),
-            "account_email": result.get("event", {}).get("ext_connection_id"),
-        }
-
-    elif action_type == "send_email":
-        from api.services.email.send_email import send_email
-        # send_email is synchronous — run in thread pool
-        await loop.run_in_executor(
-            _action_executor,
-            lambda: send_email(
-                user_id=user_id,
-                user_jwt=user_jwt,
-                to=data.get("to", ""),
-                subject=data.get("subject", ""),
-                body=data.get("body", ""),
-            )
-        )
-
-    elif action_type == "update_calendar_event":
-        from api.services.calendar.update_event import update_event
-        event_id = data.get("event_id")
-        user_timezone = data.get("user_timezone")
-        if not event_id:
-            raise ValueError("event_id is required for update_calendar_event")
-        event_data = {
-            k: v for k, v in data.items()
-            if k in ("summary", "start_time", "end_time", "description", "location")
-            and v is not None
-        }
-        # Map summary → title for the service
-        if "summary" in event_data:
-            event_data["title"] = event_data.pop("summary")
-        await loop.run_in_executor(
-            _action_executor,
-            lambda: update_event(event_id, event_data, user_id, user_jwt, user_timezone=user_timezone)
-        )
-
-    elif action_type == "delete_calendar_event":
-        from api.services.calendar.delete_event import delete_event
-        event_id = data.get("event_id")
-        if not event_id:
-            raise ValueError("event_id is required for delete_calendar_event")
-        await loop.run_in_executor(
-            _action_executor,
-            lambda: delete_event(event_id, user_id, user_jwt)
-        )
-
-    elif action_type == "create_document":
-        from api.services.documents.create_document import create_document
-
-        files_app = await _resolve_workspace_app(user_id, user_jwt, "files", data.get("workspace_id"))
-
-        doc = await create_document(
-            user_id=user_id,
-            user_jwt=user_jwt,
-            workspace_app_id=files_app["id"],
-            title=data.get("title", "Untitled"),
-            content=data.get("content", ""),
-            parent_id=data.get("parent_id"),
-        )
-        return {"document_id": doc["id"], "workspace_id": doc.get("workspace_id")}
-
-    elif action_type == "create_project_issue":
-        from api.services.projects import create_issue
-
-        board_id = data.get("board_id")
-        state_id = data.get("state_id")
-        title = (data.get("title") or "").strip()
-
-        assert board_id
-        assert state_id
-        assert title
-
-        priority = None
-        if data.get("priority") is not None:
-            priority = int(data["priority"])
-            assert 0 <= priority <= 4
-
-        due_at = None
-        if data.get("due_at") is not None:
-            due_at = datetime.fromisoformat(str(data["due_at"]).replace("Z", "+00:00"))
-
-        issue = await create_issue(
-            user_id=user_id,
-            user_jwt=user_jwt,
-            board_id=board_id,
-            state_id=state_id,
-            title=title,
-            description=data.get("description"),
-            priority=priority or 0,
-            due_at=due_at,
-        )
-        return {
-            "issue_id": issue["id"],
-            "board_id": issue.get("board_id"),
-            "workspace_id": issue.get("workspace_id"),
-            "number": issue.get("number"),
-            "title": issue.get("title"),
-        }
-
-    else:
+    handler = handlers.get(action_type)
+    if not handler:
         raise ValueError(f"Unknown action type: {action_type}")
+
+    return await handler(data, user_id, user_jwt)

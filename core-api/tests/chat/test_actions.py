@@ -49,7 +49,7 @@ async def test_execute_action_dispatches_create_project_issue(monkeypatch):
 
     captured = {}
 
-    async def fake_create_issue(*, user_id, user_jwt, board_id, state_id, title, description=None, priority=0, due_at=None):
+    def fake_create_issue(*, user_id, user_jwt, board_id, state_id, title, description=None, priority=0, due_at=None):
         captured.update(
             {
                 "user_id": user_id,
@@ -70,7 +70,7 @@ async def test_execute_action_dispatches_create_project_issue(monkeypatch):
             "title": title,
         }
 
-    monkeypatch.setattr(project_service, "create_issue", fake_create_issue)
+    monkeypatch.setattr(project_service, "create_issue", AsyncMock(side_effect=fake_create_issue))
 
     result = await chat._execute_action(
         "create_project_issue",

@@ -170,6 +170,22 @@ def _format_board_summary(board: Dict[str, Any], issue_count: int, open_issue_co
     return summary
 
 
+def _parse_issue_priority(raw_value: Any) -> tuple[int | None, str | None]:
+    """Validate an optional issue priority and return a user-facing error when invalid."""
+    if raw_value is None:
+        return None, None
+
+    try:
+        priority = int(raw_value)
+    except (TypeError, ValueError):
+        return None, "priority must be an integer between 0 and 4"
+
+    if not 0 <= priority <= 4:
+        return None, "priority must be an integer between 0 and 4"
+
+    return priority, None
+
+
 @tool(
     name="create_project_issue",
     description=(
@@ -181,7 +197,7 @@ def _format_board_summary(board: Dict[str, Any], issue_count: int, open_issue_co
         "title": "Issue/card title",
         "state_id": "Optional target state/column ID. If omitted, the first non-done state is used.",
         "description": "Optional issue description",
-        "priority": "Optional priority from 0-4 (0 none, 1 low, 2 medium, 3 high, 4 urgent)",
+        "priority": "Optional priority from 0-4 (0 none, 1 urgent, 2 high, 3 medium, 4 low)",
         "due_at": "Optional due date/time in ISO 8601 format",
     },
     required=["board_id", "title"],
@@ -239,9 +255,10 @@ async def create_project_issue(args: Dict, ctx: ToolContext) -> ToolResult:
 
     if args.get("description") is not None:
         staged_args["description"] = args.get("description")
-    if args.get("priority") is not None:
-        priority = int(args["priority"])
-        assert 0 <= priority <= 4
+    priority, priority_error = _parse_issue_priority(args.get("priority"))
+    if priority_error:
+        return error(priority_error)
+    if priority is not None:
         staged_args["priority"] = priority
     if args.get("due_at") is not None:
         staged_args["due_at"] = args["due_at"]
