@@ -186,6 +186,23 @@ def _parse_issue_priority(raw_value: Any) -> tuple[int | None, str | None]:
     return priority, None
 
 
+def _resolve_target_state(
+    states: List[Dict[str, Any]],
+    requested_state_id: Any,
+) -> tuple[Dict[str, Any] | None, str | None]:
+    """Pick the requested state or the first non-done state for staged issue creation."""
+    if requested_state_id:
+        target_state = next((state for state in states if state.get("id") == requested_state_id), None)
+        if not target_state:
+            return None, "Project state not found on this board"
+        return target_state, None
+
+    target_state = next((state for state in states if not state.get("is_done")), None)
+    if not target_state:
+        return None, "Project board has no non-complete state available"
+    return target_state, None
+
+
 @tool(
     name="create_project_issue",
     description=(
@@ -235,15 +252,9 @@ async def create_project_issue(args: Dict, ctx: ToolContext) -> ToolResult:
     if not states:
         return error("Project board has no states")
 
-    target_state = None
-    if requested_state_id:
-        target_state = next((state for state in states if state.get("id") == requested_state_id), None)
-        if not target_state:
-            return error("Project state not found on this board")
-    else:
-        target_state = next((state for state in states if not state.get("is_done")), None)
-        if not target_state:
-            return error("Project board has no non-complete state available")
+    target_state, state_error = _resolve_target_state(states, requested_state_id)
+    if state_error:
+        return error(state_error)
 
     staged_args: Dict[str, Any] = {
         "board_id": board_id,
