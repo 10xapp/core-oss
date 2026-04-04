@@ -95,6 +95,90 @@ async def test_get_project_board_returns_board_issue_summaries(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_create_project_issue_stages_with_first_non_done_state(monkeypatch):
+    import api.services.projects as project_service
+
+    from lib.tools.base import ToolContext
+    from lib.tools.definitions import projects as project_tools
+
+    board = {
+        "id": "board-1",
+        "workspace_id": "ws-1",
+        "workspace_app_id": "app-1",
+        "name": "Core Board",
+    }
+    states = [
+        {"id": "state-done", "name": "Done", "position": 0, "is_done": True},
+        {"id": "state-todo", "name": "To Do", "position": 1, "is_done": False},
+        {"id": "state-progress", "name": "In Progress", "position": 2, "is_done": False},
+    ]
+
+    monkeypatch.setattr(project_service, "get_board_by_id", AsyncMock(return_value=board))
+    monkeypatch.setattr(project_service, "get_states", AsyncMock(return_value=states))
+
+    ctx = ToolContext(
+        user_id=TEST_USER_ID,
+        user_jwt=TEST_USER_JWT,
+        workspace_ids=["ws-1"],
+    )
+
+    result = await project_tools.create_project_issue(
+        {
+            "board_id": "board-1",
+            "title": "Add chat project writes",
+            "priority": "2",
+            "due_at": "2026-04-04T09:30:00Z",
+        },
+        ctx,
+    )
+
+    assert result.status == "staged"
+    assert result.data["action"] == "create_project_issue"
+    assert result.data["board_id"] == "board-1"
+    assert result.data["board_name"] == "Core Board"
+    assert result.data["state_id"] == "state-todo"
+    assert result.data["state_name"] == "To Do"
+    assert result.data["title"] == "Add chat project writes"
+    assert result.data["priority"] == 2
+    assert result.data["due_at"] == "2026-04-04T09:30:00Z"
+
+
+@pytest.mark.asyncio
+async def test_create_project_issue_rejects_out_of_scope_board(monkeypatch):
+    import api.services.projects as project_service
+
+    from lib.tools.base import ToolContext
+    from lib.tools.definitions import projects as project_tools
+
+    monkeypatch.setattr(
+        project_service,
+        "get_board_by_id",
+        AsyncMock(
+            return_value={
+                "id": "board-1",
+                "workspace_id": "ws-2",
+                "workspace_app_id": "app-1",
+                "name": "Other Board",
+            }
+        ),
+    )
+
+    ctx = ToolContext(
+        user_id=TEST_USER_ID,
+        user_jwt=TEST_USER_JWT,
+        workspace_ids=["ws-1"],
+    )
+
+    result = await project_tools.create_project_issue(
+        {"board_id": "board-1", "title": "Add chat project writes"},
+        ctx,
+    )
+
+    assert result.status == "error"
+    assert result.data["error"] == "Project board is outside the current workspace scope"
+
+
+@pytest.mark.asyncio
 async def test_get_project_board_rejects_out_of_scope_board(monkeypatch):
     import api.services.projects as project_service
 

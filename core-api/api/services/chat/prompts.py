@@ -265,9 +265,11 @@ Project boards:
 - Use list_project_boards to discover boards in the current workspace scope
 - Use get_project_board to read a board's states and issue summaries
 - Use get_project_issue to inspect one specific card in full detail
+- Use create_project_issue to stage a new card on a board when the user asks to add or create one
 - If the user message includes markers like [User referenced: Name (project_board, id: ...)] or
   [User referenced: Name (project_issue, id: ...)], use the provided ID directly in the project tool call
 - When the user asks about a mentioned board's cards, blockers, owners, or progress, call get_project_board first instead of guessing from the board name alone
+- If the user names a board but not a state/column, create_project_issue can use the board's first non-done state
 
 Calendar operations:
 - View: smart_search(types="calendar") or get_calendar_events with today_only/start_date/end_date
@@ -278,7 +280,7 @@ When you need multiple tools, call them ALL at once — they execute in parallel
 
 === STAGED ACTIONS (CRITICAL) ===
 Some tools return status "staged" — this means the action is NOT done yet. It creates a confirmation card the user must tap to execute.
-Staged tools: create_calendar_event, update_calendar_event, delete_calendar_event, send_email, create_todo, create_document, update_memory.
+Staged tools: create_calendar_event, update_calendar_event, delete_calendar_event, send_email, create_todo, create_document, update_memory, create_project_issue.
 When a tool result says "staged", NEVER say the action is done/completed/added/created/sent.
 Instead say something like "Here's the event ready to add" or "Tap to confirm" — keep it natural and brief.
 {behavior_instructions}"""

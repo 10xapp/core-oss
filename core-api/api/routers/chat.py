@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from uuid import UUID
 from api.dependencies import get_current_user_id, get_current_user_jwt
@@ -803,6 +804,7 @@ async def execute_action(
     - send_email → sends email via Gmail/Microsoft
     - update_calendar_event → updates event in DB + external calendar
     - delete_calendar_event → deletes event from DB + external calendar
+    - create_project_issue → creates a project card/issue
     """
     # Validate message_id is a valid UUID
     try:
@@ -1000,6 +1002,44 @@ async def _execute_action(action_type: str, data: Dict[str, Any], user_id: str, 
             parent_id=data.get("parent_id"),
         )
         return {"document_id": doc["id"], "workspace_id": doc.get("workspace_id")}
+
+    elif action_type == "create_project_issue":
+        from api.services.projects import create_issue
+
+        board_id = data.get("board_id")
+        state_id = data.get("state_id")
+        title = (data.get("title") or "").strip()
+
+        assert board_id
+        assert state_id
+        assert title
+
+        priority = None
+        if data.get("priority") is not None:
+            priority = int(data["priority"])
+            assert 0 <= priority <= 4
+
+        due_at = None
+        if data.get("due_at") is not None:
+            due_at = datetime.fromisoformat(str(data["due_at"]).replace("Z", "+00:00"))
+
+        issue = await create_issue(
+            user_id=user_id,
+            user_jwt=user_jwt,
+            board_id=board_id,
+            state_id=state_id,
+            title=title,
+            description=data.get("description"),
+            priority=priority or 0,
+            due_at=due_at,
+        )
+        return {
+            "issue_id": issue["id"],
+            "board_id": issue.get("board_id"),
+            "workspace_id": issue.get("workspace_id"),
+            "number": issue.get("number"),
+            "title": issue.get("title"),
+        }
 
     else:
         raise ValueError(f"Unknown action type: {action_type}")

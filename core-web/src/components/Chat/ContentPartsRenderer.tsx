@@ -1,4 +1,5 @@
 import { useState, memo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,6 +29,7 @@ import { getAccountPalette } from '../../utils/accountColors';
 import { toast } from 'sonner';
 import { useCalendarStore } from '../../stores/calendarStore';
 import { useFilesStore } from '../../stores/filesStore';
+import { projectKeys } from '../../hooks/queries/keys';
 
 // ============================================================================
 // Code Block (shared with ChatMessage)
@@ -325,6 +327,7 @@ function DisplayPartRenderer({ part }: { part: ContentPart }) {
 }
 
 function ActionPartRenderer({ part, messageId }: { part: ContentPart; messageId?: string }) {
+  const queryClient = useQueryClient();
   const action = part.data.action as string;
   const initialStatus = part.data.status as string;
   const description = part.data.description as string;
@@ -353,6 +356,9 @@ function ActionPartRenderer({ part, messageId }: { part: ContentPart; messageId?
       }
       if (action === 'create_document') {
         useFilesStore.getState().fetchDocuments();
+      }
+      if (action === 'create_project_issue') {
+        await queryClient.invalidateQueries({ queryKey: projectKeys.all });
       }
       if (action === 'create_calendar_event') {
         const title = (actionData.summary || description || 'Event') as string;
@@ -620,6 +626,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_calendar_event: 'Creating event',
   send_email: 'Drafting email',
   create_document: 'Creating document',
+  create_project_issue: 'Drafting project issue',
   update_document: 'Updating document',
   web_search: 'Searched the web',
 };

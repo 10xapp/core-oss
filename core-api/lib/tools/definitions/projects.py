@@ -1,10 +1,10 @@
-"""Project tools: list_project_boards, get_project_board, get_project_issue."""
+"""Project tools: list_project_boards, get_project_board, get_project_issue, create_project_issue."""
 
 import asyncio
 import logging
 from typing import Any, Dict, List
 
-from lib.tools.base import ToolCategory, ToolContext, ToolResult, error, success
+from lib.tools.base import ToolCategory, ToolContext, ToolResult, error, staged_result, success
 from lib.tools.registry import tool
 
 logger = logging.getLogger(__name__)
@@ -168,6 +168,89 @@ def _format_board_summary(board: Dict[str, Any], issue_count: int, open_issue_co
     if board.get("description"):
         summary["description"] = board["description"]
     return summary
+
+
+@tool(
+    name="create_project_issue",
+    description=(
+        "Prepare a new project issue/card on a board. Use this when the user asks to add, create, "
+        "or file a task/card/issue on a project board."
+    ),
+    params={
+        "board_id": "Project board ID where the card should be created",
+        "title": "Issue/card title",
+        "state_id": "Optional target state/column ID. If omitted, the first non-done state is used.",
+        "description": "Optional issue description",
+        "priority": "Optional priority from 0-4 (0 none, 1 low, 2 medium, 3 high, 4 urgent)",
+        "due_at": "Optional due date/time in ISO 8601 format",
+    },
+    required=["board_id", "title"],
+    category=ToolCategory.PROJECTS,
+    staged=True,
+    status="Preparing project issue..."
+)
+async def create_project_issue(args: Dict, ctx: ToolContext) -> ToolResult:
+    from api.services.projects import get_board_by_id, get_states
+
+    board_id = args.get("board_id")
+    title = (args.get("title") or "").strip()
+    requested_state_id = args.get("state_id")
+
+    if not board_id:
+        return error("board_id is required")
+    if not title:
+        return error("title is required")
+
+    logger.info(
+        "[CHAT] User %s staging project issue on board %s (state=%s)",
+        ctx.user_id,
+        board_id,
+        requested_state_id,
+    )
+
+    board = await get_board_by_id(ctx.user_jwt, board_id)
+    if not board:
+        return error("Project board not found")
+
+    if ctx.workspace_ids and board.get("workspace_id") not in ctx.workspace_ids:
+        return error("Project board is outside the current workspace scope")
+
+    states = await get_states(ctx.user_jwt, board_id)
+    if not states:
+        return error("Project board has no states")
+
+    target_state = None
+    if requested_state_id:
+        target_state = next((state for state in states if state.get("id") == requested_state_id), None)
+        if not target_state:
+            return error("Project state not found on this board")
+    else:
+        target_state = next((state for state in states if not state.get("is_done")), None)
+        if not target_state:
+            return error("Project board has no non-complete state available")
+
+    staged_args: Dict[str, Any] = {
+        "board_id": board_id,
+        "board_name": board.get("name"),
+        "state_id": target_state.get("id"),
+        "state_name": target_state.get("name"),
+        "title": title,
+    }
+
+    if args.get("description") is not None:
+        staged_args["description"] = args.get("description")
+    if args.get("priority") is not None:
+        priority = int(args["priority"])
+        assert 0 <= priority <= 4
+        staged_args["priority"] = priority
+    if args.get("due_at") is not None:
+        staged_args["due_at"] = args["due_at"]
+
+    return staged_result(
+        "create_project_issue",
+        staged_args,
+        f"Create issue in {board.get('name', 'project board')}: {title}",
+    )
 
 
 @tool(
