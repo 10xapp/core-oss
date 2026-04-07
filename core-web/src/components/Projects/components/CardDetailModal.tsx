@@ -20,21 +20,13 @@ import LabelPicker from './LabelPicker';
 import AssigneePicker from './AssigneePicker';
 import StackedAvatars from './StackedAvatars';
 import IssueComments from './IssueComments';
+import { PROJECT_PRIORITY_OPTIONS } from './priorityOptions';
 
 interface CardDetailModalProps {
   card: ProjectIssue;
   onClose: () => void;
   initialEdit?: boolean;
 }
-
-// Priority: 4=highest, 3=high, 2=medium, 1=low,image.png 0=none
-const PRIORITY_OPTIONS = [
-  { value: 0, label: 'None', color: 'text-gray-300', bg: 'bg-gray-50' },
-  { value: 1, label: '1', color: 'text-slate-500', bg: 'bg-slate-100' },
-  { value: 2, label: '2', color: 'text-amber-500', bg: 'bg-amber-50' },
-  { value: 3, label: '3', color: 'text-orange-500', bg: 'bg-orange-50' },
-  { value: 4, label: '4', color: 'text-rose-500', bg: 'bg-rose-50' },
-] as const;
 
 export default function CardDetailModal({ card, onClose, initialEdit = false }: CardDetailModalProps) {
   const [isEditing, setIsEditing] = useState(initialEdit);
@@ -95,7 +87,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const column = states.find((s) => s.id === card.state_id);
-  const priorityConfig = PRIORITY_OPTIONS.find((p) => p.value === priority);
+  const priorityConfig = PROJECT_PRIORITY_OPTIONS.find((p) => p.value === priority);
 
   // Track which images were added/removed for atomic operations
   const [addedImageKeys, setAddedImageKeys] = useState<string[]>([]);
@@ -353,7 +345,7 @@ export default function CardDetailModal({ card, onClose, initialEdit = false }: 
                           <span className="text-gray-400">No priority</span>
                           {priority === 0 && <span className="ml-auto text-blue-600">✓</span>}
                         </button>
-                        {PRIORITY_OPTIONS.filter((o) => o.value > 0).map((option) => (
+                        {PROJECT_PRIORITY_OPTIONS.filter((o) => o.value > 0).map((option) => (
                           <button
                             key={option.value}
                             onClick={() => {

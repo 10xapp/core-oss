@@ -9,6 +9,7 @@ import { lastDragEndTime } from './KanbanBoard';
 import ConfirmModal from './ConfirmModal';
 import AssigneePicker from './AssigneePicker';
 import DatePicker from '../../ui/DatePicker';
+import { PROJECT_PRIORITY_OPTIONS } from './priorityOptions';
 
 interface KanbanCardProps {
   card: ProjectIssue;
@@ -17,14 +18,6 @@ interface KanbanCardProps {
   onCardClick?: (cardId: string) => void;
   isDragActive?: boolean;
 }
-
-// Priority: 4=highest, 3=high, 2=medium, 1=low, 0=none
-const PRIORITY_CONFIG: Record<number, { color: string; bg: string }> = {
-  4: { color: 'text-rose-500', bg: 'bg-rose-50' },
-  3: { color: 'text-orange-500', bg: 'bg-orange-50' },
-  2: { color: 'text-amber-500', bg: 'bg-amber-50' },
-  1: { color: 'text-slate-500', bg: 'bg-slate-100' },
-};
 
 // Memoized label tag to avoid inline style object recreation
 const LabelTag = memo(function LabelTag({ color, name }: { color: string; name: string }) {
@@ -121,7 +114,8 @@ const KanbanCard = memo(function KanbanCard({
     }
   };
 
-  const priorityConfig = card.priority ? PRIORITY_CONFIG[card.priority] : null;
+  const priorityConfig =
+    PROJECT_PRIORITY_OPTIONS.find((option) => option.value === card.priority) ?? null;
 
   const cardClasses = [
     'group relative bg-white px-4 py-3 rounded-lg mb-2 cursor-default active:cursor-grabbing',
@@ -194,19 +188,19 @@ const KanbanCard = memo(function KanbanCard({
                 >
                   <span>–</span>
                 </button>
-                {[1, 2, 3, 4].map((p) => (
+                {PROJECT_PRIORITY_OPTIONS.filter((option) => option.value > 0).map((option) => (
                   <button
-                    key={p}
+                    key={option.value}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handlePriorityChange(p);
+                      handlePriorityChange(option.value);
                     }}
-                    className={`flex items-center gap-1 px-1.5 py-1 rounded-md transition-all text-[11px] font-medium ${PRIORITY_CONFIG[p].color} ${
-                      card.priority === p ? PRIORITY_CONFIG[p].bg : 'opacity-50 hover:opacity-100'
+                    className={`flex items-center gap-1 px-1.5 py-1 rounded-md transition-all text-[11px] font-medium ${option.color} ${
+                      card.priority === option.value ? option.bg : 'opacity-50 hover:opacity-100'
                     }`}
-                    title={`Priority ${p}`}
+                    title={option.label}
                   >
-                    <span>P{p}</span>
+                    <span>P{option.value}</span>
                     <Flag size={12} weight="fill" />
                   </button>
                 ))}

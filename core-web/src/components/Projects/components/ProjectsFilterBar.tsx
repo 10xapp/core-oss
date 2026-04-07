@@ -6,50 +6,7 @@ import { Icon } from "../../ui/Icon";
 import { Flag } from "@phosphor-icons/react";
 import { useProjectsStore } from "../../../stores/projectsStore";
 import { useProjectBoard, useProjectMembers } from "../../../hooks/queries/useProjects";
-
-// Priority options matching CardDetailModal
-const PRIORITY_CONFIG = [
-  {
-    value: 0,
-    label: "None",
-    shortLabel: "None",
-    color: "text-gray-400",
-    bg: "bg-gray-50",
-    activeBg: "bg-gray-100 ring-1 ring-gray-200",
-  },
-  {
-    value: 1,
-    label: "Priority 1",
-    shortLabel: "P1",
-    color: "text-slate-500",
-    bg: "bg-slate-50",
-    activeBg: "bg-slate-100 ring-1 ring-slate-200",
-  },
-  {
-    value: 2,
-    label: "Priority 2",
-    shortLabel: "P2",
-    color: "text-amber-500",
-    bg: "bg-amber-50",
-    activeBg: "bg-amber-100 ring-1 ring-amber-200",
-  },
-  {
-    value: 3,
-    label: "Priority 3",
-    shortLabel: "P3",
-    color: "text-orange-500",
-    bg: "bg-orange-50",
-    activeBg: "bg-orange-100 ring-1 ring-orange-200",
-  },
-  {
-    value: 4,
-    label: "Priority 4",
-    shortLabel: "P4",
-    color: "text-rose-500",
-    bg: "bg-rose-50",
-    activeBg: "bg-rose-100 ring-1 ring-rose-200",
-  },
-] as const;
+import { PROJECT_PRIORITY_OPTIONS } from "./priorityOptions";
 
 interface ProjectsFilterBarProps {
   viewMode: "kanban" | "list";
@@ -73,13 +30,13 @@ export default function ProjectsFilterBar({
   // React Query data
   const { data: boardData } = useProjectBoard(activeProjectId);
   const { data: members = [] } = useProjectMembers(workspaceId);
+  const boardStates = boardData?.states;
+  const boardLabels = boardData?.labels;
 
   const columns = useMemo(() => {
-    if (!boardData?.states) return [];
-    return [...boardData.states].sort((a, b) => a.position - b.position);
-  }, [boardData?.states]);
-
-  const boardLabels = boardData?.labels ?? [];
+    if (!boardStates) return [];
+    return [...boardStates].sort((a, b) => a.position - b.position);
+  }, [boardStates]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -119,6 +76,7 @@ export default function ProjectsFilterBar({
   }, [members]);
 
   const labelOptions = useMemo(() => {
+    if (!boardLabels) return [];
     return boardLabels.map((label) => ({
       id: label.id,
       label: label.name,
@@ -232,7 +190,7 @@ export default function ProjectsFilterBar({
                   Priority
                 </div>
                 <div className="flex flex-wrap gap-2 -m-0.5 p-0.5">
-                  {PRIORITY_CONFIG.map((option) => {
+                  {PROJECT_PRIORITY_OPTIONS.map((option) => {
                     const isSelected = filters.priorities.includes(
                       option.value,
                     );
@@ -373,7 +331,7 @@ export default function ProjectsFilterBar({
         <AnimatePresence mode="popLayout">
           {/* Active Priority Filters */}
           {filters.priorities.map((priority) => {
-            const config = PRIORITY_CONFIG.find((p) => p.value === priority);
+            const config = PROJECT_PRIORITY_OPTIONS.find((p) => p.value === priority);
             if (!config) return null;
             return (
               <motion.div

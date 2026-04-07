@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Flag } from '@phosphor-icons/react';
 import { CheckIcon } from '@heroicons/react/24/outline';
 import { useUpdateIssue } from '../../../hooks/queries/useProjects';
+import { PROJECT_PRIORITY_OPTIONS } from './priorityOptions';
 
 interface PriorityPickerProps {
   issueId: string;
@@ -10,14 +11,6 @@ interface PriorityPickerProps {
   priority: number;
   buttonClassName?: string;
 }
-
-const PRIORITY_OPTIONS = [
-  { value: 0, label: 'No priority', color: 'text-gray-400', bg: 'bg-gray-50' },
-  { value: 1, label: 'Urgent', color: 'text-rose-500', bg: 'bg-rose-50' },
-  { value: 2, label: 'High', color: 'text-orange-500', bg: 'bg-orange-50' },
-  { value: 3, label: 'Medium', color: 'text-amber-500', bg: 'bg-amber-50' },
-  { value: 4, label: 'Low', color: 'text-slate-500', bg: 'bg-slate-100' },
-] as const;
 
 export default function PriorityPicker({ issueId, boardId, priority, buttonClassName = '' }: PriorityPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,7 +21,8 @@ export default function PriorityPicker({ issueId, boardId, priority, buttonClass
   // React Query mutations
   const updateIssue = useUpdateIssue(boardId ?? null);
 
-  const currentOption = PRIORITY_OPTIONS.find((p) => p.value === priority) || PRIORITY_OPTIONS[0];
+  const currentOption =
+    PROJECT_PRIORITY_OPTIONS.find((p) => p.value === priority) || PROJECT_PRIORITY_OPTIONS[0];
 
   const handleUpdate = (value: number) => {
     setIsOpen(false);
@@ -94,7 +88,7 @@ export default function PriorityPicker({ issueId, boardId, priority, buttonClass
           className="fixed z-[100] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden py-1 w-40"
           style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
         >
-          {PRIORITY_OPTIONS.map((option) => (
+          {PROJECT_PRIORITY_OPTIONS.map((option) => (
             <button
               key={option.value}
               onClick={(e) => {
