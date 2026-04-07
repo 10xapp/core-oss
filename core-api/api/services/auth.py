@@ -96,51 +96,48 @@ async def _enqueue_or_fallback_google_initial_sync(
     provider_email: str,
 ) -> None:
     """
-    Queue Google initial sync jobs, with inline fallback for failed enqueues.
-
-    Fallback is intentionally awaited so OAuth/add-account does not "succeed"
-    with zero initial sync when queue transport is unavailable.
+    Mark Google initial sync streams dirty for background worker execution.
     """
-    from lib.queue import queue_client
+    from lib.supabase_client import get_service_role_client
+    from api.services.syncs.sync_dispatcher import mark_stream_dirty
+    from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR, SYNC_KIND_EMAIL
 
-    gmail_enqueued = queue_client.enqueue_sync_for_connection(
+    service_supabase = get_service_role_client()
+
+    gmail_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-gmail",
-        extra={
+        "google",
+        SYNC_KIND_EMAIL,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "max_results": 50,
             "days_back": 20,
         },
-        dedup_id=f"initial-sync-gmail-{connection_id}",
     )
-    calendar_enqueued = queue_client.enqueue_sync_for_connection(
+    calendar_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-calendar",
-        extra={
+        "google",
+        SYNC_KIND_CALENDAR,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "days_past": 7,
             "days_future": 60,
         },
-        dedup_id=f"initial-sync-calendar-{connection_id}",
     )
 
-    if gmail_enqueued and calendar_enqueued:
-        logger.info(f"✅ [Google] Initial sync jobs enqueued for {provider_email}")
+    if gmail_marked and calendar_marked:
+        logger.info(f"✅ [Google] Initial sync scheduled for {provider_email}")
         return
 
     logger.warning(
-        f"⚠️ [Google] Initial sync queue enqueue partial/failed for {provider_email}. "
-        f"gmail_enqueued={gmail_enqueued}, calendar_enqueued={calendar_enqueued}. Running inline fallback."
-    )
-    await asyncio.to_thread(
-        _run_inline_google_initial_sync,
-        connection_id=connection_id,
-        user_id=user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        provider_email=provider_email,
-        run_gmail=not gmail_enqueued,
-        run_calendar=not calendar_enqueued,
+        f"⚠️ [Google] Initial sync dirty-mark partial/failed for {provider_email}. "
+        f"gmail_marked={gmail_marked}, calendar_marked={calendar_marked}"
     )
 
 
@@ -210,56 +207,51 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
     include_calendar: bool,
 ) -> None:
     """
-    Queue Microsoft initial sync jobs, with inline fallback for failed enqueues.
-
-    Fallback is intentionally awaited so OAuth/add-account does not "succeed"
-    with zero initial sync when queue transport is unavailable.
+    Mark Microsoft initial sync streams dirty for background worker execution.
     """
-    from lib.queue import queue_client
+    from lib.supabase_client import get_service_role_client
+    from api.services.syncs.sync_dispatcher import mark_stream_dirty
+    from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR, SYNC_KIND_EMAIL
 
-    email_enqueued = queue_client.enqueue_sync_for_connection(
+    service_supabase = get_service_role_client()
+
+    email_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-outlook",
-        extra={
+        "microsoft",
+        SYNC_KIND_EMAIL,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "max_results": 50,
             "days_back": 20,
         },
-        dedup_id=f"initial-sync-outlook-{connection_id}",
     )
 
-    calendar_enqueued = True
+    calendar_marked = True
     if include_calendar:
-        calendar_enqueued = queue_client.enqueue_sync_for_connection(
+        calendar_marked = mark_stream_dirty(
+            service_supabase,
             connection_id,
-            "sync-outlook-calendar",
-            extra={
+            "microsoft",
+            SYNC_KIND_CALENDAR,
+            priority=100,
+            metadata={
+                "source": "initial-sync",
                 "initial_sync": True,
                 "days_past": 7,
                 "days_future": 60,
             },
-            dedup_id=f"initial-sync-outlook-calendar-{connection_id}",
         )
 
-    if email_enqueued and calendar_enqueued:
-        logger.info(f"✅ [Microsoft] Initial sync jobs enqueued for {provider_email}")
+    if email_marked and calendar_marked:
+        logger.info(f"✅ [Microsoft] Initial sync scheduled for {provider_email}")
         return
 
     logger.warning(
-        f"⚠️ [Microsoft] Initial sync queue enqueue partial/failed for {provider_email}. "
-        f"email_enqueued={email_enqueued}, calendar_enqueued={calendar_enqueued}. Running inline fallback."
-    )
-    await asyncio.to_thread(
-        _run_inline_microsoft_initial_sync,
-        connection_id=connection_id,
-        user_id=user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_expires_at=token_expires_at,
-        metadata=metadata,
-        provider_email=provider_email,
-        run_email=not email_enqueued,
-        run_calendar=include_calendar and not calendar_enqueued,
+        f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {provider_email}. "
+        f"email_marked={email_marked}, calendar_marked={calendar_marked}"
     )
 
 

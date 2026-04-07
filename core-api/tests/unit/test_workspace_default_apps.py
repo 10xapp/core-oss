@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.services.workspaces.crud import create_workspace
 
-EXPECTED_DEFAULT_APPS = ["chat", "email", "calendar", "projects", "files"]
+EXPECTED_DEFAULT_APPS = ["chat", "email", "calendar", "projects", "files", "tasks"]
 
 
 def _make_mock_supabase(workspace_data: dict) -> MagicMock:
@@ -102,8 +102,8 @@ async def test_create_workspace_without_default_apps():
 
 def test_expected_default_apps_list():
     """Sanity check: the expected default apps match what the migration defines."""
-    assert len(EXPECTED_DEFAULT_APPS) == 5
-    assert EXPECTED_DEFAULT_APPS == ["chat", "email", "calendar", "projects", "files"]
+    assert len(EXPECTED_DEFAULT_APPS) == 6
+    assert EXPECTED_DEFAULT_APPS == ["chat", "email", "calendar", "projects", "files", "tasks"]
     # All expected apps must be valid
     from api.services.workspaces.apps import VALID_APP_TYPES
     for app in EXPECTED_DEFAULT_APPS:

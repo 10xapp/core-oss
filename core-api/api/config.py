@@ -117,6 +117,32 @@ class Settings(BaseSettings):
 
     # Webhook URLs (set in production)
     webhook_base_url: str = ""  # Set to your deployed API URL (e.g., https://your-api.vercel.app)
+    enable_webhook_routes: bool = True  # Disable on Vercel after ingress is cut over to Railway
+    google_pubsub_push_service_account_email: str = ""  # Expected Pub/Sub push OIDC service account email
+    google_pubsub_push_audience: str = ""  # Optional explicit Pub/Sub push audience override
+    google_calendar_webhook_secret: str = ""  # Shared secret used to sign Calendar channel tokens
+
+    @property
+    def normalized_webhook_base_url(self) -> str:
+        """Return WEBHOOK_BASE_URL without a trailing slash."""
+        return self.webhook_base_url.rstrip("/")
+
+    @property
+    def gmail_webhook_url(self) -> str:
+        """Return the public Gmail webhook URL."""
+        return f"{self.normalized_webhook_base_url}/api/webhooks/gmail"
+
+    @property
+    def calendar_webhook_url(self) -> str:
+        """Return the public Calendar webhook URL."""
+        return f"{self.normalized_webhook_base_url}/api/webhooks/calendar"
+
+    @property
+    def resolved_google_pubsub_push_audience(self) -> str:
+        """Return the expected audience for authenticated Pub/Sub pushes."""
+        if self.google_pubsub_push_audience:
+            return self.google_pubsub_push_audience
+        return self.gmail_webhook_url
     
     # Cron job authentication
     cron_secret: str = ""  # Secret for authenticating cron job requests

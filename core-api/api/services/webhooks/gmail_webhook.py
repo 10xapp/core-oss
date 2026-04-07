@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 
 from googleapiclient.errors import HttpError
 
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 from lib.supabase_client import get_service_role_client
 from lib.token_encryption import decrypt_ext_connection_tokens
 from api.services.google_auth import (
@@ -25,7 +26,6 @@ from api.services.email.google_api_helpers import (
     list_active_gmail_drafts_by_message_id,
 )
 from api.services.email.draft_cleanup import cleanup_inactive_draft_rows_for_connection
-from api.services.email.analyze_email_ai import analyze_email_with_ai
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,111 @@ def process_gmail_notification(
     return result
 
 
+def reconcile_gmail_connection(
+    connection_id: str,
+    *,
+    supabase=None,
+    gmail_service=None,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Reconcile a Gmail connection to Gmail's current history state.
+
+    This is the generic incremental path for cron/manual recovery. It differs
+    from webhook handling because it derives the newest historyId from Gmail
+    instead of reusing a webhook-delivered cursor.
+    """
+    from api.services.syncs.google_services import get_google_services_for_connection
+
+    supabase = supabase or get_service_role_client()
+
+    if gmail_service is None or user_id is None:
+        gmail_service, _, resolved_user_id = get_google_services_for_connection(
+            connection_id,
+            supabase,
+        )
+        user_id = user_id or resolved_user_id
+
+    if not gmail_service or not user_id:
+        return {"status": "error", "message": "Could not get Gmail service"}
+
+    subscription = supabase.table('push_subscriptions')\
+        .select(
+            'id, history_id, ext_connection_id, '
+            'ext_connections!push_subscriptions_ext_connection_id_fkey!inner(provider_email)'
+        )\
+        .eq('ext_connection_id', connection_id)\
+        .eq('provider', 'gmail')\
+        .eq('is_active', True)\
+        .limit(1)\
+        .execute()
+
+    if not subscription.data:
+        logger.info(
+            f"ℹ️ No active Gmail subscription found for connection {connection_id[:8]}..."
+        )
+        return {"status": "skipped", "message": "No active Gmail subscription"}
+
+    sub_data = subscription.data[0]
+    subscription_id = sub_data['id']
+    provider_email = (
+        (sub_data.get('ext_connections') or {}).get('provider_email')
+        if isinstance(sub_data.get('ext_connections'), dict)
+        else None
+    )
+    old_history_id = sub_data.get('history_id')
+
+    if not old_history_id:
+        logger.info(
+            f"ℹ️ No baseline Gmail historyId for connection {connection_id[:8]}..., "
+            "running fallback recovery"
+        )
+        return _fallback_sync_with_recovery(
+            gmail_service,
+            supabase,
+            user_id,
+            connection_id,
+            subscription_id,
+        )
+
+    current_history_id = get_current_gmail_history_id(gmail_service)
+    if not current_history_id:
+        logger.warning(
+            f"⚠️ Failed to fetch current Gmail historyId for connection {connection_id[:8]}..., "
+            "running fallback recovery"
+        )
+        return _fallback_sync_with_recovery(
+            gmail_service,
+            supabase,
+            user_id,
+            connection_id,
+            subscription_id,
+        )
+
+    logger.info(
+        f"📧 Reconciling Gmail history for connection {connection_id[:8]}... "
+        f"(old={old_history_id}, current={current_history_id})"
+    )
+
+    if old_history_id == current_history_id:
+        return {
+            "status": "ok",
+            "message": "No changes detected",
+            "email_address": provider_email,
+            "new_history_id": str(current_history_id),
+        }
+
+    return _sync_with_history_api(
+        gmail_service,
+        supabase,
+        user_id,
+        connection_id,
+        subscription_id,
+        old_history_id,
+        str(current_history_id),
+    )
+
+
 def _sync_with_history_api(
     gmail_service,
     supabase,
@@ -149,7 +254,7 @@ def _sync_with_history_api(
             userId='me',
             startHistoryId=old_history_id,
             historyTypes=['messageAdded']
-        ).execute()
+        ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
         # Extract new messages from history
         messages_to_fetch = []
@@ -246,7 +351,7 @@ def _fallback_sync_with_recovery(
             maxResults=FALLBACK_MAX_MESSAGES,
             q=f'after:{cutoff_str}',  # Time-bound query
             labelIds=['INBOX']
-        ).execute()
+        ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
         messages = messages_result.get('messages', [])
         logger.info(f"📧 Found {len(messages)} messages in last {FALLBACK_WINDOW_HOURS}h")
@@ -374,7 +479,7 @@ def _sync_messages_batch(
                         userId='me',
                         id=msg['id'],
                         format='full'
-                    ).execute()
+                    ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
                     fetched_messages.append(full_msg)
                 except HttpError as he:
                     if he.resp.status != 404:
@@ -385,10 +490,16 @@ def _sync_messages_batch(
         for err in errors[:5]:  # Log first 5 errors
             logger.warning(f"   {err}")
 
-    # Save fetched messages to database and analyze with AI
+    # Save fetched messages to database.
+    # NOTE: AI analysis is intentionally NOT done here. This code path runs
+    # during webhook processing (both inline fallback and via QStash workers)
+    # and must stay fast. During notification bursts (e.g. watch renewal),
+    # dozens of webhooks fire concurrently — adding an LLM call per message
+    # was causing server starvation and 500s on unrelated user requests.
+    # AI analysis is handled by the /api/cron/analyze-emails cron + the
+    # analyze-emails worker instead.
     synced_count = 0
-    analyzed_count = 0
-    
+
     for full_msg in fetched_messages:
         try:
             email_data = _parse_email_to_data(
@@ -416,36 +527,6 @@ def _sync_messages_batch(
                     email_data.get("snippet"),
                 )
 
-            # Analyze with AI if not already analyzed
-            # Check if this email needs AI analysis
-            if result.data and len(result.data) > 0:
-                email_record = result.data[0]
-                email_id = email_record.get('id')
-                
-                # Only analyze if not already analyzed
-                if not email_record.get('ai_analyzed'):
-                    try:
-                        logger.info(f"🤖 Analyzing email {email_id[:8]}... with AI")
-                        analysis = analyze_email_with_ai(
-                            subject=email_data.get("subject"),
-                            from_address=email_data.get("from"),
-                            body=email_data.get("body"),
-                            snippet=email_data.get("snippet")
-                        )
-                        
-                        # Update with AI analysis
-                        supabase.table('emails').update({
-                            'ai_analyzed': True,
-                            'ai_summary': analysis['summary'],
-                            'ai_important': analysis['important']
-                        }).eq('id', email_id).execute()
-                        
-                        analyzed_count += 1
-                        logger.info(f"   ✅ AI summary: {analysis['summary']}")
-                        
-                    except Exception as ai_err:
-                        logger.error(f"⚠️ Failed to analyze email {email_id[:8]}... with AI: {str(ai_err)}")
-
         except Exception as e:
             logger.error(f"❌ Error saving email {full_msg.get('id')}: {str(e)}")
 
@@ -462,7 +543,7 @@ def _sync_messages_batch(
     else:
         logger.warning("Skipping webhook draft reconciliation because active draft map is unavailable")
 
-    logger.info(f"✅ Batch sync complete: {synced_count}/{len(fetched_messages)} saved, {analyzed_count} analyzed")
+    logger.info(f"✅ Batch sync complete: {synced_count}/{len(fetched_messages)} saved")
     return synced_count
 
 

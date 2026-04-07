@@ -76,7 +76,7 @@ def test_create_event_send_updates_all_when_notify_true(monkeypatch):
         'notify_attendees': True,
     }
 
-    ev_id, meeting_link, err = _create_google_event('user-1', 'jwt', event_data, None)
+    ev_id, meeting_link, err, _tz = _create_google_event('user-1', 'jwt', event_data, None)
     assert err is None
     assert recorder['insert']['sendUpdates'] == 'all'
     # Ensure attendees are passed through
@@ -105,7 +105,7 @@ def test_update_event_send_updates_all_when_notify_true(monkeypatch):
         'notify_attendees': True,
     }
 
-    ok = _update_google_event(
+    ok, _tz = _update_google_event(
         user_id='user-1',
         user_jwt='jwt',
         external_id='ext-1',
