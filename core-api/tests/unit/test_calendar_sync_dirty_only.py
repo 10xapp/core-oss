@@ -79,7 +79,8 @@ async def test_calendar_sync_returns_accepted_when_streams_marked(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_calendar_sync_returns_503_when_no_streams_marked(monkeypatch):
+async def test_calendar_sync_returns_202_when_streams_already_scheduled(monkeypatch):
+    """When mark_stream_dirty returns False (already dirty/leased), still return 202."""
     from api.routers import calendar as calendar_router
     import lib.supabase_client as supabase_client_module
     from api.services.syncs import sync_dispatcher
@@ -93,7 +94,5 @@ async def test_calendar_sync_returns_503_when_no_streams_marked(monkeypatch):
     monkeypatch.setattr(supabase_client_module, "get_service_role_client", lambda: _FakeSupabase([]))
     monkeypatch.setattr(sync_dispatcher, "mark_stream_dirty", lambda *_args, **_kwargs: False)
 
-    with pytest.raises(HTTPException) as exc:
-        await calendar_router.sync_google_calendar_endpoint(user_jwt="jwt", user_id="user-1")
-
-    assert exc.value.status_code == 503
+    response = await calendar_router.sync_google_calendar_endpoint(user_jwt="jwt", user_id="user-1")
+    assert response.status_code == 202

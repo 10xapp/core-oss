@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 _PUBSUB_JWT_CACHE: Dict[str, tuple[dict, float]] = {}
 _PUBSUB_JWT_CACHE_LOCK = threading.Lock()
+_PUBSUB_JWT_CACHE_MAX_ENTRIES = 4_096
 _GMAIL_INGRESS_DEDUP_TTL_SECONDS = 120.0
 _GMAIL_INGRESS_DEDUP_MAX_ENTRIES = 20_000
 _GMAIL_INGRESS_DEDUP_CACHE: "OrderedDict[str, float]" = OrderedDict()
@@ -147,6 +148,9 @@ def _verify_google_pubsub_auth(authorization: Optional[str]) -> None:
             ]
             for token in expired_tokens:
                 _PUBSUB_JWT_CACHE.pop(token, None)
+            # LRU eviction if cache exceeds max size
+            while len(_PUBSUB_JWT_CACHE) > _PUBSUB_JWT_CACHE_MAX_ENTRIES:
+                _PUBSUB_JWT_CACHE.pop(next(iter(_PUBSUB_JWT_CACHE)))
 
     if claims.get("email_verified") is False:
         raise HTTPException(

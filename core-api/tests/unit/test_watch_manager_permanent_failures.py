@@ -223,11 +223,12 @@ def test_stop_gmail_watch_404_still_deactivates_db_row():
     query.update.assert_called_once()
 
 
-def test_stop_calendar_watch_missing_identifiers_does_not_deactivate_db_row():
+def test_stop_calendar_watch_missing_identifiers_deactivates_malformed_row():
     from api.services.syncs.watch_manager import stop_calendar_watch
 
     auth_supabase, query = _make_auth_supabase_mock(
         SimpleNamespace(data=[{"id": "sub-123", "channel_id": None, "resource_id": None}]),
+        SimpleNamespace(data=[]),  # result for the deactivation update call
     )
     calendar_service = MagicMock()
 
@@ -237,7 +238,8 @@ def test_stop_calendar_watch_missing_identifiers_does_not_deactivate_db_row():
 
     assert result["success"] is False
     assert result["provider"] == "calendar"
-    query.update.assert_not_called()
+    # Malformed rows are now deactivated to prevent permanent self-recovery failure
+    query.update.assert_called()
 
 
 def test_start_gmail_watch_aborts_renewal_when_stop_helper_fails():

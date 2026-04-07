@@ -1022,13 +1022,8 @@ async def sync_emails_endpoint(
                     streams_marked += 1
 
         if streams_marked <= 0:
-            logger.error(
-                f"❌ Failed to mark any email streams dirty for user {user_id[:8]}..."
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Email sync is temporarily unavailable. Please try again shortly.",
-            )
+            # streams_marked==0 with connections means already dirty/leased — still 202
+            logger.info(f"ℹ️ All email streams already scheduled for user {user_id[:8]}...")
 
         logger.info(f"✅ Marked {streams_marked} email streams dirty for user {user_id[:8]}...")
         return JSONResponse(

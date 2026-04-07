@@ -155,7 +155,7 @@ def reconcile_gmail_connection(
         user_id = user_id or resolved_user_id
 
     if not gmail_service or not user_id:
-        return {"status": "error", "message": "Could not get Gmail service"}
+        return {"status": "error", "message": "Could not get Gmail service", "error": "Could not get Gmail service"}
 
     subscription = supabase.table('push_subscriptions')\
         .select(
@@ -172,7 +172,7 @@ def reconcile_gmail_connection(
         logger.info(
             f"ℹ️ No active Gmail subscription found for connection {connection_id[:8]}..."
         )
-        return {"status": "skipped", "message": "No active Gmail subscription"}
+        return {"status": "skipped", "message": "No active Gmail subscription", "error": "No active Gmail subscription"}
 
     sub_data = subscription.data[0]
     subscription_id = sub_data['id']
@@ -303,13 +303,13 @@ def _sync_with_history_api(
             )
         elif e.resp.status == 401:
             logger.error("❌ Authentication error (401) - token may have been revoked")
-            return {"status": "error", "message": "Authentication failed", "code": 401}
+            return {"status": "error", "message": "Authentication failed", "error": "Authentication failed", "code": 401}
         else:
             logger.error(f"❌ History API failed with status {e.resp.status}: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": str(e), "error": str(e)}
     except Exception as e:
         logger.error(f"❌ Error processing history: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "error": str(e)}
 
 
 def _fallback_sync_with_recovery(
@@ -337,7 +337,7 @@ def _fallback_sync_with_recovery(
         current_history_id = get_current_gmail_history_id(gmail_service)
         if not current_history_id:
             logger.error("❌ Could not recover historyId from Gmail profile")
-            return {"status": "error", "message": "Failed to recover historyId"}
+            return {"status": "error", "message": "Failed to recover historyId", "error": "Failed to recover historyId"}
 
         logger.info(f"📧 Recovered current historyId: {current_history_id}")
 
@@ -390,10 +390,10 @@ def _fallback_sync_with_recovery(
 
     except HttpError as e:
         logger.error(f"❌ Fallback sync failed with HTTP error: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "error": str(e)}
     except Exception as e:
         logger.error(f"❌ Fallback sync failed: {str(e)}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "error": str(e)}
 
 
 def _sync_messages_batch(

@@ -463,10 +463,13 @@ async def sync_google_calendar_endpoint(
                 ):
                     streams_marked += 1
 
-        if streams_marked <= 0:
+        if streams_marked <= 0 and connections:
+            # streams_marked==0 with connections means already dirty/leased — still 202
+            logger.info(f"ℹ️ All {len(connections)} calendar streams already scheduled for user {user_id[:8]}...")
+        elif not connections:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Calendar sync is temporarily unavailable. Please try again shortly.",
+                detail="No active calendar connections found.",
             )
 
         logger.info(f"✅ Marked {streams_marked} calendar streams dirty for user {user_id[:8]}...")

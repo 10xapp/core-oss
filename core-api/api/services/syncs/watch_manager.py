@@ -452,12 +452,16 @@ def stop_calendar_watch(user_id: str, user_jwt: str, connection_id: Optional[str
         if not channel_id or not resource_id:
             logger.error(
                 f"❌ Active Calendar watch for user {user_id[:8]}... is missing channel/resource identifiers; "
-                "leaving DB row active"
+                "deactivating malformed watch row"
             )
+            auth_supabase.table('push_subscriptions')\
+                .update({'is_active': False})\
+                .eq('id', sub_data['id'])\
+                .execute()
             return {
                 'success': False,
                 'provider': 'calendar',
-                'error': 'Active Calendar watch is missing channel/resource identifiers'
+                'error': 'Active Calendar watch was missing channel/resource identifiers (now deactivated)'
             }
 
         try:
@@ -787,8 +791,12 @@ def start_calendar_watch_service_role(
             else:
                 logger.error(
                     f"❌ Active Calendar watch for connection {connection_id[:8]}... "
-                    "is missing channel/resource identifiers; skipping renewal to avoid untracked watches"
+                    "is missing channel/resource identifiers; deactivating malformed watch"
                 )
+                service_supabase.table('push_subscriptions')\
+                    .update({'is_active': False})\
+                    .eq('id', sub_data['id'])\
+                    .execute()
 
             if not old_watch_stopped:
                 return {

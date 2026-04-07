@@ -19,6 +19,14 @@ from lib.token_encryption import encrypt_token_fields
 from api.services.provider_factory import ProviderFactory
 from api.config import settings
 
+
+def _redact_email(email: str) -> str:
+    """Partially redact an email for safe logging: ja***@gmail.com"""
+    if "@" not in email:
+        return "***"
+    local, domain = email.rsplit("@", 1)
+    return f"{local[:2]}***@{domain}" if len(local) > 2 else f"{local[0]}***@{domain}"
+
 logger = logging.getLogger(__name__)
 
 # Supported email providers
@@ -67,9 +75,9 @@ def _run_inline_google_initial_sync(
                 days_back=20,
             )
             if not sync_result.get('success'):
-                logger.warning(f"⚠️ [Google] Inline initial Gmail sync failed for {provider_email}: {sync_result.get('error')}")
+                logger.warning(f"⚠️ [Google] Inline initial Gmail sync failed for {_redact_email(provider_email)}: {sync_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Google] Inline initial Gmail sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Google] Inline initial Gmail sync error for {_redact_email(provider_email)}: {exc}")
 
     if run_calendar:
         try:
@@ -82,9 +90,9 @@ def _run_inline_google_initial_sync(
                 days_future=60,
             )
             if cal_result.get('status') != 'success':
-                logger.warning(f"⚠️ [Google] Inline initial Calendar sync failed for {provider_email}: {cal_result.get('error')}")
+                logger.warning(f"⚠️ [Google] Inline initial Calendar sync failed for {_redact_email(provider_email)}: {cal_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Google] Inline initial Calendar sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Google] Inline initial Calendar sync error for {_redact_email(provider_email)}: {exc}")
 
 
 async def _enqueue_or_fallback_google_initial_sync(
@@ -132,13 +140,15 @@ async def _enqueue_or_fallback_google_initial_sync(
     )
 
     if gmail_marked and calendar_marked:
-        logger.info(f"✅ [Google] Initial sync scheduled for {provider_email}")
+        logger.info(f"✅ [Google] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    logger.warning(
-        f"⚠️ [Google] Initial sync dirty-mark partial/failed for {provider_email}. "
+    msg = (
+        f"⚠️ [Google] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
         f"gmail_marked={gmail_marked}, calendar_marked={calendar_marked}"
     )
+    logger.warning(msg)
+    raise RuntimeError(msg)
 
 
 def _run_inline_microsoft_initial_sync(
@@ -170,9 +180,9 @@ def _run_inline_microsoft_initial_sync(
                 days_back=20,
             )
             if not sync_result.get('success'):
-                logger.warning(f"⚠️ [Microsoft] Inline initial email sync failed for {provider_email}: {sync_result.get('error')}")
+                logger.warning(f"⚠️ [Microsoft] Inline initial email sync failed for {_redact_email(provider_email)}: {sync_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Microsoft] Inline initial email sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Microsoft] Inline initial email sync error for {_redact_email(provider_email)}: {exc}")
 
     if run_calendar:
         try:
@@ -190,9 +200,9 @@ def _run_inline_microsoft_initial_sync(
                 days_forward=60,
             )
             if not cal_result.get('success'):
-                logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync failed for {provider_email}: {cal_result.get('error')}")
+                logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync failed for {_redact_email(provider_email)}: {cal_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync error for {_redact_email(provider_email)}: {exc}")
 
 
 async def _enqueue_or_fallback_microsoft_initial_sync(
@@ -246,13 +256,15 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
         )
 
     if email_marked and calendar_marked:
-        logger.info(f"✅ [Microsoft] Initial sync scheduled for {provider_email}")
+        logger.info(f"✅ [Microsoft] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    logger.warning(
-        f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {provider_email}. "
+    msg = (
+        f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
         f"email_marked={email_marked}, calendar_marked={calendar_marked}"
     )
+    logger.warning(msg)
+    raise RuntimeError(msg)
 
 
 async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Optional[str]:
@@ -870,7 +882,7 @@ class AuthService:
         new_connection = result.data[0]
         connection_id = new_connection['id']
 
-        logger.info(f"✅ [{provider}] Added secondary email account {provider_email} for user {user_id}")
+        logger.info(f"✅ [{provider}] Added secondary email account {_redact_email(provider_email)} for user {user_id[:8]}...")
 
         # Set up subscriptions/watch and trigger initial sync for the new account.
         if provider == 'google':
@@ -922,7 +934,7 @@ class AuthService:
 
                 # Create webhook subscriptions for mail and calendar (async to allow validation)
                 try:
-                    logger.info(f"📡 [Microsoft] Setting up webhook subscriptions for {provider_email}...")
+                    logger.info(f"📡 [Microsoft] Setting up webhook subscriptions for {_redact_email(provider_email)}...")
 
                     # Mail subscription (async to allow webhook validation)
                     mail_sub_result = await create_microsoft_subscription(
@@ -1046,7 +1058,7 @@ class AuthService:
         if not delete_result.data:
             return False
 
-        logger.info(f"✅ Removed email account {provider_email} for user {user_id}")
+        logger.info(f"✅ Removed email account {_redact_email(provider_email)} for user {user_id[:8]}...")
         return True
 
     @staticmethod

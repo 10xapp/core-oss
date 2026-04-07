@@ -226,48 +226,49 @@ def process_one_claim(
         )
         return {"status": "error", "message": str(exc)}
 
-    if heartbeat_stop is not None and heartbeat_thread is not None:
-        stop_connection_sync_lease_heartbeat(heartbeat_stop, heartbeat_thread)
-
-    if result.get("status") == "error":
-        try:
-            quarantine_result = maybe_quarantine_failed_connection(
+    try:
+        if result.get("status") in ("error", "skipped"):
+            try:
+                quarantine_result = maybe_quarantine_failed_connection(
+                    service_supabase,
+                    connection_id=connection_id,
+                    sync_kind=sync_kind,
+                    worker_id=worker_id,
+                    provider=claim.get("provider"),
+                    error=result.get("message") or result.get("error") or "sync failed",
+                    retry_count=(state or {}).get("retry_count"),
+                )
+                if quarantine_result is not None:
+                    return quarantine_result
+            except Exception:
+                logger.exception(
+                    "[StreamWorker] failed to quarantine %s/%s after result error",
+                    connection_id[:8],
+                    sync_kind,
+                )
+            fail_connection_sync_lease(
                 service_supabase,
-                connection_id=connection_id,
-                sync_kind=sync_kind,
-                worker_id=worker_id,
-                provider=claim.get("provider"),
-                error=result.get("message", "sync failed"),
-                retry_count=(state or {}).get("retry_count"),
-            )
-            if quarantine_result is not None:
-                return quarantine_result
-        except Exception:
-            logger.exception(
-                "[StreamWorker] failed to quarantine %s/%s after result error",
-                connection_id[:8],
+                connection_id,
                 sync_kind,
+                worker_id,
+                str(result.get("message") or result.get("error") or "sync failed"),
+                retry_seconds=get_failure_retry_seconds((state or {}).get("retry_count")),
             )
-        fail_connection_sync_lease(
+            return result
+
+        result_cursor = worker_router._extract_result_cursor(result)
+        complete_connection_sync_lease(
             service_supabase,
             connection_id,
             sync_kind,
             worker_id,
-            str(result.get("message", "sync failed")),
-            retry_seconds=get_failure_retry_seconds((state or {}).get("retry_count")),
+            last_synced_cursor=result_cursor,
+            latest_seen_cursor=result_cursor,
         )
         return result
-
-    result_cursor = worker_router._extract_result_cursor(result)
-    complete_connection_sync_lease(
-        service_supabase,
-        connection_id,
-        sync_kind,
-        worker_id,
-        last_synced_cursor=result_cursor,
-        latest_seen_cursor=result_cursor,
-    )
-    return result
+    finally:
+        if heartbeat_stop is not None and heartbeat_thread is not None:
+            stop_connection_sync_lease_heartbeat(heartbeat_stop, heartbeat_thread)
 
 
 def run_once(
