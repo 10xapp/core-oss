@@ -259,10 +259,14 @@ def start_calendar_watch(
             'id': channel_id,
             'type': 'web_hook',
             'address': webhook_url,
-            'expiration': expiration_ms
+            'expiration': expiration_ms,
         }
-        
-        logger.info(f"🔔 Starting Calendar watch for user {user_id} with channel {channel_id}")
+        # Include verification token so we can authenticate incoming notifications
+        if not settings.google_webhook_token:
+            raise ValueError("GOOGLE_WEBHOOK_TOKEN is required for Calendar webhook watches")
+        request_body['token'] = settings.google_webhook_token
+
+        logger.info(f"Starting Calendar watch for user {user_id} with channel {channel_id}")
         
         # Start the watch
         watch_response = service.events().watch(
@@ -794,10 +798,12 @@ def start_calendar_watch_service_role(
             'id': channel_id,
             'type': 'web_hook',
             'address': webhook_url,
-            'expiration': expiration_ms
+            'expiration': expiration_ms,
         }
+        if settings.google_webhook_token:
+            request_body['token'] = settings.google_webhook_token
 
-        logger.info(f"🔔 Starting Calendar watch for user {user_id[:8]}...")
+        logger.info(f"Starting Calendar watch for user {user_id[:8]}...")
 
         # Start the watch
         watch_response = calendar_service.events().watch(

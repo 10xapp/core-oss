@@ -39,8 +39,12 @@ def setup_pubsub_push_subscription():
     subscription_name = f"{topic_name}-push-subscription"
     full_subscription = f"projects/{project_id}/subscriptions/{subscription_name}"
     
-    # Push endpoint
-    push_endpoint = f"{webhook_url}/api/webhooks/gmail"
+    # Push endpoint — include verification token
+    webhook_token = os.getenv("GOOGLE_WEBHOOK_TOKEN", "").strip()
+    if not webhook_token:
+        print("GOOGLE_WEBHOOK_TOKEN is required for Gmail push endpoint")
+        sys.exit(1)
+    push_endpoint = f"{webhook_url}/api/webhooks/gmail?token={webhook_token}"
     
     print("=" * 80)
     print("🔧 Setting up Google Cloud Pub/Sub Push Subscription")

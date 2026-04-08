@@ -163,7 +163,7 @@ export default function BuilderPreview() {
                   ref={handleIframeLoad}
                   src={previewUrl || "about:blank"}
                   title="App Preview"
-                  allow="geolocation; camera; microphone"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                   style={{
                     width: "100%",
                     height: "100%",

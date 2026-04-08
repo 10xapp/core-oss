@@ -3,7 +3,8 @@ Sandbox file browsing — list and read files from a running E2B sandbox.
 """
 import asyncio
 import logging
-import re
+import posixpath
+import shlex
 from typing import List, Dict, Any
 
 from e2b import Sandbox
@@ -12,6 +13,26 @@ from api.config import settings
 from lib.supabase_client import get_authenticated_async_client
 
 logger = logging.getLogger(__name__)
+
+# Allowed root for sandbox file operations
+_SANDBOX_ROOT = "/home/user"
+
+
+def _sanitize_sandbox_path(path: str) -> str:
+    """Sanitize a file path for use in sandbox shell commands.
+
+    - Resolves .. and . segments
+    - Ensures the resolved path stays under _SANDBOX_ROOT
+    - Shell-quotes the result to prevent argument injection
+    """
+    # Normalize and resolve relative segments (posixpath for Linux sandbox)
+    resolved = posixpath.normpath(path)
+
+    # Ensure it stays within the sandbox root
+    if not resolved.startswith(_SANDBOX_ROOT + "/") and resolved != _SANDBOX_ROOT:
+        raise ValueError(f"Path must be under {_SANDBOX_ROOT}")
+
+    return shlex.quote(resolved)
 
 
 def _get_e2b_api_key() -> str:
@@ -64,8 +85,7 @@ async def list_sandbox_files(agent_id: str, path: str, user_jwt: str) -> List[Di
     if agent.get("sandbox_status") not in ("running", "idle"):
         raise ValueError(f"Sandbox is not running (status: {agent.get('sandbox_status')})")
 
-    # Sanitize path
-    safe_path = re.sub(r'[;&|`$]', '', path)
+    safe_path = _sanitize_sandbox_path(path)
 
     def _run():
         sandbox = _connect_sandbox(agent["sandbox_id"])
@@ -92,7 +112,7 @@ async def read_sandbox_file(agent_id: str, path: str, user_jwt: str) -> str:
     if agent.get("sandbox_status") not in ("running", "idle"):
         raise ValueError(f"Sandbox is not running (status: {agent.get('sandbox_status')})")
 
-    safe_path = re.sub(r'[;&|`$]', '', path)
+    safe_path = _sanitize_sandbox_path(path)
 
     def _run():
         sandbox = _connect_sandbox(agent["sandbox_id"])
