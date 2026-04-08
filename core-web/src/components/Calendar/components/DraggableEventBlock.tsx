@@ -273,7 +273,7 @@ export default function DraggableEventBlock({
       )}
       style={{
         ...style,
-        backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
+        backgroundColor: isOutlined ? 'var(--color-bg-white)' : palette.bg,
         border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
         // @ts-expect-error CSS custom property for focus ring
         '--tw-ring-color': `${palette.accent}66`,

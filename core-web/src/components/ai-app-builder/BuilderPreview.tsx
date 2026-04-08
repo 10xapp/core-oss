@@ -155,7 +155,7 @@ export default function BuilderPreview() {
 
       {/* Content */}
       {activeTab === "preview" ? (
-        <div className="flex-1 min-h-0 bg-[#F8F8FA] flex flex-col">
+        <div className="flex-1 min-h-0 bg-bg-input flex flex-col">
           <div className="flex-1 min-h-0">
             {hasAppEntry ? (
               <PhoneFrame>

@@ -34,7 +34,7 @@ export default function AllDayEventsSection({
               }
               className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80 focus:outline-none focus:ring-2"
               style={{
-                backgroundColor: isOutlined ? '#FFFFFF' : palette.bg,
+                backgroundColor: isOutlined ? 'var(--color-bg-white)' : palette.bg,
                 color: palette.title,
                 border: isOutlined ? `1px solid ${palette.accent}40` : undefined,
                 textDecoration: isDeclined ? 'line-through' : undefined,

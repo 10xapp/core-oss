@@ -194,7 +194,7 @@ export default function AgentConfigPanel({ agent, onAgentUpdate, onAgentDelete }
   const model = (agent.config as { model?: string })?.model || "claude-opus-4-6";
 
   return (
-    <div className="w-[280px] shrink-0 flex flex-col border-l border-border-light bg-[#FAFAFA] overflow-y-auto">
+    <div className="w-[280px] shrink-0 flex flex-col border-l border-border-light bg-bg-panel overflow-y-auto">
       <div className="p-4 space-y-5">
         {/* Agent header */}
         <div>

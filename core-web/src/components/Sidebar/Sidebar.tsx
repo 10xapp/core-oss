@@ -783,7 +783,7 @@ export default function Sidebar() {
     "w-10 h-10 flex items-center justify-center rounded-lg transition-all relative outline-none focus:outline-none";
   const iconBtnActive = "bg-black/10 text-text-body";
   const iconBtnInactive =
-    "text-[#323232] hover:bg-black/5";
+    "text-text-icon hover:bg-black/5";
 
   return (
     <>
@@ -792,7 +792,7 @@ export default function Sidebar() {
         tabIndex={0}
         onKeyDown={handleSidebarKeyDown}
         onFocus={() => setActiveZone("main-sidebar")}
-        className="w-16 shrink-0 bg-[#E3E3E5] text-text-secondary h-full flex flex-col items-center pb-3 outline-none pt-3"
+        className="w-16 shrink-0 bg-bg-sidebar text-text-secondary h-full flex flex-col items-center pb-3 outline-none pt-3"
       >
         {/* Product & Workspace Selector */}
         <div className="relative mb-4">
@@ -876,7 +876,7 @@ export default function Sidebar() {
             });
 
             return hasUnreadsInOtherWorkspaces ? (
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-[1.5px] border-[#E3E3E5]" />
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-[1.5px] border-bg-sidebar" />
             ) : null;
           })()}
           <Dropdown
@@ -1079,7 +1079,7 @@ export default function Sidebar() {
                   <Icon icon={app.icon} size={20} active={isItemActive} />
                 </button>
                 {hasUnread && (
-                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-[#E3E3E5]" />
+                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-bg-sidebar" />
                 )}
               </div>
             );

@@ -21,7 +21,7 @@ function AgentChatMessage({ task, agentId, agentName }: AgentChatMessageProps) {
     <div className="space-y-3">
       {/* User message */}
       <div className="flex justify-end">
-        <div className="max-w-[75%] rounded-2xl rounded-br-md bg-[#F7F8FA] px-4 py-2.5">
+        <div className="max-w-[75%] rounded-2xl rounded-br-md bg-bg-input px-4 py-2.5">
           <p className="text-sm text-text-body whitespace-pre-wrap">{instruction}</p>
         </div>
       </div>

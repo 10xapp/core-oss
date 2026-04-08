@@ -84,13 +84,13 @@ const defaultMarkdownComponents: Components = {
     const isInline = !match && !codeString.includes('\n');
     if (isInline) {
       return (
-        <code className="bg-[#EAEAEA] px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
+        <code className="bg-border-light px-1.5 py-0.5 rounded text-sm font-mono text-text-body" {...props}>
           {children}
         </code>
       );
     }
     return (
-      <pre className="bg-[#1e1e1e] rounded-xl p-4 overflow-x-auto my-4">
+      <pre className="bg-bg-code rounded-xl p-4 overflow-x-auto my-4">
         <code className="text-sm font-mono text-gray-100">{codeString}</code>
       </pre>
     );
@@ -139,13 +139,13 @@ const compactMarkdownComponents: Components = {
     const isInline = !match && !codeString.includes('\n');
     if (isInline) {
       return (
-        <code className="bg-[#EAEAEA] px-1 py-0.5 rounded text-xs font-mono text-text-body" {...props}>
+        <code className="bg-border-light px-1 py-0.5 rounded text-xs font-mono text-text-body" {...props}>
           {children}
         </code>
       );
     }
     return (
-      <pre className="bg-[#1e1e1e] rounded-lg p-3 overflow-x-auto my-2">
+      <pre className="bg-bg-code rounded-lg p-3 overflow-x-auto my-2">
         <code className="text-xs font-mono text-gray-100">{codeString}</code>
       </pre>
     );

@@ -224,10 +224,10 @@ export default function LandingPage() {
             style={{ "--delay": "80ms", "--stagger": 8 } as React.CSSProperties}
             className="hidden md:block animate-enter"
           >
-            <div className="rounded-xl border border-black/8 shadow-xl shadow-black/6 overflow-hidden bg-[#E3E3E5] max-w-[560px] ml-auto">
+            <div className="rounded-xl border border-black/8 shadow-xl shadow-black/6 overflow-hidden bg-bg-sidebar max-w-[560px] ml-auto">
               <div className="aspect-16/10 flex">
                 {/* Light sidebar */}
-                <div className="w-9 bg-[#E3E3E5] flex flex-col items-center py-2 gap-px shrink-0">
+                <div className="w-9 bg-bg-sidebar flex flex-col items-center py-2 gap-px shrink-0">
                   <div className="w-5 h-5 rounded bg-black/10 flex items-center justify-center mb-1">
                     <div className="w-2.5 h-2.5 rounded-sm bg-black/60" />
                   </div>
@@ -249,7 +249,7 @@ export default function LandingPage() {
                 </div>
 
                 {/* Main content */}
-                <div className="flex-1 flex min-w-0 m-1 ml-0 rounded-lg overflow-hidden bg-[#FCFCFC]">
+                <div className="flex-1 flex min-w-0 m-1 ml-0 rounded-lg overflow-hidden bg-bg-surface">
                       <AnimatePresence mode="wait">
                         {/* ── Chat ── */}
                         {activeApp === 'chat' && (
@@ -264,7 +264,7 @@ export default function LandingPage() {
                             <div className="flex-1 flex flex-col bg-white">
                               <div className="flex-1 px-6 py-2 space-y-2 overflow-hidden flex flex-col justify-center">
                                 <div className="flex justify-end">
-                                  <div className="bg-[#F4F4F4] rounded-[10px] px-2.5 py-1.5 max-w-[70%]">
+                                  <div className="bg-bg-bubble rounded-[10px] px-2.5 py-1.5 max-w-[70%]">
                                     <p className="text-[9px] text-[#000]">What's on my schedule today?</p>
                                   </div>
                                 </div>
@@ -276,10 +276,10 @@ export default function LandingPage() {
                                       { time: "11:30 AM", title: "Design Review", color: "#34A853" },
                                       { time: "2:00 PM", title: "1:1 with Sarah", color: "#9333EA" },
                                     ].map((evt) => (
-                                      <div key={evt.title} className="flex items-center gap-1.5 bg-[#F4F3F1] rounded px-2 py-1">
+                                      <div key={evt.title} className="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-1">
                                         <div className="w-0.5 h-4 rounded-full shrink-0" style={{ backgroundColor: evt.color }} />
                                         <div>
-                                          <p className="text-[7px] text-[#00000054]">{evt.time}</p>
+                                          <p className="text-[7px] text-text-tertiary">{evt.time}</p>
                                           <p className="text-[8px] font-medium text-[#000]">{evt.title}</p>
                                         </div>
                                       </div>
@@ -287,13 +287,13 @@ export default function LandingPage() {
                                   </div>
                                 </div>
                                 <div className="flex justify-end">
-                                  <div className="bg-[#F4F4F4] rounded-[10px] px-2.5 py-1.5 max-w-[70%]">
+                                  <div className="bg-bg-bubble rounded-[10px] px-2.5 py-1.5 max-w-[70%]">
                                     <p className="text-[9px] text-[#000]">Draft a reply to Sarah's email</p>
                                   </div>
                                 </div>
                               </div>
                               <div className="px-6 pb-2 shrink-0">
-                                <div className="border border-[#E7E7E6] rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                                <div className="border border-border-gray rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
                                   <span className="text-[8px] text-text-tertiary flex-1">Message Core...</span>
                                   <div className="w-3.5 h-3.5 bg-black/8 rounded flex items-center justify-center">
                                     <svg className="w-2 h-2 text-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -313,7 +313,7 @@ export default function LandingPage() {
                             transition={{ duration: 0.15 }}
                             className="flex-1 flex"
                           >
-                            <div className="w-[80px] shrink-0 flex flex-col bg-[#F9F9F9] border-r border-black/[0.04]">
+                            <div className="w-[80px] shrink-0 flex flex-col bg-bg-panel border-r border-black/[0.04]">
                               <div className="h-7 flex items-center px-2 shrink-0">
                                 <h2 className="text-[9px] font-semibold">Messages</h2>
                               </div>
@@ -357,7 +357,7 @@ export default function LandingPage() {
                                 ))}
                               </div>
                               <div className="px-2 pb-1.5 shrink-0">
-                                <div className="border border-[#E7E7E6] rounded-lg px-2 py-1.5 flex items-center gap-1.5">
+                                <div className="border border-border-gray rounded-lg px-2 py-1.5 flex items-center gap-1.5">
                                   <span className="text-[8px] text-text-tertiary flex-1">Message # general...</span>
                                   <div className="w-3.5 h-3.5 bg-black/8 rounded flex items-center justify-center">
                                     <svg className="w-2 h-2 text-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -377,7 +377,7 @@ export default function LandingPage() {
                             transition={{ duration: 0.15 }}
                             className="flex-1 flex"
                           >
-                            <div className="w-[80px] shrink-0 flex flex-col bg-[#F9F9F9] border-r border-black/[0.04]">
+                            <div className="w-[80px] shrink-0 flex flex-col bg-bg-panel border-r border-black/[0.04]">
                               <div className="h-7 flex items-center px-2">
                                 <h2 className="text-[9px] font-semibold">Email</h2>
                               </div>
@@ -442,7 +442,7 @@ export default function LandingPage() {
                             transition={{ duration: 0.15 }}
                             className="flex-1 flex"
                           >
-                            <div className="w-[80px] shrink-0 flex flex-col bg-[#F9F9F9] border-r border-black/[0.04]">
+                            <div className="w-[80px] shrink-0 flex flex-col bg-bg-panel border-r border-black/[0.04]">
                               <div className="h-7 flex items-center px-2">
                                 <h2 className="text-[9px] font-semibold">Calendar</h2>
                               </div>
@@ -520,7 +520,7 @@ export default function LandingPage() {
                             transition={{ duration: 0.15 }}
                             className="flex-1 flex"
                           >
-                            <div className="w-[80px] shrink-0 flex flex-col bg-[#F9F9F9] border-r border-black/[0.04]">
+                            <div className="w-[80px] shrink-0 flex flex-col bg-bg-panel border-r border-black/[0.04]">
                               <div className="h-7 flex items-center px-2">
                                 <h2 className="text-[9px] font-semibold">Projects</h2>
                               </div>
@@ -558,7 +558,7 @@ export default function LandingPage() {
                                     { title: "Auth flow", labels: ["#2563EB"] },
                                   ]},
                                 ].map((col) => (
-                                  <div key={col.title} className="flex-1 min-w-0 flex flex-col bg-[#F9F9F9] rounded p-1">
+                                  <div key={col.title} className="flex-1 min-w-0 flex flex-col bg-bg-panel rounded p-1">
                                     <div className="flex items-center gap-1 mb-1">
                                       <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
                                       <span className="text-[6px] font-medium text-text-secondary truncate">{col.title}</span>

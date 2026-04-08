@@ -20,7 +20,7 @@ export default function OnboardingSidebarPreview({
     <div className="w-[340px] overflow-hidden select-none shadow-lg rounded-lg">
       <div className="flex">
         {/* Mini icon sidebar */}
-        <div className="w-14 bg-[#E3E3E5] rounded-l-lg flex flex-col items-center py-3 gap-2 shrink-0">
+        <div className="w-14 bg-bg-sidebar rounded-l-lg flex flex-col items-center py-3 gap-2 shrink-0">
           {/* Workspace icon */}
           <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center mb-1">
             <AnimatePresence mode="wait">
