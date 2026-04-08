@@ -1,0 +1,33 @@
+services:
+  api:
+    build: ./core-api
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${CORE_API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./core-api:/app
+      - /app/__pycache__
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/')"]
+      interval: 10s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    build: ./core-web
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${CORE_WEB_PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./core-web:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
