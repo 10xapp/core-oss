@@ -1,0 +1,73 @@
+version: 2
+
+updates:
+  # ── Frontend (npm) ────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/core-web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+      npm-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+      npm-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    open-pull-requests-limit: 5
+    reviewers:
+      - "hackertron"
+    labels:
+      - "dependencies"
+      - "npm"
+
+  # ── Backend (pip) ─────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/core-api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      pip-security:
+        applies-to: security-updates
+        patterns: ["*"]
+      pip-minor-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+      pip-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    open-pull-requests-limit: 5
+    reviewers:
+      - "hackertron"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # ── GitHub Actions ────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions-all:
+        applies-to: version-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
