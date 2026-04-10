@@ -44,8 +44,7 @@ class _FakeSupabase:
 
 
 @pytest.mark.asyncio
-async def test_email_sync_returns_202_when_streams_already_scheduled(monkeypatch):
-    """When mark_stream_dirty returns False (already dirty/leased), still return 202."""
+async def test_email_sync_returns_503_when_no_streams_marked(monkeypatch):
     from api.routers import email as email_router
     import lib.supabase_client as supabase_client_module
     from api.services.syncs import sync_dispatcher
@@ -62,8 +61,11 @@ async def test_email_sync_returns_202_when_streams_already_scheduled(monkeypatch
     monkeypatch.setattr(email_router, "decrypt_ext_connection_tokens", lambda c: c)
     monkeypatch.setattr(sync_dispatcher, "mark_stream_dirty", lambda *_args, **_kwargs: False)
 
-    response = await email_router.sync_emails_endpoint(user_jwt="jwt", user_id="user-1")
-    assert response.status_code == 202
+    with pytest.raises(HTTPException) as exc:
+        await email_router.sync_emails_endpoint(user_jwt="jwt", user_id="user-1")
+
+    assert exc.value.status_code == 503
+    assert "temporarily unavailable" in exc.value.detail.lower()
 
 
 @pytest.mark.asyncio

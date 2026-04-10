@@ -227,7 +227,7 @@ def process_one_claim(
         return {"status": "error", "message": str(exc)}
 
     try:
-        if result.get("status") in ("error", "skipped"):
+        if result.get("status") == "error":
             try:
                 quarantine_result = maybe_quarantine_failed_connection(
                     service_supabase,
@@ -235,7 +235,7 @@ def process_one_claim(
                     sync_kind=sync_kind,
                     worker_id=worker_id,
                     provider=claim.get("provider"),
-                    error=result.get("message") or result.get("error") or "sync failed",
+                    error=result.get("message", "sync failed"),
                     retry_count=(state or {}).get("retry_count"),
                 )
                 if quarantine_result is not None:
@@ -251,7 +251,7 @@ def process_one_claim(
                 connection_id,
                 sync_kind,
                 worker_id,
-                str(result.get("message") or result.get("error") or "sync failed"),
+                str(result.get("message", "sync failed")),
                 retry_seconds=get_failure_retry_seconds((state or {}).get("retry_count")),
             )
             return result

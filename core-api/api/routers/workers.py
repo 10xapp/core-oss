@@ -434,8 +434,8 @@ def _run_with_stream_lease(
 
     stop_connection_sync_lease_heartbeat(heartbeat_stop, heartbeat_thread)
 
-    if result.get("status") in ("error", "skipped"):
-        return _fail_with_backoff(str(result.get("message") or result.get("error") or "sync failed"))
+    if result.get("status") == "error":
+        return _fail_with_backoff(str(result.get("message", "sync failed")))
 
     result_cursor = _extract_result_cursor(result)
     complete_connection_sync_lease(

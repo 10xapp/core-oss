@@ -143,12 +143,10 @@ async def _enqueue_or_fallback_google_initial_sync(
         logger.info(f"✅ [Google] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    msg = (
+    logger.warning(
         f"⚠️ [Google] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
         f"gmail_marked={gmail_marked}, calendar_marked={calendar_marked}"
     )
-    logger.warning(msg)
-    raise RuntimeError(msg)
 
 
 def _run_inline_microsoft_initial_sync(
@@ -259,12 +257,10 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
         logger.info(f"✅ [Microsoft] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    msg = (
+    logger.warning(
         f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
         f"email_marked={email_marked}, calendar_marked={calendar_marked}"
     )
-    logger.warning(msg)
-    raise RuntimeError(msg)
 
 
 async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Optional[str]:
