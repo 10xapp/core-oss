@@ -15,6 +15,7 @@ from api.services.email.google_api_helpers import (
     list_active_gmail_drafts_by_message_id,
 )
 from api.services.email.draft_cleanup import cleanup_inactive_draft_rows_for_connection
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 # Note: normalize_labels no longer needed - normalized_labels is now a generated column
 # Note: AI analysis is now deferred to cron to avoid Groq rate limits
 
@@ -119,7 +120,7 @@ def sync_gmail(
             userId='me',
             maxResults=max_results,
             q=query
-        ).execute()
+        ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
         messages = messages_result.get('messages', [])
 
@@ -148,7 +149,7 @@ def sync_gmail(
                     userId='me',
                     id=msg['id'],
                     format='full'
-                ).execute()
+                ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
                 email_data = _parse_email_message(
                     full_msg,
@@ -423,7 +424,7 @@ def process_gmail_history(
                     userId='me',
                     id=msg['id'],
                     format='full'
-                ).execute()
+                ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
                 email_data = _parse_email_message(
                     full_msg,

@@ -22,7 +22,6 @@ from api.services.calendar import (
     delete_event,
     respond_to_event,
 )
-from api.services.syncs.sync_google_calendar import sync_google_calendar
 from api.dependencies import get_current_user_jwt, get_current_user_id
 from api.exceptions import handle_api_exception
 import logging
@@ -168,6 +167,7 @@ class CalendarSyncResponse(BaseModel):
     total_events: Optional[int] = None
     total_fetched: Optional[int] = None
     jobs_enqueued: Optional[int] = None
+    streams_marked: Optional[int] = None
 
     class Config:
         extra = "allow"
@@ -413,57 +413,70 @@ async def sync_google_calendar_endpoint(
     """
     Sync calendar events from connected providers.
 
-    When QStash is configured, enqueues per-connection sync jobs and returns
-    202 Accepted immediately. Falls back to inline processing otherwise.
+    Marks per-connection calendar streams dirty and returns 202 immediately.
+
+    Sync execution happens on the background worker plane.
 
     Requires: Authorization header with user's Supabase JWT
     """
     try:
-        from lib.queue import queue_client
         from lib.supabase_client import get_authenticated_supabase_client
+        from lib.supabase_client import get_service_role_client
         from fastapi.responses import JSONResponse
+        from api.services.syncs.sync_dispatcher import MANUAL_SYNC_PRIORITY, mark_stream_dirty
+        from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR
 
-        # --- Queue path ---
-        if queue_client.available:
-            auth_supabase = get_authenticated_supabase_client(user_jwt)
-            connections_result = auth_supabase.table('ext_connections')\
-                .select('id, provider')\
-                .eq('user_id', user_id)\
-                .eq('is_active', True)\
-                .in_('provider', ['google', 'microsoft'])\
-                .execute()
+        auth_supabase = get_authenticated_supabase_client(user_jwt)
+        service_supabase = get_service_role_client()
+        connections_result = auth_supabase.table('ext_connections')\
+            .select('id, provider')\
+            .eq('user_id', user_id)\
+            .eq('is_active', True)\
+            .in_('provider', ['google', 'microsoft'])\
+            .execute()
 
-            connections = connections_result.data or []
-            jobs_enqueued = 0
+        connections = connections_result.data or []
+        streams_marked = 0
 
-            for conn in connections:
-                cid = conn.get('id')
-                if not cid:
-                    continue
-                if conn.get('provider') == 'google':
-                    if queue_client.enqueue_sync_for_connection(cid, "sync-calendar"):
-                        jobs_enqueued += 1
-                elif conn.get('provider') == 'microsoft':
-                    if queue_client.enqueue_sync_for_connection(cid, "sync-outlook-calendar"):
-                        jobs_enqueued += 1
+        for conn in connections:
+            cid = conn.get('id')
+            if not cid:
+                continue
+            if conn.get('provider') == 'google':
+                if mark_stream_dirty(
+                    service_supabase,
+                    cid,
+                    "google",
+                    SYNC_KIND_CALENDAR,
+                    priority=MANUAL_SYNC_PRIORITY,
+                    metadata={"source": "manual-calendar-sync"},
+                ):
+                    streams_marked += 1
+            elif conn.get('provider') == 'microsoft':
+                if mark_stream_dirty(
+                    service_supabase,
+                    cid,
+                    "microsoft",
+                    SYNC_KIND_CALENDAR,
+                    priority=MANUAL_SYNC_PRIORITY,
+                    metadata={"source": "manual-calendar-sync"},
+                ):
+                    streams_marked += 1
 
-            if jobs_enqueued > 0:
-                logger.info(f"✅ Enqueued {jobs_enqueued} calendar sync jobs for user {user_id[:8]}...")
-                return JSONResponse(
-                    status_code=202,
-                    content={
-                        "status": "queued",
-                        "jobs_enqueued": jobs_enqueued,
-                    }
-                )
+        if streams_marked <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Calendar sync is temporarily unavailable. Please try again shortly.",
+            )
 
-            # All enqueues failed — fall through to inline processing
-            logger.warning(f"⚠️ QStash available but all publishes failed for user {user_id[:8]}..., falling back to inline")
-
-        # --- Fallback: inline processing ---
-        logger.info(f"🔄 Syncing Google Calendar for user {user_id}")
-        result = sync_google_calendar(user_id, user_jwt)
-        logger.info(f"✅ Sync completed for user {user_id}")
-        return result
+        logger.info(f"✅ Marked {streams_marked} calendar streams dirty for user {user_id[:8]}...")
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "accepted",
+                "jobs_enqueued": streams_marked,
+                "streams_marked": streams_marked,
+            }
+        )
     except Exception as e:
         handle_api_exception(e, "Failed to sync calendar", logger)

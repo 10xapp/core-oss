@@ -16,7 +16,7 @@ from lib.image_proxy import (
 
 
 SECRET = "test-secret-key-abc123"
-BASE_URL = "https://img.example.com"
+BASE_URL = "https://img.getcore.dev"
 FIXED_TIME = 1738800000.0  # A fixed timestamp, mid-hour
 
 

@@ -28,7 +28,6 @@ from api.services.email import (
     search_emails_with_providers,
     fetch_remote_email,
 )
-from api.services.syncs import sync_gmail, sync_outlook
 from api.dependencies import get_current_user_jwt, get_current_user_id
 from api.exceptions import handle_api_exception
 from lib.supabase_client import get_authenticated_supabase_client, get_authenticated_async_client
@@ -156,6 +155,7 @@ class EmailSyncResponse(BaseModel):
     updated_emails: Optional[int] = None
     ai_analyzed_count: Optional[int] = None
     jobs_enqueued: Optional[int] = None
+    streams_marked: Optional[int] = None
 
     class Config:
         extra = "allow"
@@ -964,21 +964,24 @@ async def sync_emails_endpoint(
     user_id: str = Depends(get_current_user_id)
 ):
     """
-    Sync emails from connected providers (Google and Microsoft) and run AI analysis.
+    Sync emails from connected providers (Google and Microsoft).
 
-    When QStash is configured, enqueues per-connection sync jobs and returns
-    202 Accepted immediately. Falls back to inline processing otherwise.
+    Marks per-connection email streams dirty and returns 202 immediately.
+
+    Sync execution happens on the background worker plane.
 
     Requires: Authorization header with user's Supabase JWT
     """
     logger.info(f"📧 Email sync requested for user {user_id[:8]}...")
 
-    from api.services.email.analyze_email_ai import analyze_unanalyzed_emails
-    from lib.queue import queue_client
+    from lib.supabase_client import get_service_role_client
     from fastapi.responses import JSONResponse
+    from api.services.syncs.sync_dispatcher import MANUAL_SYNC_PRIORITY, mark_stream_dirty
+    from api.services.syncs.sync_state_store import SYNC_KIND_EMAIL
 
     try:
         auth_supabase = get_authenticated_supabase_client(user_jwt)
+        service_supabase = get_service_role_client()
         connections_result = auth_supabase.table('ext_connections')\
             .select('id, provider, provider_email, access_token, refresh_token, token_expires_at, metadata, is_primary')\
             .eq('user_id', user_id)\
@@ -993,153 +996,51 @@ async def sync_emails_endpoint(
         if not google_connections and not microsoft_connections:
             raise ValueError("No active email connection found. Please sign in with Google or Microsoft first.")
 
-        # --- Queue path: enqueue per-connection jobs and return 202 ---
-        if queue_client.available:
-            jobs_enqueued = 0
+        streams_marked = 0
 
-            for conn in google_connections:
-                if queue_client.enqueue_sync_for_connection(conn['id'], "sync-gmail"):
-                    jobs_enqueued += 1
+        for conn in google_connections:
+            if mark_stream_dirty(
+                service_supabase,
+                conn['id'],
+                "google",
+                SYNC_KIND_EMAIL,
+                priority=MANUAL_SYNC_PRIORITY,
+                metadata={"source": "manual-email-sync"},
+            ):
+                streams_marked += 1
 
-            for conn in microsoft_connections:
-                if conn.get('id'):
-                    if queue_client.enqueue_sync_for_connection(conn['id'], "sync-outlook"):
-                        jobs_enqueued += 1
+        for conn in microsoft_connections:
+            if conn.get('id'):
+                if mark_stream_dirty(
+                    service_supabase,
+                    conn['id'],
+                    "microsoft",
+                    SYNC_KIND_EMAIL,
+                    priority=MANUAL_SYNC_PRIORITY,
+                    metadata={"source": "manual-email-sync"},
+                ):
+                    streams_marked += 1
 
-            if jobs_enqueued > 0:
-                # Enqueue email analysis only when sync jobs were accepted
-                queue_client.enqueue(
-                    "analyze-emails",
-                    {"user_id": user_id, "limit": 100},
-                    dedup_id=f"analyze-emails-{user_id}",
-                )
+        if streams_marked <= 0:
+            logger.error(
+                f"❌ Failed to mark any email streams dirty for user {user_id[:8]}..."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Email sync is temporarily unavailable. Please try again shortly.",
+            )
 
-                logger.info(f"✅ Enqueued {jobs_enqueued} sync jobs for user {user_id[:8]}...")
-                return JSONResponse(
-                    status_code=202,
-                    content={
-                        "status": "queued",
-                        "jobs_enqueued": jobs_enqueued,
-                        "new_emails": 0,
-                        "updated_emails": 0,
-                    }
-                )
-
-            # All enqueues failed — fall through to inline processing
-            logger.warning(f"⚠️ QStash available but all publishes failed for user {user_id[:8]}..., falling back to inline")
-
-        # --- Fallback path: inline processing (existing behavior) ---
-        logger.info(
-            f"🔄 Starting provider sync for user {user_id[:8]}... "
-            f"({len(google_connections)} Google, {len(microsoft_connections)} Microsoft)"
-        )
-
-        result: Dict[str, Any] = {
-            "new_emails": 0,
-            "updated_emails": 0,
-            "provider_results": {},
-            "providers_synced": []
-        }
-        sync_errors: List[Dict[str, str]] = []
-
-        # Google sync (existing behavior: sync primary/selected Google connection)
-        if google_connections:
-            try:
-                google_result = await asyncio.to_thread(sync_gmail, user_id, user_jwt)
-                result["provider_results"]["google"] = google_result
-                result["new_emails"] += int(google_result.get('new_emails') or 0)
-                result["updated_emails"] += int(google_result.get('updated_emails') or 0)
-                result["providers_synced"].append("google")
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"❌ Google sync failed for user {user_id[:8]}...: {error_msg}")
-                sync_errors.append({"provider": "google", "error": error_msg})
-                result["provider_results"]["google"] = {"success": False, "error": error_msg}
-
-        # Microsoft sync (all active Microsoft connections)
-        if microsoft_connections:
-            microsoft_result: Dict[str, Any] = {
+        logger.info(f"✅ Marked {streams_marked} email streams dirty for user {user_id[:8]}...")
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "accepted",
+                "jobs_enqueued": streams_marked,
+                "streams_marked": streams_marked,
                 "new_emails": 0,
                 "updated_emails": 0,
-                "accounts": []
             }
-            microsoft_had_success = False
-
-            for conn in microsoft_connections:
-                connection_id = conn.get('id')
-                connection_email = conn.get('provider_email') or 'unknown'
-
-                if not connection_id:
-                    error_msg = "Missing connection id"
-                    logger.error(f"❌ Microsoft sync skipped: {error_msg}")
-                    microsoft_result["accounts"].append({
-                        "connection_id": None,
-                        "email": connection_email,
-                        "success": False,
-                        "error": error_msg
-                    })
-                    sync_errors.append({"provider": "microsoft", "error": error_msg})
-                    continue
-
-                try:
-                    conn_result = await asyncio.to_thread(
-                        sync_outlook,
-                        user_id=user_id,
-                        connection_id=connection_id,
-                        connection_data=conn
-                    )
-                    new_count = int(conn_result.get('new_emails') or 0)
-                    updated_count = int(conn_result.get('updated_emails') or 0)
-
-                    microsoft_result["new_emails"] += new_count
-                    microsoft_result["updated_emails"] += updated_count
-                    microsoft_result["accounts"].append({
-                        "connection_id": connection_id,
-                        "email": connection_email,
-                        "success": True,
-                        "new_emails": new_count,
-                        "updated_emails": updated_count
-                    })
-                    microsoft_had_success = True
-                except Exception as e:
-                    error_msg = str(e)
-                    logger.error(f"❌ Microsoft sync failed for {connection_email}: {error_msg}")
-                    microsoft_result["accounts"].append({
-                        "connection_id": connection_id,
-                        "email": connection_email,
-                        "success": False,
-                        "error": error_msg
-                    })
-                    sync_errors.append({"provider": "microsoft", "error": error_msg})
-
-            result["provider_results"]["microsoft"] = microsoft_result
-            result["new_emails"] += microsoft_result["new_emails"]
-            result["updated_emails"] += microsoft_result["updated_emails"]
-            if microsoft_had_success:
-                result["providers_synced"].append("microsoft")
-
-        if not result["providers_synced"]:
-            raise ValueError("Failed to sync any connected provider")
-
-        logger.info(
-            f"✅ Sync completed for user {user_id[:8]}...: "
-            f"{result.get('new_emails', 0)} new, {result.get('updated_emails', 0)} updated"
         )
-
-        # After sync, analyze any unanalyzed emails for this user
-        logger.info("🤖 Analyzing unanalyzed emails...")
-        analyzed_count = await asyncio.to_thread(analyze_unanalyzed_emails, user_id=user_id, limit=100)
-
-        if analyzed_count > 0:
-            logger.info(f"✅ Analyzed {analyzed_count} previously unanalyzed emails")
-        else:
-            logger.debug("All emails already analyzed")
-        result['ai_analyzed_count'] = analyzed_count
-
-        if sync_errors:
-            result["errors"] = sync_errors
-
-        return result
     except Exception as e:
         handle_api_exception(e, "Failed to sync emails", logger)
 

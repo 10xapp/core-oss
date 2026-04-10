@@ -12,6 +12,7 @@ from api.services.email.google_api_helpers import get_gmail_service
 from api.services.calendar.google_api_helpers import get_google_calendar_service
 from api.config import settings
 from api.services.syncs.google_error_utils import is_permanent_google_api_error
+from lib.google_webhook_security import build_google_calendar_channel_token
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,34 @@ GMAIL_WATCH_EXPIRATION_DAYS = 7
 
 # Calendar watch subscriptions - we'll set to 7 days for consistency
 CALENDAR_WATCH_EXPIRATION_DAYS = 7
+
+
+def _is_safe_google_stop_error(error: HttpError) -> bool:
+    """Return True when a stop() error means the remote watch is already gone."""
+    status_code = getattr(getattr(error, "resp", None), "status", None)
+    try:
+        status_code = int(status_code) if status_code is not None else None
+    except (TypeError, ValueError):
+        status_code = None
+    return status_code in (404, 410)
+
+
+def _get_gmail_webhook_url() -> str:
+    """Resolve the Gmail webhook URL while tolerating lightweight test stubs."""
+    explicit = getattr(settings, "gmail_webhook_url", None)
+    if explicit:
+        return explicit
+    base_url = getattr(settings, "webhook_base_url", "").rstrip("/")
+    return f"{base_url}/api/webhooks/gmail"
+
+
+def _get_calendar_webhook_url() -> str:
+    """Resolve the Calendar webhook URL while tolerating lightweight test stubs."""
+    explicit = getattr(settings, "calendar_webhook_url", None)
+    if explicit:
+        return explicit
+    base_url = getattr(settings, "webhook_base_url", "").rstrip("/")
+    return f"{base_url}/api/webhooks/calendar"
 
 
 def start_gmail_watch(
@@ -47,10 +76,10 @@ def start_gmail_watch(
         raise ValueError("No active Google connection found for user")
     
     try:
-        # Check if there's an existing active watch
+        # Check if there's an existing active watch for this connection
         existing = auth_supabase.table('push_subscriptions')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('ext_connection_id', connection_id)\
             .eq('provider', 'gmail')\
             .eq('is_active', True)\
             .execute()
@@ -75,17 +104,16 @@ def start_gmail_watch(
             
             logger.info(f"🔄 Gmail watch exists but expiring soon for user {user_id[:8]}..., will renew")
             # Stop existing watch first
-            try:
-                stop_gmail_watch(user_id, user_jwt)
-            except Exception as e:
-                logger.warning(f"⚠️ Could not stop existing watch: {e}")
+            stop_result = stop_gmail_watch(user_id, user_jwt, connection_id=connection_id)
+            if not stop_result.get('success'):
+                raise ValueError(stop_result.get('error') or "Failed to stop existing Gmail watch")
         
         # Generate unique channel ID
         channel_id = str(uuid.uuid4())
         
         # Set webhook URL (use configured base URL from settings)
         if not webhook_url:
-            webhook_url = f"{settings.webhook_base_url}/api/webhooks/gmail"
+            webhook_url = _get_gmail_webhook_url()
         
         # Gmail watch requires Google Cloud Pub/Sub setup
         # Check if GOOGLE_PUBSUB_TOPIC is configured
@@ -127,13 +155,6 @@ def start_gmail_watch(
             expiration = datetime.now(timezone.utc) + timedelta(days=GMAIL_WATCH_EXPIRATION_DAYS)
         
         # Store watch subscription in database
-        # First deactivate any existing subscriptions for this user/provider
-        auth_supabase.table('push_subscriptions')\
-            .update({'is_active': False})\
-            .eq('user_id', user_id)\
-            .eq('provider', 'gmail')\
-            .execute()
-        
         subscription_data = {
             'user_id': user_id,
             'ext_connection_id': connection_id,
@@ -210,10 +231,10 @@ def start_calendar_watch(
         raise ValueError("No active Google connection found for user")
     
     try:
-        # Check if there's an existing active watch
+        # Check if there's an existing active watch for this connection
         existing = auth_supabase.table('push_subscriptions')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('ext_connection_id', connection_id)\
             .eq('provider', 'calendar')\
             .eq('is_active', True)\
             .execute()
@@ -239,17 +260,16 @@ def start_calendar_watch(
             
             logger.info(f"🔄 Calendar watch exists but expiring soon for user {user_id[:8]}..., will renew")
             # Stop existing watch first
-            try:
-                stop_calendar_watch(user_id, user_jwt)
-            except Exception as e:
-                logger.warning(f"⚠️ Could not stop existing watch: {e}")
+            stop_result = stop_calendar_watch(user_id, user_jwt, connection_id=connection_id)
+            if not stop_result.get('success'):
+                raise ValueError(stop_result.get('error') or "Failed to stop existing Calendar watch")
         
         # Generate unique channel ID
         channel_id = str(uuid.uuid4())
         
         # Set webhook URL (use configured base URL from settings)
         if not webhook_url:
-            webhook_url = f"{settings.webhook_base_url}/api/webhooks/calendar"
+            webhook_url = _get_calendar_webhook_url()
         
         # Calculate expiration (7 days from now)
         expiration = datetime.now(timezone.utc) + timedelta(days=CALENDAR_WATCH_EXPIRATION_DAYS)
@@ -261,6 +281,9 @@ def start_calendar_watch(
             'address': webhook_url,
             'expiration': expiration_ms
         }
+        channel_token = build_google_calendar_channel_token(connection_id, channel_id)
+        if channel_token:
+            request_body['token'] = channel_token
         
         logger.info(f"🔔 Starting Calendar watch for user {user_id} with channel {channel_id}")
         
@@ -293,13 +316,6 @@ def start_calendar_watch(
             sync_token = None
         
         # Store watch subscription in database
-        # First deactivate any existing subscriptions for this user/provider
-        auth_supabase.table('push_subscriptions')\
-            .update({'is_active': False})\
-            .eq('user_id', user_id)\
-            .eq('provider', 'calendar')\
-            .execute()
-        
         subscription_data = {
             'user_id': user_id,
             'ext_connection_id': connection_id,
@@ -341,7 +357,7 @@ def start_calendar_watch(
         raise ValueError(f"Calendar watch setup failed: {str(e)}")
 
 
-def stop_gmail_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
+def stop_gmail_watch(user_id: str, user_jwt: str, connection_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Stop watching a user's Gmail for changes
     
@@ -353,7 +369,8 @@ def stop_gmail_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         Dict with success status
     """
     auth_supabase = get_authenticated_supabase_client(user_jwt)
-    service, _ = get_gmail_service(user_id, user_jwt)
+    service, resolved_connection_id = get_gmail_service(user_id, user_jwt, account_id=connection_id)
+    connection_id = resolved_connection_id
     
     if not service:
         raise ValueError("No active Google connection found")
@@ -362,7 +379,7 @@ def stop_gmail_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         # Get active subscription
         subscription = auth_supabase.table('push_subscriptions')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('ext_connection_id', connection_id)\
             .eq('provider', 'gmail')\
             .eq('is_active', True)\
             .execute()
@@ -376,8 +393,12 @@ def stop_gmail_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
             service.users().stop(userId='me').execute()
             logger.info(f"🛑 Gmail watch stopped with Google for user {user_id}")
         except HttpError as e:
-            logger.warning(f"⚠️ Could not stop watch with Google: {e}")
-        
+            if _is_safe_google_stop_error(e):
+                logger.info(f"ℹ️ Gmail watch already expired for user {user_id[:8]}...: {e}")
+            else:
+                logger.error(f"❌ Failed to stop Gmail watch for user {user_id[:8]}..., leaving DB row active: {e}")
+                return {'success': False, 'provider': 'gmail', 'error': str(e)}
+
         # Mark as inactive in database
         auth_supabase.table('push_subscriptions')\
             .update({'is_active': False})\
@@ -392,7 +413,7 @@ def stop_gmail_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         raise ValueError(f"Failed to stop Gmail watch: {str(e)}")
 
 
-def stop_calendar_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
+def stop_calendar_watch(user_id: str, user_jwt: str, connection_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Stop watching a user's Google Calendar for changes
     
@@ -404,7 +425,8 @@ def stop_calendar_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         Dict with success status
     """
     auth_supabase = get_authenticated_supabase_client(user_jwt)
-    service, _ = get_google_calendar_service(user_id, user_jwt)
+    service, resolved_connection_id = get_google_calendar_service(user_id, user_jwt, account_id=connection_id)
+    connection_id = resolved_connection_id
     
     if not service:
         raise ValueError("No active Google connection found")
@@ -413,7 +435,7 @@ def stop_calendar_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         # Get active subscription
         subscription = auth_supabase.table('push_subscriptions')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('ext_connection_id', connection_id)\
             .eq('provider', 'calendar')\
             .eq('is_active', True)\
             .execute()
@@ -427,16 +449,34 @@ def stop_calendar_watch(user_id: str, user_jwt: str) -> Dict[str, Any]:
         resource_id = sub_data.get('resource_id')
         
         # Stop the watch with Google
-        if channel_id and resource_id:
-            try:
-                service.channels().stop(body={
-                    'id': channel_id,
-                    'resourceId': resource_id
-                }).execute()
-                logger.info(f"🛑 Calendar watch stopped with Google for user {user_id}")
-            except HttpError as e:
-                logger.warning(f"⚠️ Could not stop watch with Google: {e}")
-        
+        if not channel_id or not resource_id:
+            logger.error(
+                f"❌ Active Calendar watch for user {user_id[:8]}... is missing channel/resource identifiers; "
+                "deactivating malformed watch row"
+            )
+            auth_supabase.table('push_subscriptions')\
+                .update({'is_active': False})\
+                .eq('id', sub_data['id'])\
+                .execute()
+            return {
+                'success': False,
+                'provider': 'calendar',
+                'error': 'Active Calendar watch was missing channel/resource identifiers (now deactivated)'
+            }
+
+        try:
+            service.channels().stop(body={
+                'id': channel_id,
+                'resourceId': resource_id
+            }).execute()
+            logger.info(f"🛑 Calendar watch stopped with Google for user {user_id}")
+        except HttpError as e:
+            if _is_safe_google_stop_error(e):
+                logger.info(f"ℹ️ Calendar watch already expired for user {user_id[:8]}...: {e}")
+            else:
+                logger.error(f"❌ Failed to stop Calendar watch for user {user_id[:8]}..., leaving DB row active: {e}")
+                return {'success': False, 'provider': 'calendar', 'error': str(e)}
+
         # Mark as inactive in database
         auth_supabase.table('push_subscriptions')\
             .update({'is_active': False})\
@@ -547,58 +587,6 @@ def setup_watches_for_user(user_id: str, user_jwt: str) -> Dict[str, Any]:
 # These functions don't require user_jwt - they use service role credentials
 # =============================================================================
 
-def _check_and_renew_existing_gmail_watch(
-    watch_row: Dict[str, Any],
-    user_id: str,
-    connection_id: str,
-    gmail_service,
-    service_supabase,
-) -> Optional[Dict[str, Any]]:
-    """Check an existing watch. Return a healthy-result dict to short-circuit, or None to proceed with renewal."""
-    expiration = datetime.fromisoformat(watch_row['expiration'].replace('Z', '+00:00'))
-    hours_until_expiry = (expiration - datetime.now(timezone.utc)).total_seconds() / 3600
-
-    if hours_until_expiry > 24:
-        logger.info(f"✅ Gmail watch healthy for connection {connection_id[:8]}... ({hours_until_expiry:.1f}h remaining)")
-        return {
-            'success': True,
-            'provider': 'gmail',
-            'message': 'Watch already exists and is healthy',
-            'hours_remaining': hours_until_expiry,
-        }
-
-    logger.info(f"🔄 Gmail watch expiring soon for user {user_id[:8]}..., renewing")
-    # Stop the old watch with Gmail first to prevent duplicate notifications
-    old_watch_stopped = False
-    try:
-        gmail_service.users().stop(userId='me').execute()
-        logger.info(f"🛑 Stopped old Gmail watch before renewal for user {user_id[:8]}...")
-        old_watch_stopped = True
-    except HttpError as e:
-        status_code = getattr(getattr(e, "resp", None), "status", None)
-        if status_code in (404, 410):
-            logger.info(f"ℹ️ Old Gmail watch already expired for user {user_id[:8]}...: {e}")
-            old_watch_stopped = True
-        else:
-            logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
-    except Exception as e:
-        logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
-
-    if not old_watch_stopped:
-        return {
-            'success': False,
-            'provider': 'gmail',
-            'error': 'Failed to stop old watch; skipping renewal to avoid untracked watches',
-        }
-
-    # Deactivate old watch in DB
-    service_supabase.table('push_subscriptions')\
-        .update({'is_active': False})\
-        .eq('id', watch_row['id'])\
-        .execute()
-    return None
-
-
 def start_gmail_watch_service_role(
     user_id: str,
     gmail_service,
@@ -628,11 +616,47 @@ def start_gmail_watch_service_role(
             .execute()
 
         if existing.data:
-            healthy_result = _check_and_renew_existing_gmail_watch(
-                existing.data[0], user_id, connection_id, gmail_service, service_supabase
-            )
-            if healthy_result is not None:
-                return healthy_result
+            expiration = datetime.fromisoformat(existing.data[0]['expiration'].replace('Z', '+00:00'))
+            time_until_expiry = expiration - datetime.now(timezone.utc)
+            hours_until_expiry = time_until_expiry.total_seconds() / 3600
+
+            if hours_until_expiry > 24:
+                logger.info(f"✅ Gmail watch healthy for connection {connection_id[:8]}... ({hours_until_expiry:.1f}h remaining)")
+                return {
+                    'success': True,
+                    'provider': 'gmail',
+                    'message': 'Watch already exists and is healthy',
+                    'hours_remaining': hours_until_expiry
+                }
+
+            logger.info(f"🔄 Gmail watch expiring soon for user {user_id[:8]}..., renewing")
+            # Stop the old watch with Gmail first to prevent duplicate notifications
+            old_watch_stopped = False
+            try:
+                gmail_service.users().stop(userId='me').execute()
+                logger.info(f"🛑 Stopped old Gmail watch before renewal for user {user_id[:8]}...")
+                old_watch_stopped = True
+            except HttpError as e:
+                if _is_safe_google_stop_error(e):
+                    logger.info(f"ℹ️ Old Gmail watch already expired for user {user_id[:8]}...: {e}")
+                    old_watch_stopped = True
+                else:
+                    logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
+            except Exception as e:
+                logger.error(f"❌ Failed to stop old Gmail watch for user {user_id[:8]}..., skipping renewal: {e}")
+
+            if not old_watch_stopped:
+                return {
+                    'success': False,
+                    'provider': 'gmail',
+                    'error': 'Failed to stop old watch; skipping renewal to avoid untracked watches'
+                }
+
+            # Deactivate old watch in DB
+            service_supabase.table('push_subscriptions')\
+                .update({'is_active': False})\
+                .eq('id', existing.data[0]['id'])\
+                .execute()
 
         # Check Pub/Sub topic configuration
         if not settings.google_pubsub_topic:
@@ -640,7 +664,7 @@ def start_gmail_watch_service_role(
 
         # Generate unique channel ID
         channel_id = str(uuid.uuid4())
-        webhook_url = f"{settings.webhook_base_url}/api/webhooks/gmail"
+        webhook_url = _get_gmail_webhook_url()
 
         request_body = {
             'labelIds': ['INBOX'],
@@ -757,8 +781,7 @@ def start_calendar_watch_service_role(
                     }).execute()
                     old_watch_stopped = True
                 except HttpError as e:
-                    status_code = getattr(getattr(e, "resp", None), "status", None)
-                    if status_code in (404, 410):
+                    if _is_safe_google_stop_error(e):
                         logger.info(f"ℹ️ Old Calendar watch already expired for connection {connection_id[:8]}...: {e}")
                         old_watch_stopped = True
                     else:
@@ -766,8 +789,14 @@ def start_calendar_watch_service_role(
                 except Exception as e:
                     logger.error(f"❌ Failed to stop old Calendar watch for connection {connection_id[:8]}..., skipping renewal: {e}")
             else:
-                # No channel/resource to stop — treat as already gone
-                old_watch_stopped = True
+                logger.error(
+                    f"❌ Active Calendar watch for connection {connection_id[:8]}... "
+                    "is missing channel/resource identifiers; deactivating malformed watch"
+                )
+                service_supabase.table('push_subscriptions')\
+                    .update({'is_active': False})\
+                    .eq('id', sub_data['id'])\
+                    .execute()
 
             if not old_watch_stopped:
                 return {
@@ -784,7 +813,7 @@ def start_calendar_watch_service_role(
 
         # Generate unique channel ID
         channel_id = str(uuid.uuid4())
-        webhook_url = f"{settings.webhook_base_url}/api/webhooks/calendar"
+        webhook_url = _get_calendar_webhook_url()
 
         # Calculate expiration
         expiration = datetime.now(timezone.utc) + timedelta(days=CALENDAR_WATCH_EXPIRATION_DAYS)
@@ -796,6 +825,9 @@ def start_calendar_watch_service_role(
             'address': webhook_url,
             'expiration': expiration_ms
         }
+        channel_token = build_google_calendar_channel_token(connection_id, channel_id)
+        if channel_token:
+            request_body['token'] = channel_token
 
         logger.info(f"🔔 Starting Calendar watch for user {user_id[:8]}...")
 
@@ -891,4 +923,3 @@ def renew_watch_service_role(
         return start_calendar_watch_service_role(user_id, calendar_service, connection_id, service_supabase)
     else:
         return {'success': False, 'error': f'Unknown provider: {provider}'}
-
