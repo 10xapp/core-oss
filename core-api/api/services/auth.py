@@ -254,13 +254,13 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
         )
 
     if email_marked and calendar_marked:
-        logger.info(f"✅ [Microsoft] Initial sync scheduled for {_redact_email(provider_email)}")
+        # logger.info(f"✅ [Microsoft] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    logger.warning(
-        f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
-        f"email_marked={email_marked}, calendar_marked={calendar_marked}"
-    )
+    # logger.warning(
+    #     f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
+    #     f"email_marked={email_marked}, calendar_marked={calendar_marked}"
+    # )
 
 
 async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Optional[str]:
