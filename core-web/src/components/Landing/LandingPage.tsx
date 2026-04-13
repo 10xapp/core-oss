@@ -6,6 +6,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { API_BASE } from "../../lib/apiBase";
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+const ENABLE_EMAIL_AUTH = import.meta.env.VITE_ENABLE_EMAIL_AUTH === "true";
 
 /* ──────────────────── Styles ──────────────────── */
 
@@ -51,15 +52,28 @@ function MicrosoftIcon() {
 /* ──────────────────── Sign-in modal ──────────────────── */
 
 function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const { signInWithGoogle, signInWithMicrosoft } = useAuthStore();
+  const { signInWithGoogle, signInWithMicrosoft, signInWithEmail, signUpWithEmail } = useAuthStore();
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const showEmailAuth = ENABLE_EMAIL_AUTH;
 
   const hasTurnstile = !!TURNSTILE_SITE_KEY;
 
-  // Reset token when modal closes
+  // Reset state when modal closes
   useEffect(() => {
-    if (!isOpen) setTurnstileToken(null);
+    if (!isOpen) {
+      setTurnstileToken(null);
+      setEmail("");
+      setPassword("");
+      setEmailError("");
+      setEmailLoading(false);
+      setIsSignUp(false);
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -98,6 +112,7 @@ function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
   }, [hasTurnstile, turnstileToken, signInWithGoogle, signInWithMicrosoft]);
 
   const buttonsDisabled = hasTurnstile && (!turnstileToken || verifying);
+  const emailSubmitLabel = isSignUp ? "Sign up with Email" : "Sign in with Email";
 
   return createPortal(
     <AnimatePresence>
@@ -144,6 +159,66 @@ function SignInModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void
                 <MicrosoftIcon />
                 Continue with Microsoft
               </button>
+              {showEmailAuth && (
+                <>
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-black/10" /></div>
+                    <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-text-tertiary">or</span></div>
+                  </div>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setEmailError("");
+                      setEmailLoading(true);
+                      try {
+                        if (isSignUp) {
+                          await signUpWithEmail(email, password);
+                        } else {
+                          await signInWithEmail(email, password);
+                        }
+                      } catch (err: unknown) {
+                        setEmailError(err instanceof Error ? err.message : "Auth failed");
+                      } finally {
+                        setEmailLoading(false);
+                      }
+                    }}
+                    className="space-y-2"
+                  >
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full px-4 py-3 border border-black/20 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={6}
+                      className="w-full px-4 py-3 border border-black/20 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-black/20"
+                    />
+                    {emailError && <p className="text-red-500 text-xs">{emailError}</p>}
+                    <button
+                      type="submit"
+                      disabled={emailLoading}
+                      className="w-full px-4 py-3 bg-text-body text-white rounded-xl text-base font-medium hover:bg-black/80 transition-all disabled:opacity-40"
+                    >
+                      {emailLoading ? "..." : emailSubmitLabel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsSignUp(!isSignUp); setEmailError(""); }}
+                      className="w-full text-xs text-text-tertiary hover:text-text-body transition-colors"
+                    >
+                      {isSignUp ? "Already have an account? Sign in" : "No account? Sign up"}
+                    </button>
+                  </form>
+                </>
+              )}
             </div>
             {hasTurnstile && (
               <div className="mt-4 flex justify-center">
