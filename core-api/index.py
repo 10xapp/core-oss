@@ -45,7 +45,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from api.rate_limit import limiter
 
-from api.routers import auth, calendar, email, webhooks, cron, sync, documents, files, chat, chat_attachments, app_drawer, preferences, workspaces, invitations, messages, users, projects, notifications, init, agents, agent_dispatch, permissions, public, workers, builder
+from api.routers import auth, calendar, email, webhooks, cron, sync, documents, files, chat, chat_attachments, app_drawer, preferences, workspaces, invitations, messages, users, projects, notifications, init, agents, agent_dispatch, agent_memory, permissions, public, workers, builder
 
 # Create FastAPI app - Vercel will auto-detect this
 app = FastAPI(
@@ -179,6 +179,7 @@ app.include_router(notifications.router)
 app.include_router(permissions.router)
 app.include_router(agents.router)
 app.include_router(agent_dispatch.router)
+app.include_router(agent_memory.router)
 app.include_router(init.router)
 app.include_router(public.router)
 app.include_router(workers.router)

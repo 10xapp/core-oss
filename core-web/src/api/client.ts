@@ -2993,6 +2993,163 @@ export async function readSandboxFile(agentId: string, path: string): Promise<st
 }
 
 // ============================================================================
+// Agent Memory & Knowledge Base
+// ============================================================================
+
+export interface AgentMemory {
+  id: string;
+  agent_id: string;
+  workspace_id: string;
+  memory_type: 'episodic' | 'semantic' | 'procedural' | 'preference';
+  content: string;
+  summary: string | null;
+  relevance_score: number;
+  access_count: number;
+  last_accessed_at: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  tags: string[];
+  is_shared: boolean;
+  decay_factor: number;
+  created_at: string;
+  updated_at: string;
+  expired_at: string | null;
+}
+
+export interface MemorySearchResult {
+  id: string;
+  memory_type: string;
+  content: string;
+  summary: string | null;
+  tags: string[];
+  relevance_score: number;
+  similarity: number;
+  created_at: string;
+}
+
+export interface KnowledgeEntry {
+  id: string;
+  workspace_id: string;
+  category: string;
+  key: string;
+  value: string;
+  confidence: number;
+  source_agent_id: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KnowledgeSearchResult {
+  id: string;
+  category: string;
+  key: string;
+  value: string;
+  confidence: number;
+  similarity: number;
+  created_at: string;
+}
+
+// Memory endpoints
+export async function getAgentMemories(
+  agentId: string,
+  memoryType?: string,
+  limit?: number,
+): Promise<{ memories: AgentMemory[]; count: number }> {
+  const params = new URLSearchParams();
+  if (memoryType) params.set('memory_type', memoryType);
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return api(`/agents/${agentId}/memories${qs ? `?${qs}` : ''}`);
+}
+
+export async function storeAgentMemory(
+  agentId: string,
+  data: {
+    workspace_id: string;
+    memory_type: string;
+    content: string;
+    summary?: string;
+    source_type?: string;
+    source_id?: string;
+    tags?: string[];
+    is_shared?: boolean;
+    decay_factor?: number;
+  },
+): Promise<AgentMemory> {
+  return api(`/agents/${agentId}/memories`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function searchAgentMemories(
+  agentId: string,
+  data: { query: string; workspace_id: string; match_count?: number; similarity_threshold?: number },
+): Promise<{ results: MemorySearchResult[]; count: number }> {
+  return api(`/agents/${agentId}/memories/search`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAgentMemory(
+  memoryId: string,
+  data: { content?: string; summary?: string; tags?: string[]; is_shared?: boolean; relevance_score?: number },
+): Promise<AgentMemory> {
+  return api(`/memories/${memoryId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAgentMemory(memoryId: string): Promise<{ status: string }> {
+  return api(`/memories/${memoryId}`, { method: 'DELETE' });
+}
+
+// Knowledge base endpoints
+export async function getWorkspaceKnowledge(
+  workspaceId: string,
+  category?: string,
+  limit?: number,
+): Promise<{ entries: KnowledgeEntry[]; count: number }> {
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  if (limit) params.set('limit', String(limit));
+  const qs = params.toString();
+  return api(`/workspaces/${workspaceId}/knowledge${qs ? `?${qs}` : ''}`);
+}
+
+export async function addWorkspaceKnowledge(
+  workspaceId: string,
+  data: { category: string; key: string; value: string; source_agent_id?: string; confidence?: number },
+): Promise<KnowledgeEntry> {
+  return api(`/workspaces/${workspaceId}/knowledge`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function searchWorkspaceKnowledge(
+  workspaceId: string,
+  data: { query: string; match_count?: number; similarity_threshold?: number },
+): Promise<{ results: KnowledgeSearchResult[]; count: number }> {
+  return api(`/workspaces/${workspaceId}/knowledge/search`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function verifyKnowledgeEntry(knowledgeId: string): Promise<KnowledgeEntry> {
+  return api(`/knowledge/${knowledgeId}/verify`, { method: 'POST' });
+}
+
+export async function deleteKnowledgeEntry(knowledgeId: string): Promise<{ status: string }> {
+  return api(`/knowledge/${knowledgeId}`, { method: 'DELETE' });
+}
+
+// ============================================================================
 // AI App Builder
 // ============================================================================
 
