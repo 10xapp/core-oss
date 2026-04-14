@@ -2,9 +2,10 @@
 Agent memory service — CRUD and vector search for agent memories and workspace knowledge base.
 """
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 import logging
 
-from lib.supabase_client import get_authenticated_async_client, get_service_role_client
+from lib.supabase_client import get_authenticated_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ async def access_memory(memory_id: str, user_jwt: str) -> Dict[str, Any]:
             supabase.table("agent_memories")
             .update({
                 "access_count": new_count,
-                "last_accessed_at": "now()",
+                "last_accessed_at": datetime.now(timezone.utc).isoformat(),
             })
             .eq("id", memory_id)
             .execute()
@@ -317,7 +318,7 @@ async def verify_knowledge(
             supabase.table("agent_knowledge_base")
             .update({
                 "verified_by": verified_by,
-                "verified_at": "now()",
+                "verified_at": datetime.now(timezone.utc).isoformat(),
             })
             .eq("id", knowledge_id)
             .execute()

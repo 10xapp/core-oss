@@ -243,7 +243,7 @@ CREATE INDEX "idx_agent_memories_memory_type" ON "public"."agent_memories" USING
 
 CREATE INDEX "idx_agent_memories_tags" ON "public"."agent_memories" USING "gin" ("tags");
 
-CREATE INDEX "idx_agent_memories_embedding" ON "public"."agent_memories" USING "ivfflat" ("embedding" vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX "idx_agent_memories_embedding" ON "public"."agent_memories" USING "hnsw" ("embedding" vector_cosine_ops);
 
 CREATE INDEX "idx_agent_memories_created_at" ON "public"."agent_memories" USING "btree" ("created_at" DESC);
 
@@ -251,12 +251,14 @@ CREATE INDEX "idx_agent_memories_relevance_score" ON "public"."agent_memories" U
 
 CREATE INDEX "idx_agent_memories_is_shared" ON "public"."agent_memories" USING "btree" ("is_shared") WHERE ("is_shared" = true);
 
+CREATE INDEX "idx_agent_memories_decay_candidates" ON "public"."agent_memories" USING "btree" ("last_accessed_at") WHERE ("expired_at" IS NULL AND "relevance_score" > 0.01);
+
 -- agent_knowledge_base indexes
 CREATE INDEX "idx_agent_knowledge_base_workspace_id" ON "public"."agent_knowledge_base" USING "btree" ("workspace_id");
 
 CREATE INDEX "idx_agent_knowledge_base_category" ON "public"."agent_knowledge_base" USING "btree" ("category");
 
-CREATE INDEX "idx_agent_knowledge_base_embedding" ON "public"."agent_knowledge_base" USING "ivfflat" ("embedding" vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX "idx_agent_knowledge_base_embedding" ON "public"."agent_knowledge_base" USING "hnsw" ("embedding" vector_cosine_ops);
 
 -- ==========================================================
 -- ROW LEVEL SECURITY
@@ -326,11 +328,9 @@ GRANT ALL ON FUNCTION "public"."update_agent_knowledge_base_updated_at"() TO "an
 GRANT ALL ON FUNCTION "public"."update_agent_knowledge_base_updated_at"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_agent_knowledge_base_updated_at"() TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."search_agent_memories"("p_agent_id" "uuid", "p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "anon";
 GRANT ALL ON FUNCTION "public"."search_agent_memories"("p_agent_id" "uuid", "p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."search_agent_memories"("p_agent_id" "uuid", "p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "service_role";
 
-GRANT ALL ON FUNCTION "public"."search_knowledge_base"("p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "anon";
 GRANT ALL ON FUNCTION "public"."search_knowledge_base"("p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."search_knowledge_base"("p_workspace_id" "uuid", "p_embedding" vector(1536), "p_match_count" integer, "p_similarity_threshold" float) TO "service_role";
 

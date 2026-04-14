@@ -115,10 +115,15 @@ export const useAgentMemoryStore = create<AgentMemoryState>()(
       },
 
       addMemory: async (agentId, data) => {
-        const memory = await storeAgentMemory(agentId, data);
-        const { memories } = get();
-        set({ memories: [memory, ...memories] });
-        return memory;
+        try {
+          const memory = await storeAgentMemory(agentId, data);
+          const { memories } = get();
+          set({ memories: [memory, ...memories] });
+          return memory;
+        } catch (err) {
+          console.error('Failed to add memory:', err);
+          throw err;
+        }
       },
 
       searchMemories: async (agentId, query, workspaceId) => {
@@ -134,17 +139,29 @@ export const useAgentMemoryStore = create<AgentMemoryState>()(
       },
 
       editMemory: async (memoryId, data) => {
-        const updated = await updateAgentMemory(memoryId, data);
         const { memories } = get();
-        set({
-          memories: memories.map((m) => (m.id === memoryId ? { ...m, ...updated } : m)),
-        });
+        try {
+          const updated = await updateAgentMemory(memoryId, data);
+          set({
+            memories: memories.map((m) => (m.id === memoryId ? { ...m, ...updated } : m)),
+          });
+        } catch (err) {
+          console.error('Failed to edit memory:', err);
+          throw err;
+        }
       },
 
       removeMemory: async (memoryId) => {
-        await deleteAgentMemory(memoryId);
         const { memories } = get();
         set({ memories: memories.filter((m) => m.id !== memoryId) });
+        try {
+          await deleteAgentMemory(memoryId);
+        } catch (err) {
+          // Rollback on failure
+          set({ memories });
+          console.error('Failed to remove memory:', err);
+          throw err;
+        }
       },
 
       clearMemorySearch: () => set({ memorySearchResults: [] }),
@@ -174,10 +191,15 @@ export const useAgentMemoryStore = create<AgentMemoryState>()(
       },
 
       addKnowledge: async (workspaceId, data) => {
-        const entry = await addWorkspaceKnowledge(workspaceId, data);
-        const { knowledgeEntries } = get();
-        set({ knowledgeEntries: [entry, ...knowledgeEntries] });
-        return entry;
+        try {
+          const entry = await addWorkspaceKnowledge(workspaceId, data);
+          const { knowledgeEntries } = get();
+          set({ knowledgeEntries: [entry, ...knowledgeEntries] });
+          return entry;
+        } catch (err) {
+          console.error('Failed to add knowledge:', err);
+          throw err;
+        }
       },
 
       searchKnowledge: async (workspaceId, query) => {
@@ -193,19 +215,31 @@ export const useAgentMemoryStore = create<AgentMemoryState>()(
       },
 
       verifyKnowledge: async (knowledgeId) => {
-        const updated = await verifyKnowledgeEntry(knowledgeId);
         const { knowledgeEntries } = get();
-        set({
-          knowledgeEntries: knowledgeEntries.map((e) =>
-            e.id === knowledgeId ? { ...e, ...updated } : e,
-          ),
-        });
+        try {
+          const updated = await verifyKnowledgeEntry(knowledgeId);
+          set({
+            knowledgeEntries: knowledgeEntries.map((e) =>
+              e.id === knowledgeId ? { ...e, ...updated } : e,
+            ),
+          });
+        } catch (err) {
+          console.error('Failed to verify knowledge:', err);
+          throw err;
+        }
       },
 
       removeKnowledge: async (knowledgeId) => {
-        await deleteKnowledgeEntry(knowledgeId);
         const { knowledgeEntries } = get();
         set({ knowledgeEntries: knowledgeEntries.filter((e) => e.id !== knowledgeId) });
+        try {
+          await deleteKnowledgeEntry(knowledgeId);
+        } catch (err) {
+          // Rollback on failure
+          set({ knowledgeEntries });
+          console.error('Failed to remove knowledge:', err);
+          throw err;
+        }
       },
 
       clearKnowledgeSearch: () => set({ knowledgeSearchResults: [] }),

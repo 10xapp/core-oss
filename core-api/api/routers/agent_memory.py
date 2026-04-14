@@ -4,7 +4,7 @@ Handles CRUD and vector search for agent memories and workspace institutional kn
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import logging
 
 from api.dependencies import get_current_user_id, get_current_user_jwt
@@ -205,9 +205,11 @@ async def store_memory_endpoint(
             decay_factor=request.decay_factor,
         )
         return memory
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error storing memory: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/agents/{agent_id}/memories", response_model=MemoryListResponse)
@@ -221,9 +223,11 @@ async def list_memories(
     try:
         memories = await get_memories(agent_id, user_jwt, memory_type=memory_type, limit=limit)
         return {"memories": memories, "count": len(memories)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error listing memories: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/agents/{agent_id}/memories/search", response_model=MemorySearchResponse)
@@ -243,9 +247,11 @@ async def search_memories_endpoint(
             similarity_threshold=request.similarity_threshold,
         )
         return {"results": results, "count": len(results)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error searching memories: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.patch("/memories/{memory_id}", response_model=MemoryResponse)
@@ -263,9 +269,11 @@ async def update_memory_endpoint(
         return memory
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error updating memory: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/memories/{memory_id}", response_model=DeleteResponse)
@@ -277,9 +285,27 @@ async def delete_memory_endpoint(
     try:
         await delete_memory(memory_id, user_jwt)
         return {"status": "deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error deleting memory: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/memories/{memory_id}/access", response_model=MemoryResponse)
+async def access_memory_endpoint(
+    memory_id: str,
+    user_jwt: str = Depends(get_current_user_jwt),
+):
+    """Record an access to a memory (bumps access_count and last_accessed_at)."""
+    try:
+        memory = await access_memory(memory_id, user_jwt)
+        return memory
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error accessing memory: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # =============================================================================
@@ -305,9 +331,11 @@ async def add_knowledge_endpoint(
             confidence=request.confidence,
         )
         return entry
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error adding knowledge: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/workspaces/{workspace_id}/knowledge", response_model=KnowledgeListResponse)
@@ -321,9 +349,11 @@ async def list_knowledge(
     try:
         entries = await get_knowledge(workspace_id, user_jwt, category=category, limit=limit)
         return {"entries": entries, "count": len(entries)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error listing knowledge: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/workspaces/{workspace_id}/knowledge/search", response_model=KnowledgeSearchResponse)
@@ -342,9 +372,11 @@ async def search_knowledge_endpoint(
             similarity_threshold=request.similarity_threshold,
         )
         return {"results": results, "count": len(results)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error searching knowledge: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/knowledge/{knowledge_id}/verify", response_model=KnowledgeResponse)
@@ -357,9 +389,11 @@ async def verify_knowledge_endpoint(
     try:
         entry = await verify_knowledge(knowledge_id, user_id, user_jwt)
         return entry
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error verifying knowledge: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/knowledge/{knowledge_id}", response_model=DeleteResponse)
@@ -371,6 +405,8 @@ async def delete_knowledge_endpoint(
     try:
         await delete_knowledge(knowledge_id, user_jwt)
         return {"status": "deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error deleting knowledge: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
