@@ -25,8 +25,8 @@ def _sanitize_sandbox_path(path: str) -> str:
     - Ensures the resolved path stays under _SANDBOX_ROOT
     - Shell-quotes the result to prevent argument injection
     """
-    # Normalize and resolve relative segments (posixpath for Linux sandbox)
-    resolved = posixpath.normpath(path)
+    # Resolve symlinks and normalize path to prevent sandbox escapes
+    resolved = posixpath.realpath(path)
 
     # Ensure it stays within the sandbox root
     if not resolved.startswith(_SANDBOX_ROOT + "/") and resolved != _SANDBOX_ROOT:

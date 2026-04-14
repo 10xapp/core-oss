@@ -800,8 +800,9 @@ def start_calendar_watch_service_role(
             'address': webhook_url,
             'expiration': expiration_ms,
         }
-        if settings.google_webhook_token:
-            request_body['token'] = settings.google_webhook_token
+        if not settings.google_webhook_token:
+            raise ValueError("GOOGLE_WEBHOOK_TOKEN is required for Calendar webhook watches")
+        request_body['token'] = settings.google_webhook_token
 
         logger.info(f"Starting Calendar watch for user {user_id[:8]}...")
 

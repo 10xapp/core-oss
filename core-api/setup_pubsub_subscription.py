@@ -15,6 +15,7 @@ Usage:
 import os
 import subprocess
 import sys
+from urllib.parse import urlencode
 
 def setup_pubsub_push_subscription():
     """
@@ -44,14 +45,15 @@ def setup_pubsub_push_subscription():
     if not webhook_token:
         print("GOOGLE_WEBHOOK_TOKEN is required for Gmail push endpoint")
         sys.exit(1)
-    push_endpoint = f"{webhook_url}/api/webhooks/gmail?token={webhook_token}"
+    push_endpoint = f"{webhook_url}/api/webhooks/gmail?{urlencode({'token': webhook_token})}"
+    redacted_push_endpoint = f"{webhook_url}/api/webhooks/gmail?token=<redacted>"
     
     print("=" * 80)
     print("🔧 Setting up Google Cloud Pub/Sub Push Subscription")
     print("=" * 80)
     print(f"📢 Pub/Sub Topic: {pubsub_topic}")
     print(f"📬 Subscription Name: {subscription_name}")
-    print(f"🌐 Push Endpoint: {push_endpoint}")
+    print(f"🌐 Push Endpoint: {redacted_push_endpoint}")
     print(f"🔑 Project ID: {project_id}")
     print()
     
@@ -87,7 +89,12 @@ def setup_pubsub_push_subscription():
         '--message-retention-duration=7d',  # Keep messages for 7 days if undelivered
     ]
     
-    print(f"Running: {' '.join(create_cmd)}")
+    display_cmd = [
+        arg if not arg.startswith("--push-endpoint=")
+        else f"--push-endpoint={redacted_push_endpoint}"
+        for arg in create_cmd
+    ]
+    print(f"Running: {' '.join(display_cmd)}")
     print()
     
     result = subprocess.run(create_cmd, capture_output=True, text=True)
@@ -97,7 +104,7 @@ def setup_pubsub_push_subscription():
         print()
         print("📋 Next Steps:")
         print("   1. Your Gmail webhook should now receive notifications at:")
-        print(f"      {push_endpoint}")
+        print(f"      {redacted_push_endpoint}")
         print()
         print("   2. Test by sending yourself an email")
         print()
