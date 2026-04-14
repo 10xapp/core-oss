@@ -2,15 +2,17 @@
 Webhooks router - Receives push notifications from external services
 Thin layer that handles HTTP concerns and delegates to services.
 """
-from fastapi import APIRouter, Request, Header, Query, Response
+from fastapi import APIRouter, HTTPException, Request, Header, Query, Response
 from fastapi.responses import PlainTextResponse
 from typing import Optional
 import asyncio
+import hmac
 import logging
 import json
 import base64
 from datetime import datetime, timezone
 
+from api.config import settings
 from api.services.webhooks import (
     process_gmail_notification,
     process_calendar_notification
@@ -22,6 +24,22 @@ from api.schemas import HealthResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+
+
+def _verify_google_webhook_token(token: Optional[str]) -> bool:
+    """Verify the token query parameter matches our configured secret.
+
+    Google Pub/Sub sends a ?token= param on push URLs and Calendar
+    sends the token set during watch creation in X-Goog-Channel-Token.
+    We verify it matches GOOGLE_WEBHOOK_TOKEN to prevent forged requests.
+    """
+    expected = settings.google_webhook_token
+    if not expected:
+        logger.warning("GOOGLE_WEBHOOK_TOKEN not configured — rejecting Google webhook")
+        return False
+    if not token:
+        return False
+    return hmac.compare_digest(token, expected)
 
 
 # ============================================================================
@@ -42,10 +60,10 @@ class WebhookProcessResponse(BaseModel):
 # ============================================================================
 
 @router.post("/gmail", response_model=WebhookProcessResponse)
-async def gmail_webhook(request: Request):
+async def gmail_webhook(request: Request, token: Optional[str] = Query(None)):
     """
     Receive Gmail push notifications from Google Cloud Pub/Sub.
-    
+
     Gmail notifications come via Pub/Sub in this format:
     {
         "message": {
@@ -55,20 +73,27 @@ async def gmail_webhook(request: Request):
         },
         "subscription": "..."
     }
-    
+
     The decoded data contains:
     {
         "emailAddress": "user@example.com",
         "historyId": "12345"
     }
-    
+
+    The push URL must include ?token=<GOOGLE_WEBHOOK_TOKEN> for verification.
+
     Returns 200 immediately to acknowledge receipt (required by Pub/Sub).
     """
+    # Verify BEFORE the try/except that returns 200 on all errors
+    if not _verify_google_webhook_token(token):
+        logger.warning("Gmail webhook rejected: invalid or missing token")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     try:
         # Parse Pub/Sub message format
         body = await request.json()
-        
-        logger.info("📬 Gmail webhook received")
+
+        logger.info("Gmail webhook received")
         logger.debug(f"Body keys: {body.keys() if body else 'empty'}")
         
         # Validate Pub/Sub message format
@@ -149,24 +174,31 @@ async def calendar_webhook(
     x_goog_channel_id: Optional[str] = Header(None),
     x_goog_resource_id: Optional[str] = Header(None),
     x_goog_resource_state: Optional[str] = Header(None),
-    x_goog_message_number: Optional[str] = Header(None)
+    x_goog_message_number: Optional[str] = Header(None),
+    x_goog_channel_token: Optional[str] = Header(None),
 ):
     """
     Receive Google Calendar push notifications.
-    
+
     Google sends notifications when calendar events change.
     We use sync tokens to fetch only what changed.
-    
+
     Headers from Google:
     - X-Goog-Channel-ID: The UUID of the notification channel
     - X-Goog-Resource-ID: Opaque ID for the watched resource
     - X-Goog-Resource-State: "sync" (initial) or "exists" (change notification)
     - X-Goog-Message-Number: Sequential message number
-    
+    - X-Goog-Channel-Token: Verification token set during watch creation
+
     Returns 200 immediately to acknowledge receipt (required by Google).
     """
+    # Verify BEFORE the try/except that returns 200 on all errors
+    if not _verify_google_webhook_token(x_goog_channel_token):
+        logger.warning(f"Calendar webhook rejected: invalid or missing token (channel={x_goog_channel_id})")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     try:
-        logger.info(f"📅 Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
+        logger.info(f"Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
 
         # Try to enqueue via QStash for async processing
         try:

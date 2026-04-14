@@ -83,6 +83,7 @@ def test_start_calendar_watch_service_role_permanent_failure_logs_warning_not_er
 
     with patch("api.services.syncs.watch_manager.settings", SimpleNamespace(
         webhook_base_url="https://core-api.test",
+        google_webhook_token="test-token",
     )):
         with patch("api.services.syncs.watch_manager.logger") as logger_mock:
             result = start_calendar_watch_service_role(
@@ -96,6 +97,8 @@ def test_start_calendar_watch_service_role_permanent_failure_logs_warning_not_er
     assert result["provider"] == "calendar"
     assert logger_mock.warning.called
     logger_mock.error.assert_not_called()
+    watch_call_kwargs = calendar_service.events.return_value.watch.call_args.kwargs
+    assert watch_call_kwargs["body"]["token"] == "test-token"
 
 
 def test_start_gmail_watch_service_role_transient_failure_still_logs_error():
@@ -147,6 +150,7 @@ def test_start_calendar_watch_service_role_transient_failure_still_logs_error():
 
     with patch("api.services.syncs.watch_manager.settings", SimpleNamespace(
         webhook_base_url="https://core-api.test",
+        google_webhook_token="test-token",
     )):
         with patch("api.services.syncs.watch_manager.logger") as logger_mock:
             result = start_calendar_watch_service_role(
@@ -160,3 +164,5 @@ def test_start_calendar_watch_service_role_transient_failure_still_logs_error():
     assert result["provider"] == "calendar"
     assert any("Calendar API error" in str(call) for call in logger_mock.error.call_args_list)
     logger_mock.warning.assert_not_called()
+    watch_call_kwargs = calendar_service.events.return_value.watch.call_args.kwargs
+    assert watch_call_kwargs["body"]["token"] == "test-token"
