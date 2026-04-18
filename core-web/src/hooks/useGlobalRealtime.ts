@@ -837,6 +837,100 @@ export function useGlobalRealtime(enabled = true) {
       )
 
       // ================================================================
+      // project_boards INSERT/UPDATE/DELETE → invalidate boards list
+      // ================================================================
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'project_boards' },
+        (payload) => {
+          recordRealtimeEvent();
+          const board = payload.new as { workspace_app_id?: string };
+          if (board.workspace_app_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boards(board.workspace_app_id),
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'project_boards' },
+        (payload) => {
+          recordRealtimeEvent();
+          const board = payload.new as { id?: string; workspace_app_id?: string };
+          if (board.workspace_app_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boards(board.workspace_app_id),
+            });
+          }
+          if (board.id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.board(board.id),
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'project_boards' },
+        (payload) => {
+          recordRealtimeEvent();
+          const board = payload.old as { workspace_app_id?: string };
+          if (board.workspace_app_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boards(board.workspace_app_id),
+            });
+          }
+        }
+      )
+
+      // ================================================================
+      // project_issues INSERT/UPDATE/DELETE → invalidate board data
+      // ================================================================
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'project_issues' },
+        (payload) => {
+          recordRealtimeEvent();
+          const issue = payload.new as { board_id?: string; user_id?: string };
+          // Skip own mutations — optimistic updates already handle them
+          if (issue.user_id === currentUserIdRef.current) return;
+          if (issue.board_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boardData(issue.board_id),
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'project_issues' },
+        (payload) => {
+          recordRealtimeEvent();
+          const issue = payload.new as { board_id?: string; user_id?: string };
+          if (issue.user_id === currentUserIdRef.current) return;
+          if (issue.board_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boardData(issue.board_id),
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'project_issues' },
+        (payload) => {
+          recordRealtimeEvent();
+          const issue = payload.old as { board_id?: string };
+          if (issue.board_id) {
+            queryClientRef.current.invalidateQueries({
+              queryKey: projectKeys.boardData(issue.board_id),
+            });
+          }
+        }
+      )
+
+      // ================================================================
       // notifications INSERT → notification bell + toast
       // ================================================================
       .on(

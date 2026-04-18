@@ -5,6 +5,7 @@ import { useProjectsStore } from "../../stores/projectsStore";
 import { useProjectBoards, usePrefetchBoards } from "../../hooks/queries/useProjects";
 import { updateProjectBoard, deleteProjectBoard } from "../../api/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { projectKeys } from "../../hooks/queries/keys";
 import ProjectSidebar from "./components/ProjectSidebar";
 import KanbanBoard from "./components/KanbanBoard";
 import CreateProjectModal from "./components/CreateProjectModal";
@@ -107,15 +108,13 @@ export default function ProjectsView() {
   const handleSaveBoardSettings = useCallback(async (name: string, description: string) => {
     if (!activeProjectId) return;
     await updateProjectBoard(activeProjectId, { name, description });
-    // Invalidate boards query to refresh the list
-    queryClient.invalidateQueries({ queryKey: ["project-boards", workspaceAppId] });
+    queryClient.invalidateQueries({ queryKey: projectKeys.boards(workspaceAppId ?? '') });
   }, [activeProjectId, workspaceAppId, queryClient]);
 
   const handleDeleteBoard = useCallback(async () => {
     if (!activeProjectId || !workspaceId) return;
     await deleteProjectBoard(activeProjectId);
-    // Invalidate and navigate to first remaining board or empty state
-    queryClient.invalidateQueries({ queryKey: ["project-boards", workspaceAppId] });
+    queryClient.invalidateQueries({ queryKey: projectKeys.boards(workspaceAppId ?? '') });
     setActiveProject(null);
     navigate(`/workspace/${workspaceId}/projects`);
   }, [activeProjectId, workspaceAppId, workspaceId, queryClient, navigate, setActiveProject]);
