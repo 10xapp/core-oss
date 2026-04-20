@@ -13,6 +13,22 @@ CONFIG_PY = r'''
 import os
 
 
+def _safe_int_env(key: str, default: int) -> int:
+    """Parse an integer env var with fallback on bad input."""
+    try:
+        return int(os.environ.get(key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
+def _normalize_fail_mode(raw: str) -> str:
+    """Normalize TIRITH_FAIL_MODE to 'open' or 'closed'."""
+    val = raw.strip().lower()
+    if val == "closed":
+        return "closed"
+    return "open"
+
+
 class Config:
     AGENT_ID: str = os.environ["AGENT_ID"]
     WORKSPACE_ID: str = os.environ["WORKSPACE_ID"]
@@ -24,6 +40,15 @@ class Config:
     MODEL: str = os.environ.get("MODEL", "claude-opus-4-6")
     TASK_POLL_INTERVAL: float = float(os.environ.get("TASK_POLL_INTERVAL", "1.0"))
     IDLE_TIMEOUT_SECONDS: int = int(os.environ.get("IDLE_TIMEOUT", "900"))
+
+    # Sandbox execution
+    SANDBOX_CWD: str = os.environ.get("SANDBOX_CWD", "/home/user")
+
+    # Tirith pre-exec scanning
+    TIRITH_ENABLED: bool = os.environ.get("TIRITH_ENABLED", "").lower() in ("1", "true", "yes")
+    TIRITH_PATH: str = os.environ.get("TIRITH_PATH", "")
+    TIRITH_TIMEOUT: int = _safe_int_env("TIRITH_TIMEOUT", 10)
+    TIRITH_FAIL_MODE: str = _normalize_fail_mode(os.environ.get("TIRITH_FAIL_MODE", "open"))
 
 
 config = Config()
@@ -94,6 +119,150 @@ from typing import Dict, Any, List, Optional
 from config import config
 
 logger = logging.getLogger(__name__)
+
+_TIRITH_MAX_FINDINGS = 10
+_TIRITH_MAX_SUMMARY_LEN = 2000
+_tirith_warned_reasons: set = set()
+
+
+def _tirith_warn_once(reason: str, msg: str) -> None:
+    """Log a warning at most once per reason key."""
+    if reason not in _tirith_warned_reasons:
+        logger.warning(msg)
+        _tirith_warned_reasons.add(reason)
+
+
+def _resolve_tirith_bin() -> str | None:
+    """Find tirith binary. Returns executable path or None."""
+    import shutil
+
+    if config.TIRITH_PATH:
+        # Explicit path: try as-is (expand ~), then try shutil.which for PATH-resolved names
+        expanded = os.path.expanduser(config.TIRITH_PATH)
+        if os.path.isfile(expanded) and os.access(expanded, os.X_OK):
+            return expanded
+        found = shutil.which(config.TIRITH_PATH)
+        if found:
+            return found
+        return None
+
+    # Auto-detect: PATH first, then well-known default
+    found = shutil.which("tirith")
+    if found:
+        return found
+    default = "/usr/local/bin/tirith"
+    if os.path.isfile(default) and os.access(default, os.X_OK):
+        return default
+    return None
+
+
+def _parse_tirith_findings(stdout: str) -> list:
+    """Parse findings from tirith JSON stdout. Returns [] on any parse failure."""
+    try:
+        verdict = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        _tirith_warn_once("bad_json", "tirith stdout not valid JSON, using exit code only")
+        return []
+
+    if not isinstance(verdict, dict):
+        _tirith_warn_once("bad_json_shape", "tirith JSON was not an object, using exit code only")
+        return []
+
+    raw_findings = verdict.get("findings", [])
+    if not isinstance(raw_findings, list):
+        _tirith_warn_once("bad_findings_shape", "tirith JSON had non-list findings, using exit code only")
+        return []
+
+    findings = []
+    for f in raw_findings[:_TIRITH_MAX_FINDINGS]:
+        if not isinstance(f, dict):
+            continue
+        entry = {
+            "rule_id": f.get("rule_id", "unknown"),
+            "severity": f.get("severity", "UNKNOWN"),
+            "title": f.get("title", ""),
+            "description": f.get("description", ""),
+        }
+        agent_view = f.get("agent_view")
+        if isinstance(agent_view, str) and agent_view:
+            entry["agent_view"] = agent_view
+        findings.append(entry)
+    return findings
+
+
+def tirith_check_command(command: str) -> dict | None:
+    """Run tirith pre-exec scan. Returns None to allow, or error dict to block/warn.
+
+    Exit code is the source of truth:
+      0 = allow, 1 = block, 2 = warn.
+    JSON stdout enriches with findings but does NOT override the verdict.
+    If exit code says block but JSON is missing/malformed, we still block.
+    """
+    tirith_bin = _resolve_tirith_bin()
+    if tirith_bin is None:
+        if config.TIRITH_FAIL_MODE == "closed":
+            return {"status": "error", "error_type": "security_scan_failed",
+                    "message": "Security scanner not available and fail mode is closed."}
+        _tirith_warn_once("unavailable", "tirith binary not found, scanning disabled (fail-open)")
+        return None
+
+    try:
+        proc = subprocess.run(
+            [tirith_bin, "check", "--json", "--non-interactive",
+             "--shell", "posix", "--", command],
+            capture_output=True, text=True, timeout=config.TIRITH_TIMEOUT,
+            cwd=config.SANDBOX_CWD,
+        )
+    except subprocess.TimeoutExpired:
+        if config.TIRITH_FAIL_MODE == "closed":
+            return {"status": "error", "error_type": "security_scan_failed",
+                    "message": "Security scanner timed out."}
+        _tirith_warn_once("timeout", f"tirith check timed out after {config.TIRITH_TIMEOUT}s, fail-open")
+        return None
+    except OSError as exc:
+        if config.TIRITH_FAIL_MODE == "closed":
+            return {"status": "error", "error_type": "security_scan_failed",
+                    "message": f"Security scanner OS error: {exc}"}
+        _tirith_warn_once("oserror", f"tirith check OS error: {exc}, fail-open")
+        return None
+
+    # Exit code 0 = allow
+    if proc.returncode == 0:
+        return None
+
+    # Exit code 1 = block, 2 = warn — these are authoritative
+    if proc.returncode in (1, 2):
+        action = "block" if proc.returncode == 1 else "warn"
+        findings = _parse_tirith_findings(proc.stdout)
+
+        summary = "; ".join(
+            f"[{f['severity']}] {f['title']}" for f in findings
+        )[:_TIRITH_MAX_SUMMARY_LEN]
+
+        if summary:
+            msg = (f"Command {'blocked' if action == 'block' else 'flagged'} "
+                   f"by security scan: {summary}. "
+                   "Review the findings and reformulate the command.")
+        else:
+            msg = (f"Command {'blocked' if action == 'block' else 'flagged'} "
+                   "by security scan (details unavailable). "
+                   "Do not retry the same command.")
+
+        return {
+            "status": "error",
+            "error_type": "security_blocked",
+            "tirith_action": action,
+            "message": msg,
+            "findings": findings,
+        }
+
+    # Unknown exit code — not a security verdict
+    if config.TIRITH_FAIL_MODE == "closed":
+        return {"status": "error", "error_type": "security_scan_failed",
+                "message": f"Security scanner exited with unexpected code {proc.returncode}."}
+    _tirith_warn_once("unknown_exit", f"tirith unexpected exit code {proc.returncode}, fail-open")
+    return None
+
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -205,13 +374,17 @@ def execute_tool(name: str, args: Dict[str, Any], supabase=None, workspace_sync=
     """Execute a tool and return a result dict."""
     try:
         if name == "bash":
+            if config.TIRITH_ENABLED:
+                scan = tirith_check_command(args["command"])
+                if scan is not None:
+                    return scan
             result = subprocess.run(
                 args["command"],
                 shell=True,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                cwd="/home/user",
+                cwd=config.SANDBOX_CWD,
             )
             output = result.stdout + result.stderr
             return {
