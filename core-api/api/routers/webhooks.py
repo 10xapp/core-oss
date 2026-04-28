@@ -2,13 +2,14 @@
 Webhooks router - Receives push notifications from external services
 Thin layer that handles HTTP concerns and delegates to services.
 """
-from fastapi import APIRouter, Request, Header, Query, Response
+from fastapi import APIRouter, Request, Header, Query, Response, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from typing import Optional
 import asyncio
 import logging
 import json
 import base64
+import re
 from datetime import datetime, timezone
 
 from api.services.webhooks import (
@@ -16,6 +17,7 @@ from api.services.webhooks import (
     process_calendar_notification
 )
 from lib.token_encryption import decrypt_ext_connection_tokens
+from lib.webhook_auth import PubSubAuthError, verify_pubsub_push
 
 from pydantic import BaseModel
 from api.schemas import HealthResponse
@@ -65,12 +67,20 @@ async def gmail_webhook(request: Request):
     Returns 200 immediately to acknowledge receipt (required by Pub/Sub).
     """
     try:
+        try:
+            verify_pubsub_push(request)
+        except PubSubAuthError as auth_err:
+            # Don't 401 — Pub/Sub treats non-2xx as delivery failure and would
+            # retry the spoofed message with backoff. Drop silently and log.
+            logger.warning(f"⚠️ Gmail webhook: rejecting unauthenticated push ({auth_err})")
+            return {"status": "ok"}
+
         # Parse Pub/Sub message format
         body = await request.json()
-        
+
         logger.info("📬 Gmail webhook received")
         logger.debug(f"Body keys: {body.keys() if body else 'empty'}")
-        
+
         # Validate Pub/Sub message format
         if not body.get('message') or not body['message'].get('data'):
             logger.error(f"❌ Invalid Pub/Sub message format: {body}")
@@ -166,6 +176,12 @@ async def calendar_webhook(
     Returns 200 immediately to acknowledge receipt (required by Google).
     """
     try:
+        try:
+            verify_pubsub_push(request)
+        except PubSubAuthError as auth_err:
+            logger.warning(f"⚠️ Calendar webhook: rejecting unauthenticated push ({auth_err})")
+            return {"status": "ok"}
+
         logger.info(f"📅 Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
 
         # Try to enqueue via QStash for async processing
@@ -248,6 +264,11 @@ async def verify_calendar_webhook():
 
 # ============== Microsoft Graph Webhooks ==============
 
+# Microsoft Graph validation tokens are URL-safe and bounded; reject anything
+# outside that shape so the endpoint can't be used as a generic reflector.
+_MS_VALIDATION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{1,1024}$")
+
+
 @router.get("/microsoft", response_class=PlainTextResponse, responses={
     200: {"description": "Validation token echo", "content": {"text/plain": {"schema": {"type": "string"}}}},
 })
@@ -261,8 +282,10 @@ async def microsoft_webhook_validation(
     validationToken query parameter. We MUST return the token as plain text
     within 10 seconds or subscription creation fails.
     """
+    if not _MS_VALIDATION_TOKEN_RE.match(validationToken):
+        logger.warning("📡 [Microsoft] Rejected validation token (bad shape)")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid validation token")
     logger.info("📡 [Microsoft] Subscription validation request received")
-    logger.debug(f"📡 [Microsoft] Validation token: {validationToken[:20]}...")
     return PlainTextResponse(
         content=validationToken,
         status_code=200,
@@ -290,6 +313,9 @@ async def microsoft_webhook_notification(
         # Microsoft may send validation as POST with ?validationToken= query param
         validation_token = request.query_params.get("validationToken")
         if validation_token:
+            if not _MS_VALIDATION_TOKEN_RE.match(validation_token):
+                logger.warning("📡 [Microsoft] Rejected validation token (bad shape)")
+                return Response(status_code=400)
             logger.info("📡 [Microsoft] Subscription validation via POST request")
             return PlainTextResponse(
                 content=validation_token,
@@ -419,11 +445,10 @@ async def process_microsoft_notification(notification: dict) -> dict:
     from api.services.microsoft.microsoft_webhook_provider import MicrosoftWebhookProvider
 
     subscription_id = notification.get('subscriptionId')
-    client_state = notification.get('clientState')
     change_type = notification.get('changeType')
     resource = notification.get('resource', '')
 
-    logger.info(f"📬 [Microsoft] Notification: {change_type} on {resource[:50]}... (clientState: {'✓' if client_state else '✗'})")
+    logger.info(f"📬 [Microsoft] Notification received: {change_type} on {resource[:50]}...")
 
     if not subscription_id:
         logger.warning("⚠️ [Microsoft] No subscriptionId in notification")

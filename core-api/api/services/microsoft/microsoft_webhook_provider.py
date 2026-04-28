@@ -10,6 +10,7 @@ Key differences from Google:
 - Max expiration: 4230 minutes (~3 days) for mail, 10080 minutes (7 days) for calendar
 """
 from typing import Dict, Any
+import hmac
 import logging
 import secrets
 import httpx
@@ -370,11 +371,14 @@ class MicrosoftWebhookProvider:
         notification_client_state = request_data.get('clientState')
         stored_client_state = subscription_data.get('client_state')
 
-        if not stored_client_state:
-            logger.warning("[Microsoft] No client_state stored for subscription")
+        if not stored_client_state or not notification_client_state:
+            logger.warning("[Microsoft] Missing client_state on notification or subscription")
             return False
 
-        if notification_client_state != stored_client_state:
+        if not hmac.compare_digest(
+            str(notification_client_state).encode("utf-8"),
+            str(stored_client_state).encode("utf-8"),
+        ):
             logger.warning("[Microsoft] clientState mismatch - possible spoofed notification")
             return False
 
