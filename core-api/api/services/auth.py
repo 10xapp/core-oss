@@ -8,7 +8,10 @@ Supports multiple OAuth providers:
 from typing import Dict, Any, List, Optional
 from io import BytesIO
 from datetime import datetime
+from urllib.parse import urlparse
 import asyncio
+import ipaddress
+import socket
 import uuid
 import logging
 
@@ -263,6 +266,36 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
     )
 
 
+# Hosts we accept avatar downloads from. Anything else is rejected before
+# we issue an HTTP request, so the function can't be turned into an SSRF gadget.
+_AVATAR_HOST_SUFFIXES = (".googleusercontent.com",)
+_AVATAR_HOST_EXACT = ("graph.microsoft.com",)
+
+
+def _is_safe_avatar_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    if host not in _AVATAR_HOST_EXACT and not any(host.endswith(s) for s in _AVATAR_HOST_SUFFIXES):
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for family, _, _, _, sockaddr in infos:
+        addr = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+    return True
+
+
 async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Optional[str]:
     """Download an external avatar image and upload it to the R2 public bucket.
 
@@ -271,9 +304,13 @@ async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Opt
     if not avatar_url or not settings.r2_public_access_url:
         return None
 
+    if not _is_safe_avatar_url(avatar_url):
+        logger.warning(f"⚠️ Rejected avatar URL (host or scheme not allowed): {avatar_url[:80]}")
+        return None
+
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(avatar_url, timeout=10, follow_redirects=True)
+            resp = await client.get(avatar_url, timeout=10, follow_redirects=False)
         resp.raise_for_status()
 
         content_type = resp.headers.get('content-type', 'image/png').split(';')[0]
@@ -555,6 +592,30 @@ class AuthService:
                 raise
         elif not access_token:
             logger.warning(f"⚠️ [{provider}] No access_token or server_auth_code provided")
+
+        # Re-derive identity from the access_token. provider_user_id, name,
+        # avatar_url, and the email tied to the token must come from the
+        # provider, not the request body — otherwise an authenticated user
+        # can shadow-link the connection to someone else's account.
+        if access_token:
+            try:
+                provider_identity = get_user_info(access_token, provider=provider)
+            except ValueError:
+                logger.warning(f"⚠️ [{provider}] could not verify identity from access_token")
+                raise
+
+            provider_email = (provider_identity.get('email') or '').strip().lower()
+            if not provider_email or provider_email != (email or '').strip().lower():
+                logger.warning(f"⚠️ [{provider}] access_token email does not match authenticated user")
+                raise ValueError("access_token does not belong to the authenticated user")
+
+            provider_user_id = provider_identity.get('id')
+            if not provider_user_id:
+                raise ValueError("provider did not return a user id")
+
+            oauth_data['provider_user_id'] = provider_user_id
+            oauth_data['name'] = provider_identity.get('name')
+            oauth_data['avatar_url'] = provider_identity.get('picture')
 
         # Use authenticated Supabase client (respects RLS policies)
         auth_supabase = get_authenticated_supabase_client(user_jwt)
