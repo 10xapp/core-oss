@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     google_cloud_project_id: str = ""
     google_pubsub_topic: str = ""  # Full topic path: projects/PROJECT_ID/topics/TOPIC_NAME
 
+    # Service account email Google signs Pub/Sub push tokens with. Required to
+    # verify the OIDC bearer on /api/webhooks/gmail and /api/webhooks/calendar.
+    # Configured per-subscription in GCP ("Authentication" -> "Service account").
+    pubsub_push_service_account: str = ""
+    # Audience the OIDC token is signed for. Defaults to webhook_base_url + path.
+    # Override if your Pub/Sub subscription uses a different audience string.
+    pubsub_push_audience: str = ""
+
     # Microsoft OAuth settings (for Outlook/Microsoft 365 sync)
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
