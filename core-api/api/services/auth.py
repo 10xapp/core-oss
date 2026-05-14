@@ -19,6 +19,14 @@ from lib.token_encryption import encrypt_token_fields
 from api.services.provider_factory import ProviderFactory
 from api.config import settings
 
+
+def _redact_email(email: str) -> str:
+    """Partially redact an email for safe logging: ja***@gmail.com"""
+    if "@" not in email:
+        return "***"
+    local, domain = email.rsplit("@", 1)
+    return f"{local[:2]}***@{domain}" if len(local) > 2 else f"{local[0]}***@{domain}"
+
 logger = logging.getLogger(__name__)
 
 # Supported email providers
@@ -67,9 +75,9 @@ def _run_inline_google_initial_sync(
                 days_back=20,
             )
             if not sync_result.get('success'):
-                logger.warning(f"⚠️ [Google] Inline initial Gmail sync failed for {provider_email}: {sync_result.get('error')}")
+                logger.warning(f"⚠️ [Google] Inline initial Gmail sync failed for {_redact_email(provider_email)}: {sync_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Google] Inline initial Gmail sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Google] Inline initial Gmail sync error for {_redact_email(provider_email)}: {exc}")
 
     if run_calendar:
         try:
@@ -82,9 +90,9 @@ def _run_inline_google_initial_sync(
                 days_future=60,
             )
             if cal_result.get('status') != 'success':
-                logger.warning(f"⚠️ [Google] Inline initial Calendar sync failed for {provider_email}: {cal_result.get('error')}")
+                logger.warning(f"⚠️ [Google] Inline initial Calendar sync failed for {_redact_email(provider_email)}: {cal_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Google] Inline initial Calendar sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Google] Inline initial Calendar sync error for {_redact_email(provider_email)}: {exc}")
 
 
 async def _enqueue_or_fallback_google_initial_sync(
@@ -96,51 +104,48 @@ async def _enqueue_or_fallback_google_initial_sync(
     provider_email: str,
 ) -> None:
     """
-    Queue Google initial sync jobs, with inline fallback for failed enqueues.
-
-    Fallback is intentionally awaited so OAuth/add-account does not "succeed"
-    with zero initial sync when queue transport is unavailable.
+    Mark Google initial sync streams dirty for background worker execution.
     """
-    from lib.queue import queue_client
+    from lib.supabase_client import get_service_role_client
+    from api.services.syncs.sync_dispatcher import mark_stream_dirty
+    from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR, SYNC_KIND_EMAIL
 
-    gmail_enqueued = queue_client.enqueue_sync_for_connection(
+    service_supabase = get_service_role_client()
+
+    gmail_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-gmail",
-        extra={
+        "google",
+        SYNC_KIND_EMAIL,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "max_results": 50,
             "days_back": 20,
         },
-        dedup_id=f"initial-sync-gmail-{connection_id}",
     )
-    calendar_enqueued = queue_client.enqueue_sync_for_connection(
+    calendar_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-calendar",
-        extra={
+        "google",
+        SYNC_KIND_CALENDAR,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "days_past": 7,
             "days_future": 60,
         },
-        dedup_id=f"initial-sync-calendar-{connection_id}",
     )
 
-    if gmail_enqueued and calendar_enqueued:
-        logger.info(f"✅ [Google] Initial sync jobs enqueued for {provider_email}")
+    if gmail_marked and calendar_marked:
+        logger.info(f"✅ [Google] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
     logger.warning(
-        f"⚠️ [Google] Initial sync queue enqueue partial/failed for {provider_email}. "
-        f"gmail_enqueued={gmail_enqueued}, calendar_enqueued={calendar_enqueued}. Running inline fallback."
-    )
-    await asyncio.to_thread(
-        _run_inline_google_initial_sync,
-        connection_id=connection_id,
-        user_id=user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        provider_email=provider_email,
-        run_gmail=not gmail_enqueued,
-        run_calendar=not calendar_enqueued,
+        f"⚠️ [Google] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
+        f"gmail_marked={gmail_marked}, calendar_marked={calendar_marked}"
     )
 
 
@@ -173,9 +178,9 @@ def _run_inline_microsoft_initial_sync(
                 days_back=20,
             )
             if not sync_result.get('success'):
-                logger.warning(f"⚠️ [Microsoft] Inline initial email sync failed for {provider_email}: {sync_result.get('error')}")
+                logger.warning(f"⚠️ [Microsoft] Inline initial email sync failed for {_redact_email(provider_email)}: {sync_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Microsoft] Inline initial email sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Microsoft] Inline initial email sync error for {_redact_email(provider_email)}: {exc}")
 
     if run_calendar:
         try:
@@ -193,9 +198,9 @@ def _run_inline_microsoft_initial_sync(
                 days_forward=60,
             )
             if not cal_result.get('success'):
-                logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync failed for {provider_email}: {cal_result.get('error')}")
+                logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync failed for {_redact_email(provider_email)}: {cal_result.get('error')}")
         except Exception as exc:
-            logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync error for {provider_email}: {exc}")
+            logger.warning(f"⚠️ [Microsoft] Inline initial calendar sync error for {_redact_email(provider_email)}: {exc}")
 
 
 async def _enqueue_or_fallback_microsoft_initial_sync(
@@ -210,57 +215,52 @@ async def _enqueue_or_fallback_microsoft_initial_sync(
     include_calendar: bool,
 ) -> None:
     """
-    Queue Microsoft initial sync jobs, with inline fallback for failed enqueues.
-
-    Fallback is intentionally awaited so OAuth/add-account does not "succeed"
-    with zero initial sync when queue transport is unavailable.
+    Mark Microsoft initial sync streams dirty for background worker execution.
     """
-    from lib.queue import queue_client
+    from lib.supabase_client import get_service_role_client
+    from api.services.syncs.sync_dispatcher import mark_stream_dirty
+    from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR, SYNC_KIND_EMAIL
 
-    email_enqueued = queue_client.enqueue_sync_for_connection(
+    service_supabase = get_service_role_client()
+
+    email_marked = mark_stream_dirty(
+        service_supabase,
         connection_id,
-        "sync-outlook",
-        extra={
+        "microsoft",
+        SYNC_KIND_EMAIL,
+        priority=100,
+        metadata={
+            "source": "initial-sync",
             "initial_sync": True,
             "max_results": 50,
             "days_back": 20,
         },
-        dedup_id=f"initial-sync-outlook-{connection_id}",
     )
 
-    calendar_enqueued = True
+    calendar_marked = True
     if include_calendar:
-        calendar_enqueued = queue_client.enqueue_sync_for_connection(
+        calendar_marked = mark_stream_dirty(
+            service_supabase,
             connection_id,
-            "sync-outlook-calendar",
-            extra={
+            "microsoft",
+            SYNC_KIND_CALENDAR,
+            priority=100,
+            metadata={
+                "source": "initial-sync",
                 "initial_sync": True,
                 "days_past": 7,
                 "days_future": 60,
             },
-            dedup_id=f"initial-sync-outlook-calendar-{connection_id}",
         )
 
-    if email_enqueued and calendar_enqueued:
-        logger.info(f"✅ [Microsoft] Initial sync jobs enqueued for {provider_email}")
+    if email_marked and calendar_marked:
+        # logger.info(f"✅ [Microsoft] Initial sync scheduled for {_redact_email(provider_email)}")
         return
 
-    logger.warning(
-        f"⚠️ [Microsoft] Initial sync queue enqueue partial/failed for {provider_email}. "
-        f"email_enqueued={email_enqueued}, calendar_enqueued={calendar_enqueued}. Running inline fallback."
-    )
-    await asyncio.to_thread(
-        _run_inline_microsoft_initial_sync,
-        connection_id=connection_id,
-        user_id=user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_expires_at=token_expires_at,
-        metadata=metadata,
-        provider_email=provider_email,
-        run_email=not email_enqueued,
-        run_calendar=include_calendar and not calendar_enqueued,
-    )
+    # logger.warning(
+    #     f"⚠️ [Microsoft] Initial sync dirty-mark partial/failed for {_redact_email(provider_email)}. "
+    #     f"email_marked={email_marked}, calendar_marked={calendar_marked}"
+    # )
 
 
 async def _download_avatar_to_r2(avatar_url: Optional[str], user_id: str) -> Optional[str]:
@@ -878,7 +878,7 @@ class AuthService:
         new_connection = result.data[0]
         connection_id = new_connection['id']
 
-        logger.info(f"✅ [{provider}] Added secondary email account {provider_email} for user {user_id}")
+        logger.info(f"✅ [{provider}] Added secondary email account {_redact_email(provider_email)} for user {user_id[:8]}...")
 
         # Set up subscriptions/watch and trigger initial sync for the new account.
         if provider == 'google':
@@ -930,7 +930,7 @@ class AuthService:
 
                 # Create webhook subscriptions for mail and calendar (async to allow validation)
                 try:
-                    logger.info(f"📡 [Microsoft] Setting up webhook subscriptions for {provider_email}...")
+                    logger.info(f"📡 [Microsoft] Setting up webhook subscriptions for {_redact_email(provider_email)}...")
 
                     # Mail subscription (async to allow webhook validation)
                     mail_sub_result = await create_microsoft_subscription(
@@ -1054,7 +1054,7 @@ class AuthService:
         if not delete_result.data:
             return False
 
-        logger.info(f"✅ Removed email account {provider_email} for user {user_id}")
+        logger.info(f"✅ Removed email account {_redact_email(provider_email)} for user {user_id[:8]}...")
         return True
 
     @staticmethod

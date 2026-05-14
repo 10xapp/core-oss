@@ -18,6 +18,9 @@ PERMANENT_GOOGLE_API_ERROR_PATTERNS = (
 PERMANENT_GOOGLE_OAUTH_ERROR_PATTERNS = (
     "invalid_grant",
     "account has been deleted",
+    "refresh token is invalid",
+    "refresh token has expired or been revoked",
+    "token expired or revoked",
     "token has been expired or revoked",
     "token has been revoked",
     "user has been suspended",

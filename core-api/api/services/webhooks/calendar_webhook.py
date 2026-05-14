@@ -10,9 +10,10 @@ from typing import Dict, Any, Optional, List
 
 from googleapiclient.errors import HttpError
 
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 from lib.supabase_client import get_service_role_client
-from lib.batch_utils import batch_upsert
 from lib.token_encryption import decrypt_ext_connection_tokens
+from lib.batch_utils import batch_upsert
 from api.services.google_auth import (
     get_calendar_service_for_webhook,
     GoogleAuthError
@@ -153,7 +154,7 @@ def _incremental_sync(
             if page_token:
                 request_kwargs['pageToken'] = page_token
 
-            events_result = calendar_service.events().list(**request_kwargs).execute()
+            events_result = calendar_service.events().list(**request_kwargs).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
             page_events = events_result.get('items', [])
             all_events.extend(page_events)
@@ -305,7 +306,7 @@ def _full_sync(
             if page_token:
                 request_kwargs['pageToken'] = page_token
 
-            events_result = calendar_service.events().list(**request_kwargs).execute()
+            events_result = calendar_service.events().list(**request_kwargs).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
             page_events = events_result.get('items', [])
             all_events.extend(page_events)

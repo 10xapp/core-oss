@@ -5,6 +5,7 @@ from typing import Dict, Any
 from datetime import datetime, timezone, timedelta
 import logging
 from googleapiclient.errors import HttpError
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 
 from lib.batch_utils import batch_upsert, get_existing_external_ids
 from api.services.calendar.event_parser import parse_google_event_to_data
@@ -63,6 +64,7 @@ def sync_google_calendar_cron(
         time_max = (sync_started_at + timedelta(days=days_future)).isoformat()
 
         page_token = None
+        new_sync_token = None
         total_fetched = 0
         all_events_data = []
         all_external_ids = []
@@ -79,10 +81,11 @@ def sync_google_calendar_cron(
                 singleEvents=True,
                 orderBy='startTime',
                 pageToken=page_token
-            ).execute()
+            ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
             events = events_result.get('items', [])
             total_fetched += len(events)
+            new_sync_token = events_result.get('nextSyncToken') or new_sync_token
 
             logger.info(f"📦 Processing {len(events)} events from this page (total so far: {total_fetched})")
 
@@ -221,6 +224,18 @@ def sync_google_calendar_cron(
 
         # Update last synced timestamp only if no errors occurred
         if not batch_had_errors:
+            if new_sync_token:
+                service_supabase.table('push_subscriptions')\
+                    .update({
+                        'sync_token': new_sync_token,
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                    })\
+                    .eq('ext_connection_id', connection_id)\
+                    .eq('provider', 'calendar')\
+                    .eq('is_active', True)\
+                    .execute()
+                logger.info("🔄 Saved sync token after calendar worker sync")
+
             service_supabase.table('ext_connections')\
                 .update({'last_synced': datetime.now(timezone.utc).isoformat()})\
                 .eq('id', connection_id)\
@@ -247,7 +262,8 @@ def sync_google_calendar_cron(
             "updated_events": updated_count,
             "deleted_events": deleted_count,
             "total_events": synced_count + updated_count,
-            "total_fetched": total_fetched
+            "total_fetched": total_fetched,
+            "new_sync_token": new_sync_token,
         }
 
     except HttpError as e:

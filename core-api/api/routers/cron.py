@@ -5,29 +5,35 @@ These jobs ensure data stays in sync even if webhooks fail
 CRON JOB SCHEDULE:
 ==================
 
-1. /api/cron/incremental-sync (Every 15 minutes)
-   - Safety net for missed webhook notifications
-   - Runs incremental sync for all active users
-   - Catches any emails/events that webhooks missed
+1. /api/cron/incremental-sync (Disabled rollback stub)
+   - Broad sweep reconciliation has been replaced by per-stream scheduling
+   - Route remains available as a fast rollback hook during migration
+   - Should not be scheduled in Vercel cron
 
-2. /api/cron/renew-watches (Every 6 hours)
+2. /api/cron/renew-watches (Every hour)
    - CRITICAL: Prevents watch subscriptions from expiring
    - Gmail watches expire after 7 days
    - Calendar watches expire after configured time
    - Automatically renews watches before they expire
+   - Batch size configurable via RENEWAL_BATCH_SIZE (default 50)
 
-3. /api/cron/setup-missing-watches (Every hour)
-   - Ensures all users have active watches
-   - Sets up watches for new users
-   - Recovers from watch setup failures
+3. /api/cron/setup-missing-watches (Every 6 hours)
+   - Recreates watches for active connections that have no active subscription
+   - Catches cases where watches expired and renewal missed them
+   - Batch size limited to prevent thundering herd
 
-4. /api/cron/daily-verification (Daily at 2am)
+4. /api/cron/watch-health (Disabled / manual recovery)
+   - Queues targeted recovery work for suspiciously silent watches
+   - Avoids a broad fleet-wide sweep
+   - Capped oldest-first batch to limit blast radius
+
+5. /api/cron/daily-verification (Daily at 2am)
    - Full sync for data integrity verification
    - Catches any edge cases or long-term drift
    - Runs full sync for a subset of users each day
 """
 from fastapi import APIRouter, HTTPException, status, Header
-from typing import Optional
+from typing import Any, Dict, List, Optional
 import hashlib
 import hmac
 import logging
@@ -39,13 +45,11 @@ from api.config import settings
 from lib.supabase_client import get_service_role_client
 from lib.token_encryption import decrypt_ext_connection_tokens
 from api.services.syncs import (
-    sync_gmail_cron,
-    sync_google_calendar_cron,
     renew_watch_service_role,
     start_gmail_watch_service_role,
     start_calendar_watch_service_role
 )
-from api.services.syncs.google_error_utils import is_permanent_google_api_error
+from api.services.syncs.sync_dispatcher import mark_stream_dirty
 from api.services.syncs.google_services import get_google_services_for_connection
 from api.services.microsoft.microsoft_oauth_provider import (
     MicrosoftReauthRequiredError,
@@ -54,10 +58,13 @@ from api.services.microsoft.microsoft_oauth_provider import (
 from api.services.microsoft.microsoft_webhook_provider import renew_microsoft_subscription
 
 from pydantic import BaseModel
-from typing import List
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/cron", tags=["cron"])
+WATCH_PROVIDER_TO_SYNC_KIND = {
+    "gmail": "email",
+    "calendar": "calendar",
+}
 
 
 # ============================================================================
@@ -78,6 +85,7 @@ class IncrementalSyncResponse(BaseModel):
     jobs_failed: Optional[int] = None
     batch_mode: Optional[bool] = None
     connections_considered: Optional[int] = None
+    streams_marked: Optional[int] = None
 
 
 class RenewWatchesResponse(BaseModel):
@@ -98,6 +106,16 @@ class SetupWatchesResponse(BaseModel):
     total_users: Optional[int] = None
     setup_needed: Optional[int] = None
     errors: Optional[int] = None
+
+
+class WatchHealthResponse(BaseModel):
+    """Response for targeted watch-health recovery cron job."""
+    status: str
+    message: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    checked: int = 0
+    queued: int = 0
+    errors: int = 0
 
 
 class DailyVerificationResponse(BaseModel):
@@ -194,6 +212,156 @@ def get_cron_batch_size() -> int:
     return batch_size if 1 <= batch_size <= 250 else 100
 
 
+def get_reconciliation_stale_minutes() -> int:
+    """Return stale threshold for reconciliation in minutes.
+
+    Streams synced more recently than this are skipped.
+    Default 45 min.  Tunable via RECONCILIATION_STALE_MINUTES.
+    """
+    value = os.getenv("RECONCILIATION_STALE_MINUTES", "45").strip()
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return 45
+    return max(5, min(minutes, 1440))
+
+
+def get_renewal_batch_size() -> int:
+    """Return watch-renewal batch size per cron run.
+
+    Default 50.  Tunable via RENEWAL_BATCH_SIZE.
+    """
+    value = os.getenv("RENEWAL_BATCH_SIZE", "50").strip()
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        return 50
+    return max(1, min(size, 200))
+
+
+def get_watch_health_batch_size() -> int:
+    """Return the max number of watch-health recovery marks per run."""
+    value = os.getenv("WATCH_HEALTH_BATCH_SIZE", "25").strip()
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        return 25
+    return max(1, min(size, 100))
+
+
+def get_watch_health_stale_hours() -> int:
+    """Return the stale-notification threshold for active watches."""
+    value = os.getenv("WATCH_HEALTH_STALE_HOURS", "24").strip()
+    try:
+        hours = int(value)
+    except (TypeError, ValueError):
+        return 24
+    return max(1, min(hours, 7 * 24))
+
+
+def get_watch_health_initial_grace_hours() -> int:
+    """Return how long a never-notified watch gets before recovery."""
+    value = os.getenv("WATCH_HEALTH_INITIAL_GRACE_HOURS", "12").strip()
+    try:
+        hours = int(value)
+    except (TypeError, ValueError):
+        return 12
+    return max(1, min(hours, 7 * 24))
+
+
+def get_watch_health_priority() -> int:
+    """Return the priority used for watch-health dirty marks."""
+    value = os.getenv("WATCH_HEALTH_PRIORITY", "25").strip()
+    try:
+        priority = int(value)
+    except (TypeError, ValueError):
+        return 25
+    return max(0, min(priority, 99))
+
+
+def _parse_optional_datetime(value: Optional[Any]) -> Optional[datetime]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _has_pending_sync_state(sync_state: Optional[Dict[str, Any]], *, now: datetime) -> bool:
+    if not sync_state:
+        return False
+    if sync_state.get("dirty"):
+        return True
+    if int(sync_state.get("retry_count") or 0) > 0:
+        return True
+    lease_expires_at = _parse_optional_datetime(sync_state.get("lease_expires_at"))
+    return bool(lease_expires_at and lease_expires_at > now)
+
+
+def _classify_watch_health_candidate(
+    watch: Dict[str, Any],
+    sync_state: Optional[Dict[str, Any]],
+    *,
+    now: datetime,
+    stale_after: timedelta,
+    initial_grace_after: timedelta,
+) -> Optional[str]:
+    """
+    Return a recovery reason when a watch looks silently unhealthy.
+
+    This intentionally avoids a blanket "no notification for N minutes" rule.
+    Quiet inboxes/calendars are normal. We only target watches that either used
+    to notify and then went silent, or have never notified after a long grace
+    window, and only when the corresponding sync stream is not already active.
+    """
+    if watch.get("provider") not in WATCH_PROVIDER_TO_SYNC_KIND:
+        return None
+
+    expiration = _parse_optional_datetime(watch.get("expiration"))
+    if expiration and expiration <= now + timedelta(hours=24):
+        return None
+
+    if _has_pending_sync_state(sync_state, now=now):
+        return None
+
+    last_sync_finished_at = _parse_optional_datetime((sync_state or {}).get("last_sync_finished_at"))
+    notification_count = int(watch.get("notification_count") or 0)
+    last_notification_or_creation = (
+        _parse_optional_datetime(watch.get("last_notification_at"))
+        or _parse_optional_datetime(watch.get("created_at"))
+    )
+
+    if notification_count > 0:
+        if (
+            last_notification_or_creation
+            and last_notification_or_creation <= now - stale_after
+            and (
+                last_sync_finished_at is None
+                or last_sync_finished_at <= now - stale_after
+            )
+        ):
+            return "stale_notifications"
+        return None
+
+    created_at = _parse_optional_datetime(watch.get("created_at"))
+    if (
+        notification_count == 0
+        and created_at
+        and created_at <= now - initial_grace_after
+        and (
+            last_sync_finished_at is None
+            or last_sync_finished_at <= now - initial_grace_after
+        )
+    ):
+        return "never_notified"
+
+    return None
+
+
 def _get_batch_bucket(now: Optional[datetime] = None) -> str:
     timestamp = now or datetime.now(timezone.utc)
     return timestamp.strftime("%Y%m%d%H%M")
@@ -218,299 +386,34 @@ def _chunk_connection_ids(connection_ids: List[str], batch_size: int) -> List[Li
 @router.get("/incremental-sync", response_model=IncrementalSyncResponse)
 async def cron_incremental_sync(authorization: str = Header(None)):
     """
-    CRON JOB: Incremental sync for all active users
-    
-    RUNS: Every 15 minutes
-    
-    PURPOSE: Safety net to catch any missed webhook notifications
-    - Runs incremental sync for all users with active connections
-    - Only syncs emails/events since last sync (efficient)
-    - Ensures no data is lost if webhooks fail
-    
-    This job processes users in batches to handle rate limits gracefully.
-    
-    NOTE: Uses GET because Vercel cron jobs send GET requests by default
+    Disabled rollback stub for the old broad-sweep reconciliation cron.
+
+    Per-stream safety-net reconciliation is now scheduled via
+    connection_sync_state.next_reconcile_at and claimed directly by workers.
     """
     logger.info("=" * 80)
-    logger.info("🕐 CRON: Starting incremental sync for all users")
+    logger.info("🕐 CRON: Incremental sweep endpoint invoked")
     logger.info(f"⏰ Timestamp: {datetime.now(timezone.utc).isoformat()}")
     logger.info(f"🔑 Authorization header present: {bool(authorization)}")
     logger.info(f"🌍 Environment: {settings.api_env}")
-    
+
     # Verify authorization
     if not verify_cron_auth(authorization):
         logger.warning("⚠️ Unauthorized cron attempt - authorization failed")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-    
+
     logger.info("✅ Authorization verified")
-    start_time = datetime.now(timezone.utc)
-
-    check_in_id = capture_checkin(monitor_slug="incremental-sync", status=MonitorStatus.IN_PROGRESS)
-
-    try:
-        from lib.queue import queue_client
-
-        # Use service role client to access all user connections
-        service_supabase = get_service_role_client()
-
-        # Get all active connections (Google + Microsoft)
-        connections = service_supabase.table('ext_connections')\
-            .select('user_id, id, last_synced, provider')\
-            .in_('provider', ['google', 'microsoft'])\
-            .eq('is_active', True)\
-            .execute()
-
-        if not connections.data:
-            logger.info("ℹ️ No active connections to sync")
-            capture_checkin(monitor_slug="incremental-sync", check_in_id=check_in_id, status=MonitorStatus.OK)
-            return {
-                "status": "completed",
-                "message": "No active connections",
-                "users_processed": 0
-            }
-
-        total_connections = len(connections.data)
-        logger.info(f"👥 Found {total_connections} active connections to sync")
-
-        jobs_enqueued = 0
-        jobs_failed = 0
-        skipped_count = 0
-        error_count = 0
-        success_count = 0
-
-        # Pre-filter stale connections once so all modes share skip behavior.
-        stale_connections = []
-        for conn in connections.data:
-            last_synced = conn.get('last_synced')
-            if last_synced:
-                last_sync_dt = datetime.fromisoformat(last_synced.replace('Z', '+00:00'))
-                if datetime.now(timezone.utc) - last_sync_dt < timedelta(minutes=10):
-                    skipped_count += 1
-                    continue
-            stale_connections.append(conn)
-
-        if not stale_connections:
-            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-            capture_checkin(monitor_slug="incremental-sync", check_in_id=check_in_id, status=MonitorStatus.OK)
-            return {
-                "status": "completed",
-                "message": "No stale connections to sync",
-                "duration_seconds": duration,
-                "total_users": total_connections,
-                "success": 0,
-                "skipped": skipped_count,
-                "errors": 0,
-                "jobs_enqueued": 0,
-                "jobs_failed": 0,
-            }
-
-        use_queue = queue_client.available
-        batch_mode = is_cron_batch_mode_enabled()
-
-        # --- Queue path: batched fanout (default) ---
-        if use_queue and batch_mode:
-            google_ids = sorted(str(c['id']) for c in stale_connections if c.get('provider') == 'google')
-            microsoft_ids = sorted(str(c['id']) for c in stale_connections if c.get('provider') == 'microsoft')
-            scheduled_connection_ids = set()
-            dedup_bucket = _get_batch_bucket()
-            batch_size = get_cron_batch_size()
-
-            batch_jobs = [
-                ("sync-gmail", google_ids),
-                ("sync-calendar", google_ids),
-                ("sync-outlook", microsoft_ids),
-                ("sync-outlook-calendar", microsoft_ids),
-            ]
-
-            for job_type, ids in batch_jobs:
-                if not ids:
-                    continue
-                for chunk_ids in _chunk_connection_ids(ids, batch_size):
-                    batch_token = _build_batch_token(chunk_ids, dedup_bucket)
-                    dedup_id = f"batch-{job_type}-{batch_token}"
-                    if queue_client.enqueue_batch(
-                        job_type,
-                        chunk_ids,
-                        extra={"batch_token": batch_token},
-                        dedup_id=dedup_id,
-                    ):
-                        jobs_enqueued += 1
-                        scheduled_connection_ids.update(chunk_ids)
-                    else:
-                        jobs_failed += 1
-                        error_count += 1
-                        logger.warning(
-                            f"⚠️ Queue publish failed for batch job {job_type} "
-                            f"({len(chunk_ids)} IDs, token={batch_token})"
-                        )
-
-            success_count = len(scheduled_connection_ids)
-
-        else:
-            # --- Legacy path: per-connection queue OR inline fallback ---
-            for conn in stale_connections:
-                user_id = conn['user_id']
-                provider = conn.get('provider')
-                connection_id = conn['id']
-
-                try:
-                    if use_queue:
-                        conn_enqueued = 0
-                        conn_failed = 0
-                        if provider == 'google':
-                            if queue_client.enqueue_sync_for_connection(connection_id, "sync-gmail"):
-                                conn_enqueued += 1
-                            else:
-                                conn_failed += 1
-                            if queue_client.enqueue_sync_for_connection(connection_id, "sync-calendar"):
-                                conn_enqueued += 1
-                            else:
-                                conn_failed += 1
-                        elif provider == 'microsoft':
-                            if queue_client.enqueue_sync_for_connection(connection_id, "sync-outlook"):
-                                conn_enqueued += 1
-                            else:
-                                conn_failed += 1
-                            if queue_client.enqueue_sync_for_connection(connection_id, "sync-outlook-calendar"):
-                                conn_enqueued += 1
-                            else:
-                                conn_failed += 1
-
-                        jobs_enqueued += conn_enqueued
-                        jobs_failed += conn_failed
-
-                        if conn_enqueued > 0:
-                            success_count += 1
-
-                        if conn_failed > 0:
-                            logger.warning(
-                                f"⚠️ Queue publish failures for connection {connection_id[:8]}...: "
-                                f"{conn_failed} failed, {conn_enqueued} enqueued"
-                            )
-                            error_count += conn_failed
-                        continue
-
-                    # Inline fallback path (legacy behavior)
-                    if provider == 'microsoft':
-                        skipped_count += 1
-                        continue
-
-                    logger.info(f"🔄 Syncing connection {connection_id[:8]}... (user {user_id[:8]}...)")
-
-                    gmail_service, calendar_service, _ = get_google_services_for_connection(
-                        connection_id,
-                        service_supabase
-                    )
-
-                    if not gmail_service and not calendar_service:
-                        logger.warning(f"⚠️ Could not get Google services for connection {connection_id[:8]}...")
-                        skipped_count += 1
-                        continue
-
-                    synced_gmail = False
-                    synced_calendar = False
-
-                    if gmail_service:
-                        try:
-                            result = sync_gmail_cron(
-                                gmail_service=gmail_service,
-                                connection_id=connection_id,
-                                user_id=user_id,
-                                service_supabase=service_supabase,
-                                days_back=7
-                            )
-                            if result.get('status') == 'success':
-                                synced_gmail = True
-                            else:
-                                if is_permanent_google_api_error(result.get('error')):
-                                    logger.warning(f"⚠️ Gmail sync permanently unavailable for user {user_id[:8]}...: {result.get('error')}")
-                                else:
-                                    logger.error(f"❌ Gmail sync returned error: {result.get('error')}")
-                        except Exception as e:
-                            if is_permanent_google_api_error(e):
-                                logger.warning(f"⚠️ Gmail sync permanently unavailable for user {user_id[:8]}...: {str(e)}")
-                            else:
-                                logger.error(f"❌ Gmail sync failed for user {user_id[:8]}...: {str(e)}")
-                                logger.exception("Full traceback:")
-
-                    if calendar_service:
-                        try:
-                            result = sync_google_calendar_cron(
-                                calendar_service=calendar_service,
-                                connection_id=connection_id,
-                                user_id=user_id,
-                                service_supabase=service_supabase,
-                                days_past=30,
-                                days_future=90
-                            )
-                            if result.get('status') == 'success':
-                                synced_calendar = True
-                            else:
-                                if is_permanent_google_api_error(result.get('error')):
-                                    logger.warning(f"⚠️ Calendar sync permanently unavailable for user {user_id[:8]}...: {result.get('error')}")
-                                else:
-                                    logger.error(f"❌ Calendar sync returned error: {result.get('error')}")
-                        except Exception as e:
-                            if is_permanent_google_api_error(e):
-                                logger.warning(f"⚠️ Calendar sync permanently unavailable for user {user_id[:8]}...: {str(e)}")
-                            else:
-                                logger.error(f"❌ Calendar sync failed for user {user_id[:8]}...: {str(e)}")
-                                logger.exception("Full traceback:")
-
-                    if synced_gmail or synced_calendar:
-                        service_supabase.table('ext_connections')\
-                            .update({'last_synced': datetime.now(timezone.utc).isoformat()})\
-                            .eq('id', connection_id)\
-                            .execute()
-                        success_count += 1
-                    else:
-                        skipped_count += 1
-
-                except Exception as e:
-                    logger.error(f"❌ Error syncing user {user_id[:8]}...: {str(e)}")
-                    error_count += 1
-                    continue
-
-        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-
-        if use_queue:
-            logger.info(f"✅ CRON: Enqueued {jobs_enqueued} sync jobs in {duration:.2f}s")
-        else:
-            logger.info(f"✅ CRON: Incremental sync completed in {duration:.2f}s")
-        logger.info(
-            f"📊 Results: {success_count} success, {skipped_count} skipped, {error_count} errors, "
-            f"{jobs_enqueued} enqueued, {jobs_failed} failed enqueues"
-        )
-        logger.info("=" * 80)
-
-        # Mark check-in as degraded whenever queue publishing has failures.
-        checkin_status = MonitorStatus.OK
-        if use_queue and jobs_failed > 0:
-            checkin_status = MonitorStatus.ERROR
-        capture_checkin(monitor_slug="incremental-sync", check_in_id=check_in_id, status=checkin_status)
-
-        return {
-            "status": "completed",
-            "duration_seconds": duration,
-            "total_users": total_connections,
-            "success": success_count,
-            "skipped": skipped_count,
-            "errors": error_count,
-            "jobs_enqueued": jobs_enqueued,
-            "jobs_failed": jobs_failed,
-            "batch_mode": bool(use_queue and batch_mode),
-            "connections_considered": len(stale_connections),
-        }
-
-    except Exception as e:
-        capture_checkin(monitor_slug="incremental-sync", check_in_id=check_in_id, status=MonitorStatus.ERROR)
-        logger.error(f"❌ CRON: Incremental sync failed: {str(e)}")
-        logger.exception("Full traceback:")
-        logger.info("=" * 80)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Sync failed: {str(e)}"
-        )
+    logger.info("ℹ️ Incremental sweep remains disabled; workers reconcile via next_reconcile_at")
+    logger.info("=" * 80)
+    return {
+        "status": "disabled",
+        "message": "Broad sweep reconciliation has been replaced by worker-driven next_reconcile_at scheduling",
+        "users_processed": 0,
+        "jobs_enqueued": 0,
+        "jobs_failed": 0,
+        "streams_marked": 0,
+        "batch_mode": False,
+    }
 
 
 @router.get("/renew-watches", response_model=RenewWatchesResponse)
@@ -518,14 +421,16 @@ async def cron_renew_watches(authorization: str = Header(None)):
     """
     CRON JOB: Renew expiring watch subscriptions
     
-    RUNS: Every 6 hours
-    
+    RUNS: Every hour (configurable via vercel.json)
+
+
     PURPOSE: CRITICAL - Prevents watch subscriptions from expiring
     - Gmail watches expire after 7 days
     - Calendar watches expire after configured time
     - This job renews any watches expiring within 24 hours
+    - Batch size is configurable via RENEWAL_BATCH_SIZE (default 50)
     - Ensures continuous real-time notifications
-    
+
     Without this job, push notifications will stop working after 7 days!
     
     NOTE: Uses GET because Vercel cron jobs send GET requests by default
@@ -548,13 +453,20 @@ async def cron_renew_watches(authorization: str = Header(None)):
         # Use service role to access all subscriptions
         service_supabase = get_service_role_client()
 
-        # Get subscriptions expiring within 24 hours
+        # Get subscriptions expiring within 24 hours.
+        # Limit batch size and renew soonest-first to smooth provider load
+        # across hourly runs instead of renewing large batches all at once.
+        # At 1.4k users with ~2 watches each, 50/hour provides 1200 renewals
+        # per day, which comfortably covers the steady-state requirement.
+        RENEWAL_BATCH_SIZE = get_renewal_batch_size()
         threshold_time = datetime.now(timezone.utc) + timedelta(hours=24)
 
         result = service_supabase.table('push_subscriptions')\
             .select('*, ext_connections!push_subscriptions_ext_connection_id_fkey!inner(id, user_id, is_active, access_token, refresh_token, token_expires_at, metadata)')\
             .eq('is_active', True)\
             .lt('expiration', threshold_time.isoformat())\
+            .order('expiration', desc=False)\
+            .limit(RENEWAL_BATCH_SIZE)\
             .execute()
 
         expiring_subs = result.data
@@ -722,13 +634,13 @@ async def cron_setup_missing_watches(authorization: str = Header(None)):
     """
     CRON JOB: Set up watches for users who don't have them
     
-    RUNS: Every hour
+    RUNS: Disabled / manual recovery
     
-    PURPOSE: Ensures all users have active watch subscriptions
+    PURPOSE: Controlled recovery path for missing watch subscriptions
     - Sets up watches for new users who just connected Google
     - Recovers from watch setup failures
-    - Ensures no users are left without push notifications
-    
+    - Intentionally left unscheduled during backlog stabilization
+
     NOTE: Uses GET because Vercel cron jobs send GET requests by default
     """
     logger.info("=" * 80)
@@ -768,6 +680,12 @@ async def cron_setup_missing_watches(authorization: str = Header(None)):
         setup_count = 0
         error_count = 0
 
+        # Limit how many watches we set up per cron run to avoid a burst
+        # of Google notifications when all watches fire their initial sync.
+        # At 20/hour, full recovery from a mass deactivation takes a few
+        # hours instead of creating a thundering herd.
+        SETUP_BATCH_SIZE = 50
+
         for conn in connections.data:
             user_id = conn['user_id']
             connection_id = conn['id']
@@ -791,6 +709,10 @@ async def cron_setup_missing_watches(authorization: str = Header(None)):
                     .execute()
 
                 needs_setup = not gmail_watch.data or not calendar_watch.data
+
+                if needs_setup and setup_count + error_count >= SETUP_BATCH_SIZE:
+                    logger.info(f"⏸️ Batch limit reached ({SETUP_BATCH_SIZE}), deferring remaining setups to next run")
+                    break
 
                 if needs_setup:
                     logger.info(f"🔧 Setting up watches for connection {connection_id[:8]}... (user {user_id[:8]}...)")
@@ -870,6 +792,164 @@ async def cron_setup_missing_watches(authorization: str = Header(None)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Watch setup check failed: {str(e)}"
+        )
+
+
+@router.get("/watch-health", response_model=WatchHealthResponse)
+async def cron_watch_health(authorization: str = Header(None)):
+    """
+    CRON JOB: Queue targeted recovery work for suspiciously silent watches.
+
+    This is intentionally not a blanket "no notification in N minutes" sweep.
+    It only marks streams dirty when the watch looks stale and the stream is
+    otherwise idle, so quiet inboxes/calendars are not spam-synced.
+    """
+    logger.info("=" * 80)
+    logger.info("🩺 CRON: Starting watch-health recovery scan")
+    logger.info(f"⏰ Timestamp: {datetime.now(timezone.utc).isoformat()}")
+
+    if not verify_cron_auth(authorization):
+        logger.warning("⚠️ Unauthorized cron attempt")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+    start_time = datetime.now(timezone.utc)
+    check_in_id = capture_checkin(monitor_slug="watch-health", status=MonitorStatus.IN_PROGRESS)
+
+    try:
+        service_supabase = get_service_role_client()
+        now = datetime.now(timezone.utc)
+        stale_after = timedelta(hours=get_watch_health_stale_hours())
+        initial_grace_after = timedelta(hours=get_watch_health_initial_grace_hours())
+        batch_size = get_watch_health_batch_size()
+        priority = get_watch_health_priority()
+
+        watch_result = service_supabase.table("push_subscriptions")\
+            .select(
+                "id, ext_connection_id, provider, created_at, expiration, "
+                "notification_count, last_notification_at"
+            )\
+            .in_("provider", list(WATCH_PROVIDER_TO_SYNC_KIND.keys()))\
+            .eq("is_active", True)\
+            .execute()
+
+        active_watches = watch_result.data or []
+        if not active_watches:
+            duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+            capture_checkin(monitor_slug="watch-health", check_in_id=check_in_id, status=MonitorStatus.OK)
+            return {
+                "status": "completed",
+                "message": "No active Google watches",
+                "duration_seconds": duration,
+                "checked": 0,
+                "queued": 0,
+                "errors": 0,
+            }
+
+        connection_ids = sorted(
+            {
+                str(watch["ext_connection_id"])
+                for watch in active_watches
+                if watch.get("ext_connection_id")
+            }
+        )
+
+        state_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
+        if connection_ids:
+            state_result = service_supabase.table("connection_sync_state")\
+                .select(
+                    "connection_id, provider, sync_kind, dirty, retry_count, "
+                    "next_retry_at, lease_expires_at, last_sync_finished_at"
+                )\
+                .in_("connection_id", connection_ids)\
+                .in_("sync_kind", list(WATCH_PROVIDER_TO_SYNC_KIND.values()))\
+                .execute()
+
+            state_by_key = {
+                (row["connection_id"], row["sync_kind"]): row
+                for row in (state_result.data or [])
+            }
+
+        queued = 0
+        errors = 0
+        ordered_watches = sorted(
+            active_watches,
+            key=lambda watch: (
+                _parse_optional_datetime(watch.get("last_notification_at"))
+                or _parse_optional_datetime(watch.get("created_at"))
+                or now
+            ),
+        )
+
+        for watch in ordered_watches:
+            if queued + errors >= batch_size:
+                break
+
+            connection_id = watch.get("ext_connection_id")
+            watch_provider = watch.get("provider")
+            sync_kind = WATCH_PROVIDER_TO_SYNC_KIND.get(watch_provider)
+            if not connection_id or not sync_kind:
+                continue
+
+            sync_state = state_by_key.get((connection_id, sync_kind))
+            reason = _classify_watch_health_candidate(
+                watch,
+                sync_state,
+                now=now,
+                stale_after=stale_after,
+                initial_grace_after=initial_grace_after,
+            )
+            if not reason:
+                continue
+
+            stream_provider = (sync_state or {}).get("provider") or "google"
+            try:
+                marked = mark_stream_dirty(
+                    service_supabase,
+                    connection_id,
+                    stream_provider,
+                    sync_kind,
+                    priority=priority,
+                    metadata={
+                        "source": "watch-health-recovery",
+                        "reason": reason,
+                        "watch_id": watch.get("id"),
+                        "watch_provider": watch_provider,
+                    },
+                )
+                if marked:
+                    queued += 1
+                    logger.info(
+                        "🩺 queued watch-health recovery for %s/%s (%s)",
+                        connection_id[:8],
+                        sync_kind,
+                        reason,
+                    )
+            except Exception:
+                errors += 1
+                logger.exception(
+                    "❌ Failed watch-health recovery mark for %s/%s",
+                    connection_id[:8],
+                    sync_kind,
+                )
+
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
+        capture_checkin(monitor_slug="watch-health", check_in_id=check_in_id, status=MonitorStatus.OK)
+        return {
+            "status": "completed",
+            "duration_seconds": duration,
+            "checked": len(active_watches),
+            "queued": queued,
+            "errors": errors,
+        }
+
+    except Exception as e:
+        capture_checkin(monitor_slug="watch-health", check_in_id=check_in_id, status=MonitorStatus.ERROR)
+        logger.error(f"❌ CRON: Watch health scan failed: {str(e)}")
+        logger.exception("Full traceback:")
+        logger.info("=" * 80)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Watch health scan failed: {str(e)}"
         )
 
 
@@ -1229,18 +1309,23 @@ async def cron_health():
         "jobs": [
             {
                 "name": "incremental-sync",
-                "schedule": "Every 15 minutes",
-                "description": "Safety net for missed webhooks"
+                "schedule": "Disabled",
+                "description": "Broad sweep replaced by worker-driven next_reconcile_at reconciliation"
             },
             {
                 "name": "renew-watches",
-                "schedule": "Every 6 hours",
+                "schedule": "Every hour",
                 "description": "CRITICAL: Renews expiring watch subscriptions"
             },
             {
                 "name": "setup-missing-watches",
-                "schedule": "Every hour",
-                "description": "Ensures all users have active watches"
+                "schedule": "Disabled / manual recovery",
+                "description": "Controlled recovery path for restoring missing watches"
+            },
+            {
+                "name": "watch-health",
+                "schedule": "Disabled / manual recovery",
+                "description": "Queues targeted recovery work for suspiciously silent watches"
             },
             {
                 "name": "daily-verification",

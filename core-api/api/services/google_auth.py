@@ -17,6 +17,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
+from lib.google_retry import refresh_credentials as _refresh_creds
 
 from lib.supabase_client import get_service_role_client
 from lib.token_encryption import (
@@ -354,8 +355,8 @@ def _refresh_and_save_token(
             client_secret=client_secret
         )
 
-        # Perform the refresh
-        credentials.refresh(Request())
+        # Perform the refresh (with retry for transient transport errors)
+        _refresh_creds(credentials, Request(), context=connection_id[:8] if connection_id else '')
 
         # Calculate new expiry time
         new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=DEFAULT_TOKEN_LIFETIME_SECONDS)
@@ -393,10 +394,42 @@ def _refresh_and_save_token(
         if 'invalid_grant' in str(e).lower():
             logger.error("🔴 Refresh token is invalid - user must re-authenticate")
             if connection_id:
-                supabase_client.table('ext_connections')\
-                    .update({'is_active': False})\
-                    .eq('id', connection_id)\
-                    .execute()
+                try:
+                    # Guard against concurrent refresh race: re-read the row
+                    # and skip deactivation if another process just refreshed
+                    # successfully (token_expires_at well into the future).
+                    fresh = supabase_client.table('ext_connections')\
+                        .select('token_expires_at')\
+                        .eq('id', connection_id)\
+                        .maybe_single()\
+                        .execute()
+                    if fresh and fresh.data:
+                        fresh_expiry = fresh.data.get('token_expires_at')
+                        if fresh_expiry:
+                            try:
+                                exp = datetime.fromisoformat(fresh_expiry.replace('Z', '+00:00'))
+                                if exp > datetime.now(timezone.utc) + timedelta(minutes=10):
+                                    logger.info(
+                                        f"⏭️ Skipping deactivation for {connection_id[:8]}... "
+                                        f"— token was refreshed by another process (expires {fresh_expiry})"
+                                    )
+                                    raise TokenRefreshError(f"Failed to refresh token: {str(e)}") from e
+                            except (ValueError, TypeError):
+                                pass  # Can't parse — proceed with deactivation
+
+                    supabase_client.table('ext_connections')\
+                        .update({'is_active': False})\
+                        .eq('id', connection_id)\
+                        .execute()
+                    supabase_client.table('push_subscriptions')\
+                        .update({'is_active': False})\
+                        .eq('ext_connection_id', connection_id)\
+                        .eq('is_active', True)\
+                        .execute()
+                except TokenRefreshError:
+                    raise
+                except Exception as deactivate_err:
+                    logger.error(f"Failed to deactivate connection/subscriptions: {deactivate_err}")
 
         raise TokenRefreshError(f"Failed to refresh token: {str(e)}") from e
 

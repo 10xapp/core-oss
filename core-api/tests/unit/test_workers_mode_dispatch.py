@@ -104,6 +104,20 @@ def test_run_batch_clean_run_returns_ok():
     assert result["failed_ids"] == []
 
 
+def test_run_batch_treats_quarantined_as_processed():
+    from api.routers.workers import _run_batch
+
+    result = _run_batch(
+        ["a", "b"],
+        lambda cid: {"status": "quarantined"} if cid == "a" else {"status": "ok"},
+        "sync-gmail",
+    )
+
+    assert result["status"] == "ok"
+    assert result["processed"] == 2
+    assert result["errors"] == 0
+
+
 def test_run_batch_respects_time_budget(monkeypatch):
     from api.routers import workers
 
@@ -125,12 +139,14 @@ def test_worker_sync_gmail_routes_webhook_mode():
         email_address="user@example.com",
     )
 
-    with patch.object(workers, "_process_gmail_webhook", return_value={"status": "ok", "message": "done"}) as webhook_mock:
-        with patch.object(workers, "_sync_single_gmail") as single_mock:
-            result = workers.worker_sync_gmail(payload)
+    with patch.object(workers, "_run_with_stream_lease", return_value={"status": "ok", "message": "done"}) as lease_mock:
+        with patch.object(workers, "_process_gmail_webhook") as webhook_mock:
+            with patch.object(workers, "_sync_single_gmail") as single_mock:
+                result = workers.worker_sync_gmail(payload)
 
     assert result["status"] == "ok"
-    webhook_mock.assert_called_once_with(payload)
+    lease_mock.assert_called_once()
+    webhook_mock.assert_not_called()
     single_mock.assert_not_called()
 
 
@@ -303,13 +319,130 @@ def test_worker_sync_calendar_routes_webhook_mode():
         message_number="123",
     )
 
-    with patch.object(workers, "_process_calendar_webhook", return_value={"status": "ok"}) as webhook_mock:
-        with patch.object(workers, "_sync_single_calendar") as single_mock:
-            result = workers.worker_sync_calendar(payload)
+    with patch.object(workers, "_run_with_stream_lease", return_value={"status": "ok"}) as lease_mock:
+        with patch.object(workers, "_process_calendar_webhook") as webhook_mock:
+            with patch.object(workers, "_sync_single_calendar") as single_mock:
+                result = workers.worker_sync_calendar(payload)
 
     assert result["status"] == "ok"
-    webhook_mock.assert_called_once_with(payload)
+    lease_mock.assert_called_once()
+    webhook_mock.assert_not_called()
     single_mock.assert_not_called()
+
+
+def test_run_with_stream_lease_skips_when_no_claim():
+    from api.routers import workers
+
+    with patch.object(workers, "get_service_role_client", return_value=MagicMock()):
+        with patch.object(workers, "claim_connection_sync_lease", return_value=None) as claim_mock:
+            result = workers._run_with_stream_lease("conn-1", workers.SYNC_KIND_EMAIL, lambda: {"status": "ok"})
+
+    assert result["status"] == "skipped"
+    assert "already running or not dirty" in result["message"].lower()
+    assert claim_mock.call_args.kwargs["claim_mode"] == workers.CLAIM_MODE_DIRTY_ONLY
+
+
+def test_run_with_stream_lease_completes_success():
+    from api.routers import workers
+
+    with patch.object(workers, "get_service_role_client", return_value=MagicMock()):
+        with patch.object(workers, "claim_connection_sync_lease", return_value={"connection_id": "conn-1"}):
+            with patch.object(workers, "complete_connection_sync_lease") as complete_mock:
+                with patch.object(workers, "fail_connection_sync_lease") as fail_mock:
+                    result = workers._run_with_stream_lease(
+                        "conn-1",
+                        workers.SYNC_KIND_EMAIL,
+                        lambda: {"status": "ok", "new_delta_link": "delta-1"},
+                    )
+
+    assert result["status"] == "ok"
+    complete_mock.assert_called_once()
+    fail_mock.assert_not_called()
+
+
+def test_run_with_stream_lease_fails_error_result():
+    from api.routers import workers
+
+    with patch.object(workers, "get_service_role_client", return_value=MagicMock()):
+        with patch.object(workers, "claim_connection_sync_lease", return_value={"connection_id": "conn-1"}):
+            with patch.object(workers, "complete_connection_sync_lease") as complete_mock:
+                with patch.object(workers, "fail_connection_sync_lease") as fail_mock:
+                    result = workers._run_with_stream_lease(
+                        "conn-1",
+                        workers.SYNC_KIND_EMAIL,
+                        lambda: {"status": "error", "message": "boom"},
+                    )
+
+    assert result["status"] == "error"
+    fail_mock.assert_called_once()
+    complete_mock.assert_not_called()
+
+
+def test_run_with_stream_lease_quarantines_when_retry_cap_is_hit(monkeypatch):
+    from api.routers import workers
+
+    monkeypatch.setenv("MAX_FAILURE_RETRY_COUNT", "3")
+
+    with patch.object(workers, "get_service_role_client", return_value=MagicMock()):
+        with patch.object(
+            workers,
+            "claim_connection_sync_lease",
+            return_value={"connection_id": "conn-1", "provider": "microsoft"},
+        ):
+            with patch.object(
+                workers,
+                "get_connection_sync_state",
+                return_value={"retry_count": 2},
+            ):
+                with patch("api.services.syncs.failure_policy.complete_connection_sync_lease") as complete_mock:
+                    with patch.object(workers, "fail_connection_sync_lease") as fail_mock:
+                        with patch(
+                            "api.services.syncs.failure_policy.deactivate_connection_with_subscriptions"
+                        ) as deactivate_mock:
+                            result = workers._run_with_stream_lease(
+                                "conn-1",
+                                workers.SYNC_KIND_EMAIL,
+                                lambda: {"status": "error", "message": "boom"},
+                            )
+
+    assert result["status"] == "quarantined"
+    complete_mock.assert_called_once()
+    fail_mock.assert_not_called()
+    deactivate_mock.assert_called_once()
+
+
+def test_run_with_stream_lease_quarantines_on_permanent_microsoft_auth_error():
+    from api.routers import workers
+
+    with patch.object(workers, "get_service_role_client", return_value=MagicMock()):
+        with patch.object(
+            workers,
+            "claim_connection_sync_lease",
+            return_value={"connection_id": "conn-1", "provider": "microsoft"},
+        ):
+            with patch.object(
+                workers,
+                "get_connection_sync_state",
+                return_value={"retry_count": 0},
+            ):
+                with patch("api.services.syncs.failure_policy.complete_connection_sync_lease") as complete_mock:
+                    with patch.object(workers, "fail_connection_sync_lease") as fail_mock:
+                        with patch(
+                            "api.services.syncs.failure_policy.deactivate_connection_with_subscriptions"
+                        ) as deactivate_mock:
+                            result = workers._run_with_stream_lease(
+                                "conn-1",
+                                workers.SYNC_KIND_EMAIL,
+                                lambda: {
+                                    "status": "error",
+                                    "message": "Refresh token is invalid - user must re-authenticate",
+                                },
+                            )
+
+    assert result["status"] == "quarantined"
+    complete_mock.assert_called_once()
+    fail_mock.assert_not_called()
+    deactivate_mock.assert_called_once()
 
 
 def test_process_gmail_webhook_error_status_not_overwritten():
@@ -377,6 +510,26 @@ def test_process_calendar_webhook_error_status_not_overwritten():
 
     assert result["status"] == "error"
     assert result["message"] == "provider failed"
+
+
+def test_process_calendar_webhook_does_not_touch_last_synced_for_non_sync_outcomes():
+    from api.routers import workers
+
+    payload = workers.SyncPayload(
+        connection_id="conn-1",
+        channel_id="channel-1",
+        resource_state="exists",
+    )
+
+    with patch.object(workers, "_touch_last_synced") as touch_mock:
+        with patch(
+            "api.services.webhooks.process_calendar_notification",
+            return_value={"status": "ok", "message": "No active subscription"},
+        ):
+            result = workers._process_calendar_webhook(payload)
+
+    assert result["status"] == "ok"
+    touch_mock.assert_not_called()
 
 
 def test_process_gmail_webhook_rejects_connection_email_mismatch():

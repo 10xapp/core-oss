@@ -12,6 +12,7 @@ from api.services.notifications.calendar_invites import (
 )
 import logging
 from googleapiclient.errors import HttpError
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 from api.services.calendar.google_api_helpers import get_google_calendar_service
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def sync_google_calendar(user_id: str, user_jwt: str) -> Dict[str, Any]:
                 singleEvents=True,
                 orderBy='startTime',
                 pageToken=page_token
-            ).execute()
+            ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
             events = events_result.get('items', [])
             total_fetched += len(events)

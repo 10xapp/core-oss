@@ -859,7 +859,7 @@ async def test_get_invitation_share_link_requires_admin_and_returns_url(monkeypa
         "get_user_workspace_role",
         AsyncMock(return_value="admin"),
     )
-    monkeypatch.setattr(invitations_module.settings, "frontend_url", "https://app.example.com")
+    monkeypatch.setattr(invitations_module.settings, "frontend_url", "https://app.core.so")
 
     result = await invitations_module.get_workspace_invitation_share_link(
         invitation_id="inv-1",
@@ -868,4 +868,4 @@ async def test_get_invitation_share_link_requires_admin_and_returns_url(monkeypa
     )
 
     assert result["invitation_id"] == "inv-1"
-    assert result["invite_url"] == "https://app.example.com/invite/token-1"
+    assert result["invite_url"] == "https://app.core.so/invite/token-1"

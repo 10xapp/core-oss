@@ -2,26 +2,37 @@
 Webhooks router - Receives push notifications from external services
 Thin layer that handles HTTP concerns and delegates to services.
 """
-from fastapi import APIRouter, Request, Header, Query, Response
+from fastapi import APIRouter, Request, Header, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
-from typing import Optional
 import asyncio
-import logging
-import json
 import base64
-from datetime import datetime, timezone
+from collections import OrderedDict
+import json
+import logging
+import threading
+import time
+from typing import Dict, Optional
+from starlette.requests import ClientDisconnect
 
-from api.services.webhooks import (
-    process_gmail_notification,
-    process_calendar_notification
-)
+from api.config import settings
+from api.schemas import HealthResponse
+from api.services.syncs.sync_dispatcher import mark_stream_dirty
+from api.services.syncs.sync_state_store import SYNC_KIND_CALENDAR, SYNC_KIND_EMAIL
+from lib.google_webhook_security import verify_google_calendar_channel_token
+from lib.supabase_client import get_service_role_client
 from lib.token_encryption import decrypt_ext_connection_tokens
 
 from pydantic import BaseModel
-from api.schemas import HealthResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+_PUBSUB_JWT_CACHE: Dict[str, tuple[dict, float]] = {}
+_PUBSUB_JWT_CACHE_LOCK = threading.Lock()
+_PUBSUB_JWT_CACHE_MAX_ENTRIES = 4_096
+_GMAIL_INGRESS_DEDUP_TTL_SECONDS = 120.0
+_GMAIL_INGRESS_DEDUP_MAX_ENTRIES = 20_000
+_GMAIL_INGRESS_DEDUP_CACHE: "OrderedDict[str, float]" = OrderedDict()
+_GMAIL_INGRESS_DEDUP_LOCK = threading.Lock()
 
 
 # ============================================================================
@@ -41,8 +52,123 @@ class WebhookProcessResponse(BaseModel):
 # Endpoints
 # ============================================================================
 
+
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token.strip()
+
+
+def _gmail_ingress_dedup_key(email_address: str, history_id: str) -> str:
+    return f"{email_address}\n{history_id}"
+
+
+def _prune_gmail_ingress_dedup_cache(now: float) -> None:
+    while _GMAIL_INGRESS_DEDUP_CACHE:
+        first_key = next(iter(_GMAIL_INGRESS_DEDUP_CACHE))
+        expires_at = _GMAIL_INGRESS_DEDUP_CACHE[first_key]
+        if expires_at > now and len(_GMAIL_INGRESS_DEDUP_CACHE) <= _GMAIL_INGRESS_DEDUP_MAX_ENTRIES:
+            return
+        _GMAIL_INGRESS_DEDUP_CACHE.popitem(last=False)
+
+
+def _was_recent_successful_gmail_notification(email_address: str, history_id: str) -> bool:
+    now = time.monotonic()
+    key = _gmail_ingress_dedup_key(email_address, history_id)
+    with _GMAIL_INGRESS_DEDUP_LOCK:
+        _prune_gmail_ingress_dedup_cache(now)
+        expires_at = _GMAIL_INGRESS_DEDUP_CACHE.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= now:
+            _GMAIL_INGRESS_DEDUP_CACHE.pop(key, None)
+            return False
+        _GMAIL_INGRESS_DEDUP_CACHE.move_to_end(key)
+        return True
+
+
+def _remember_successful_gmail_notification(email_address: str, history_id: str) -> None:
+    now = time.monotonic()
+    key = _gmail_ingress_dedup_key(email_address, history_id)
+    with _GMAIL_INGRESS_DEDUP_LOCK:
+        _GMAIL_INGRESS_DEDUP_CACHE[key] = now + _GMAIL_INGRESS_DEDUP_TTL_SECONDS
+        _GMAIL_INGRESS_DEDUP_CACHE.move_to_end(key)
+        _prune_gmail_ingress_dedup_cache(now)
+
+
+def _verify_google_pubsub_auth(authorization: Optional[str]) -> None:
+    """Verify Pub/Sub authenticated push JWT when the deployment requires it."""
+    expected_email = settings.google_pubsub_push_service_account_email.strip()
+    configured_audience = settings.google_pubsub_push_audience.strip()
+
+    if not expected_email and not configured_audience:
+        return
+
+    expected_audience = settings.resolved_google_pubsub_push_audience.strip()
+    encoded_token = _extract_bearer_token(authorization)
+    if not encoded_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Pub/Sub authorization token",
+        )
+
+    now = time.time()
+    with _PUBSUB_JWT_CACHE_LOCK:
+        cached_claims = _PUBSUB_JWT_CACHE.get(encoded_token)
+    if cached_claims and cached_claims[1] > now + 30:
+        claims = cached_claims[0]
+    else:
+        from google.auth import exceptions as google_auth_exceptions
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.oauth2 import id_token as google_id_token
+
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                encoded_token,
+                GoogleAuthRequest(),
+                audience=expected_audience,
+                clock_skew_in_seconds=3600,
+            )
+        except (ValueError, google_auth_exceptions.GoogleAuthError) as exc:
+            logger.warning("Pub/Sub JWT verification failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Pub/Sub authorization token",
+            ) from exc
+        expiry = float(claims.get("exp") or 0)
+        with _PUBSUB_JWT_CACHE_LOCK:
+            _PUBSUB_JWT_CACHE[encoded_token] = (claims, expiry)
+            expired_tokens = [
+                token
+                for token, (_, token_expiry) in _PUBSUB_JWT_CACHE.items()
+                if token_expiry <= now
+            ]
+            for token in expired_tokens:
+                _PUBSUB_JWT_CACHE.pop(token, None)
+            # LRU eviction if cache exceeds max size
+            while len(_PUBSUB_JWT_CACHE) > _PUBSUB_JWT_CACHE_MAX_ENTRIES:
+                _PUBSUB_JWT_CACHE.pop(next(iter(_PUBSUB_JWT_CACHE)))
+
+    if claims.get("email_verified") is False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Pub/Sub token email is not verified",
+        )
+
+    if expected_email and claims.get("email") != expected_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unexpected Pub/Sub service account",
+        )
+
 @router.post("/gmail", response_model=WebhookProcessResponse)
-async def gmail_webhook(request: Request):
+async def gmail_webhook(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
     """
     Receive Gmail push notifications from Google Cloud Pub/Sub.
     
@@ -62,30 +188,51 @@ async def gmail_webhook(request: Request):
         "historyId": "12345"
     }
     
-    Returns 200 immediately to acknowledge receipt (required by Pub/Sub).
+    Returns 200 on success or non-actionable input. Returns 503 on transient
+    infrastructure failures (e.g. Supabase down) so Pub/Sub retries delivery.
     """
     try:
+        # Buffer the small Pub/Sub payload before JWT verification so a slow
+        # cert fetch or claim check does not turn a later body read into
+        # ClientDisconnect noise.
+        raw_body = await request.body()
+    except ClientDisconnect:
+        logger.warning("Gmail webhook client disconnected before request body was read")
+        return {"status": "error", "message": "Client disconnected before body read"}
+
+    # Pub/Sub envelopes are ~200 bytes. Reject anything unreasonably large
+    # before spending time on auth verification.
+    if len(raw_body) > 65_536:
+        return {"status": "error", "message": "Payload too large"}
+
+    # Run JWT verification in a thread pool so the blocking Google cert
+    # fetch does not freeze the event loop and starve concurrent requests.
+    await asyncio.to_thread(_verify_google_pubsub_auth, authorization)
+
+    try:
         # Parse Pub/Sub message format
-        body = await request.json()
-        
-        logger.info("📬 Gmail webhook received")
+        body = json.loads(raw_body)
         logger.debug(f"Body keys: {body.keys() if body else 'empty'}")
-        
+
         # Validate Pub/Sub message format
         if not body.get('message') or not body['message'].get('data'):
             logger.error(f"❌ Invalid Pub/Sub message format: {body}")
             return {"status": "error", "message": "Invalid Pub/Sub format"}
-        
+
         # Decode base64 data
         message_data = body['message']['data']
         try:
             decoded_data = base64.b64decode(message_data).decode('utf-8')
             payload = json.loads(decoded_data)
-            logger.info(f"📩 Decoded payload: {payload}")
+            logger.debug(
+                "📩 Decoded Gmail payload for %s historyId=%s",
+                payload.get("emailAddress"),
+                payload.get("historyId"),
+            )
         except Exception as e:
             logger.error(f"❌ Failed to decode message data: {str(e)}")
             return {"status": "error", "message": "Failed to decode message"}
-        
+
         # Extract notification data
         email_address = payload.get('emailAddress')
         raw_history_id = payload.get('historyId')
@@ -95,58 +242,66 @@ async def gmail_webhook(request: Request):
             logger.error(f"❌ Missing required fields in payload: {payload}")
             return {"status": "error", "message": "Missing required fields"}
 
-        # Try to enqueue via QStash for async processing
-        try:
-            from lib.queue import queue_client
-            if queue_client.available:
-                from lib.supabase_client import get_service_role_client
-                service_supabase = get_service_role_client()
-                # Look up connection_id from provider_email
-                conn_result = service_supabase.table('ext_connections')\
-                    .select('id')\
-                    .eq('provider_email', email_address)\
-                    .eq('provider', 'google')\
-                    .eq('is_active', True)\
-                    .limit(1)\
-                    .execute()
-                if conn_result.data:
-                    connection_id = conn_result.data[0]['id']
-                    dedup_id = f"wh-sync-gmail-{connection_id}-{history_id}"
-                    if queue_client.enqueue_sync_for_connection(
-                        connection_id, "sync-gmail",
-                        extra={
-                            "history_id": history_id,
-                            "email_address": email_address,
-                        },
-                        dedup_id=dedup_id,
-                    ):
-                        return {"status": "ok", "message": "Enqueued to worker"}
-                    # enqueue returned False — fall through to inline
-        except Exception as eq_err:
-            logger.warning(f"⚠️ Queue enqueue failed, falling back to inline: {eq_err}")
+        if _was_recent_successful_gmail_notification(email_address, history_id):
+            logger.debug(
+                "Skipping duplicate Gmail notification for %s historyId=%s before DB write",
+                email_address,
+                history_id,
+            )
+            return {"status": "ok", "message": "Accepted duplicate notification"}
 
-        # Fallback: process inline (existing behavior)
-        try:
-            result = await asyncio.to_thread(process_gmail_notification, email_address, history_id)
-            return {"status": "ok", **result}
-        except Exception as e:
-            logger.error(f"❌ Error processing Gmail notification: {str(e)}")
-            logger.exception("Full traceback:")
-            # Still return 200 to Pub/Sub - cron job will catch any missed emails
-            return {"status": "ok", "message": "Notification received with errors"}
-        
+        service_supabase = get_service_role_client()
+        conn_result = service_supabase.table('ext_connections')\
+            .select('id')\
+            .eq('provider_email', email_address)\
+            .eq('provider', 'google')\
+            .eq('is_active', True)\
+            .limit(1)\
+            .execute()
+
+        if not conn_result.data:
+            logger.debug(f"No active Gmail connection found for {email_address}; acknowledging webhook")
+            return {"status": "ok", "message": "Accepted without matching connection"}
+
+        connection_id = conn_result.data[0]['id']
+        marked = mark_stream_dirty(
+            service_supabase,
+            connection_id,
+            "google",
+            SYNC_KIND_EMAIL,
+            latest_seen_cursor=history_id,
+            priority=100,
+            metadata={
+                "source": "gmail-webhook",
+                "email_address": email_address,
+                "history_id": history_id,
+            },
+        )
+        if marked:
+            _remember_successful_gmail_notification(email_address, history_id)
+        return {"status": "ok", "message": "Accepted for async sync"}
+
     except Exception as e:
-        logger.error(f"❌ Error handling Gmail webhook: {str(e)}")
-        logger.exception("Full traceback:")
-        # Always return 200 to Pub/Sub, even on error
-        # We don't want Pub/Sub to think our endpoint is down
-        return {"status": "error", "message": str(e)}
+        logger.exception(
+            "❌ Error handling Gmail webhook after auth; acknowledging to avoid "
+            "global Pub/Sub push backoff: %s",
+            str(e),
+        )
+        # Gmail Pub/Sub push backoff is global to the subscription. Once the
+        # request is authenticated and the payload parsed, prefer an ACK and
+        # rely on reconciliation as the safety net instead of slowing delivery
+        # for every mailbox on transient dirty-mark failures.
+        return {
+            "status": "ok",
+            "message": "Accepted without dirty mark; reconciliation will recover",
+        }
 
 
 @router.post("/calendar", response_model=WebhookProcessResponse)
 async def calendar_webhook(
     request: Request,
     x_goog_channel_id: Optional[str] = Header(None),
+    x_goog_channel_token: Optional[str] = Header(None),
     x_goog_resource_id: Optional[str] = Header(None),
     x_goog_resource_state: Optional[str] = Header(None),
     x_goog_message_number: Optional[str] = Header(None)
@@ -163,61 +318,69 @@ async def calendar_webhook(
     - X-Goog-Resource-State: "sync" (initial) or "exists" (change notification)
     - X-Goog-Message-Number: Sequential message number
     
-    Returns 200 immediately to acknowledge receipt (required by Google).
+    Returns 200 on success. Returns 503 on transient infrastructure failures
+    so Google retries delivery instead of silently losing the notification.
     """
     try:
-        logger.info(f"📅 Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
+        logger.debug(f"Calendar webhook received: channel={x_goog_channel_id}, state={x_goog_resource_state}")
 
-        # Try to enqueue via QStash for async processing
-        try:
-            from lib.queue import queue_client
-            if queue_client.available and x_goog_channel_id:
-                from lib.supabase_client import get_service_role_client
-                service_supabase = get_service_role_client()
-                # Look up connection_id from push_subscriptions by channel_id
-                sub_result = service_supabase.table('push_subscriptions')\
-                    .select('ext_connection_id')\
-                    .eq('channel_id', x_goog_channel_id)\
-                    .eq('is_active', True)\
-                    .limit(1)\
-                    .execute()
-                if sub_result.data:
-                    connection_id = sub_result.data[0]['ext_connection_id']
-                    dedup_suffix = x_goog_message_number or datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
-                    dedup_id = f"wh-sync-calendar-{connection_id}-{dedup_suffix}"
-                    if queue_client.enqueue_sync_for_connection(
-                        connection_id,
-                        "sync-calendar",
-                        extra={
-                            "channel_id": x_goog_channel_id,
-                            "resource_state": x_goog_resource_state,
-                            "message_number": x_goog_message_number,
-                        },
-                        dedup_id=dedup_id,
-                    ):
-                        return {"status": "ok", "message": "Enqueued to worker"}
-                    # enqueue returned False — fall through to inline
-        except Exception as eq_err:
-            logger.warning(f"⚠️ Queue enqueue failed, falling back to inline: {eq_err}")
+        if not x_goog_channel_id:
+            return {"status": "ok", "message": "Accepted without channel id"}
 
-        # Fallback: process inline (existing behavior)
-        try:
-            result = await asyncio.to_thread(
-                process_calendar_notification,
-                channel_id=x_goog_channel_id,
-                resource_state=x_goog_resource_state
+        service_supabase = get_service_role_client()
+        sub_result = service_supabase.table('push_subscriptions')\
+            .select('ext_connection_id, resource_id')\
+            .eq('channel_id', x_goog_channel_id)\
+            .eq('is_active', True)\
+            .limit(1)\
+            .execute()
+
+        if not sub_result.data:
+            logger.debug(f"No active Calendar subscription found for channel {x_goog_channel_id}")
+            return {"status": "ok", "message": "Accepted without matching subscription"}
+
+        subscription = sub_result.data[0]
+        connection_id = subscription['ext_connection_id']
+        stored_resource_id = subscription.get('resource_id')
+        if stored_resource_id and x_goog_resource_id and stored_resource_id != x_goog_resource_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unexpected Google Calendar resource id",
             )
-            return {"status": "ok", **result}
-        except Exception as e:
-            logger.error(f"❌ Error processing Calendar notification: {str(e)}")
-            logger.exception("Full traceback:")
-            # Don't fail the webhook - cron will catch missed events
-            return {"status": "ok", "message": "Notification received with errors"}
+        if not verify_google_calendar_channel_token(
+            connection_id,
+            x_goog_channel_id,
+            x_goog_channel_token,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Google Calendar channel token",
+            )
+
+        mark_stream_dirty(
+            service_supabase,
+            connection_id,
+            "google",
+            SYNC_KIND_CALENDAR,
+            priority=100,
+            metadata={
+                "source": "google-calendar-webhook",
+                "channel_id": x_goog_channel_id,
+                "resource_id": x_goog_resource_id,
+                "resource_state": x_goog_resource_state,
+                "message_number": x_goog_message_number,
+            },
+        )
+        return {"status": "ok", "message": "Accepted for async sync"}
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ Error handling Calendar webhook: {str(e)}")
-        # Always return 200 to Google
-        return {"status": "error", "message": str(e)}
+        logger.exception(f"❌ Error handling Calendar webhook: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Transient error processing webhook",
+        )
 
 
 @router.get("/gmail/verify", response_model=HealthResponse)
@@ -261,7 +424,7 @@ async def microsoft_webhook_validation(
     validationToken query parameter. We MUST return the token as plain text
     within 10 seconds or subscription creation fails.
     """
-    logger.info("📡 [Microsoft] Subscription validation request received")
+    logger.debug("[Microsoft] Subscription validation request received")
     logger.debug(f"📡 [Microsoft] Validation token: {validationToken[:20]}...")
     return PlainTextResponse(
         content=validationToken,
@@ -284,13 +447,14 @@ async def microsoft_webhook_notification(
     subscriptionId, changeType, resource, clientState.
 
     We verify clientState matches what we stored and return 202 Accepted
-    to acknowledge receipt (async processing).
+    to acknowledge receipt. Returns 503 on transient infrastructure failures
+    so Microsoft retries delivery.
     """
     try:
         # Microsoft may send validation as POST with ?validationToken= query param
         validation_token = request.query_params.get("validationToken")
         if validation_token:
-            logger.info("📡 [Microsoft] Subscription validation via POST request")
+            logger.debug("[Microsoft] Subscription validation via POST request")
             return PlainTextResponse(
                 content=validation_token,
                 status_code=200,
@@ -299,26 +463,18 @@ async def microsoft_webhook_notification(
 
         body = await request.json()
 
-        logger.info("📬 [Microsoft] Webhook notification received")
+        logger.debug("[Microsoft] Webhook notification received")
 
         notifications = body.get("value", [])
         if not notifications:
             logger.warning("⚠️ [Microsoft] Empty notification payload")
             return Response(status_code=202)
 
-        logger.info(f"📬 [Microsoft] Processing {len(notifications)} notification(s)")
-
-        # Try queue-based processing first
-        from lib.queue import queue_client
-        use_queue = queue_client.available
+        logger.debug(f"[Microsoft] Processing {len(notifications)} notification(s)")
 
         results = []
         for notification in notifications:
-            if use_queue:
-                result = await _enqueue_microsoft_notification(notification)
-            else:
-                result = await process_microsoft_notification(notification)
-            results.append(result)
+            results.append(await _mark_microsoft_notification_dirty(notification))
 
         # Return 202 Accepted - we've acknowledged the notifications
         return Response(
@@ -334,22 +490,15 @@ async def microsoft_webhook_notification(
         logger.error("❌ [Microsoft] Invalid JSON in webhook body")
         return Response(status_code=400)
     except Exception as e:
-        logger.error(f"❌ [Microsoft] Webhook error: {e}")
-        import traceback
-        logger.error(f"❌ [Microsoft] Traceback: {traceback.format_exc()}")
-        # Still return 202 to acknowledge - cron will catch any missed changes
-        return Response(status_code=202)
+        logger.exception(f"❌ [Microsoft] Webhook error: {e}")
+        return Response(status_code=503)
 
 
-async def _enqueue_microsoft_notification(notification: dict) -> dict:
+async def _mark_microsoft_notification_dirty(notification: dict) -> dict:
     """
-    Enqueue a Microsoft notification as a worker job via QStash.
-
-    Validates clientState and resolves connection_id before enqueuing.
-    Falls back to inline processing on any error.
+    Validate a Microsoft notification and mark the corresponding stream dirty.
     """
     from lib.supabase_client import get_service_role_client
-    from lib.queue import queue_client
     from api.services.microsoft.microsoft_webhook_provider import MicrosoftWebhookProvider
 
     subscription_id = notification.get('subscriptionId')
@@ -393,20 +542,32 @@ async def _enqueue_microsoft_notification(notification: dict) -> dict:
         resource_lower = resource.lower()
         if '/events' in resource_lower or '/calendar' in resource_lower:
             job_type = "sync-outlook-calendar"
+            sync_kind = SYNC_KIND_CALENDAR
         else:
             # Default to mail sync (covers /messages, /mailFolders, etc.)
             job_type = "sync-outlook"
+            sync_kind = SYNC_KIND_EMAIL
 
-        if queue_client.enqueue_sync_for_connection(connection_id, job_type):
-            return {"success": True, "enqueued": job_type}
+        if mark_stream_dirty(
+            service_supabase,
+            connection_id,
+            "microsoft",
+            sync_kind,
+            priority=100,
+            metadata={
+                "source": "microsoft-webhook",
+                "resource": resource,
+                "subscription_id": subscription_id,
+            },
+        ):
+            return {"success": True, "marked": job_type}
 
-        # enqueue returned False — fall through to inline
-        logger.warning(f"⚠️ [Microsoft] Queue publish failed for {connection_id[:8]}..., falling back to inline")
-        return await process_microsoft_notification(notification)
+        logger.warning(f"⚠️ [Microsoft] Failed to mark dirty for {connection_id[:8]}...")
+        return {"success": False, "error": "mark dirty failed"}
 
     except Exception as e:
-        logger.warning(f"⚠️ [Microsoft] Queue enqueue failed, falling back: {e}")
-        return await process_microsoft_notification(notification)
+        logger.warning(f"⚠️ [Microsoft] Failed to mark notification dirty: {e}")
+        return {"success": False, "error": str(e)}
 
 
 async def process_microsoft_notification(notification: dict) -> dict:
@@ -419,11 +580,10 @@ async def process_microsoft_notification(notification: dict) -> dict:
     from api.services.microsoft.microsoft_webhook_provider import MicrosoftWebhookProvider
 
     subscription_id = notification.get('subscriptionId')
-    client_state = notification.get('clientState')
     change_type = notification.get('changeType')
     resource = notification.get('resource', '')
 
-    logger.info(f"📬 [Microsoft] Notification: {change_type} on {resource[:50]}... (clientState: {'✓' if client_state else '✗'})")
+    logger.debug(f"[Microsoft] Notification: {change_type} on {resource[:50]}...")
 
     if not subscription_id:
         logger.warning("⚠️ [Microsoft] No subscriptionId in notification")

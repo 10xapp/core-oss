@@ -1,6 +1,6 @@
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -14,20 +14,20 @@ os.environ.setdefault(
 )
 
 
+class _FakeSupabase:
+    def rpc(self, _name, _params):
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=True))
+
+
 @pytest.mark.asyncio
-async def test_google_initial_sync_falls_back_for_failed_queue_publish(monkeypatch):
+async def test_google_initial_sync_marks_both_streams_dirty(monkeypatch):
     from api.services import auth
-    import lib.queue as queue_module
+    import lib.supabase_client as supabase_client_module
+    from api.services.syncs import sync_dispatcher
 
-    enqueue_mock = MagicMock(side_effect=[True, False])
-    monkeypatch.setattr(
-        queue_module,
-        "queue_client",
-        SimpleNamespace(enqueue_sync_for_connection=enqueue_mock),
-    )
-
-    to_thread_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(auth.asyncio, "to_thread", to_thread_mock)
+    mark_mock = MagicMock(side_effect=[True, True])
+    monkeypatch.setattr(sync_dispatcher, "mark_stream_dirty", mark_mock)
+    monkeypatch.setattr(supabase_client_module, "get_service_role_client", lambda: _FakeSupabase())
 
     await auth._enqueue_or_fallback_google_initial_sync(
         connection_id="conn-1",
@@ -37,37 +37,33 @@ async def test_google_initial_sync_falls_back_for_failed_queue_publish(monkeypat
         provider_email="user@example.com",
     )
 
-    assert enqueue_mock.call_count == 2
+    assert mark_mock.call_count == 2
 
-    gmail_call = enqueue_mock.call_args_list[0]
-    assert gmail_call.args[0] == "conn-1"
-    assert gmail_call.args[1] == "sync-gmail"
-    assert gmail_call.kwargs["dedup_id"] == "initial-sync-gmail-conn-1"
+    gmail_call = mark_mock.call_args_list[0]
+    assert gmail_call.args[1] == "conn-1"
+    assert gmail_call.args[2] == "google"
+    assert gmail_call.args[3] == "email"
+    assert gmail_call.kwargs["metadata"]["source"] == "initial-sync"
+    assert gmail_call.kwargs["metadata"]["initial_sync"] is True
+    assert gmail_call.kwargs["metadata"]["max_results"] == 50
+    assert gmail_call.kwargs["metadata"]["days_back"] == 20
 
-    calendar_call = enqueue_mock.call_args_list[1]
-    assert calendar_call.args[1] == "sync-calendar"
-    assert calendar_call.kwargs["dedup_id"] == "initial-sync-calendar-conn-1"
-
-    to_thread_mock.assert_awaited_once()
-    _, fallback_kwargs = to_thread_mock.await_args
-    assert fallback_kwargs["run_gmail"] is False
-    assert fallback_kwargs["run_calendar"] is True
+    calendar_call = mark_mock.call_args_list[1]
+    assert calendar_call.args[2] == "google"
+    assert calendar_call.args[3] == "calendar"
+    assert calendar_call.kwargs["metadata"]["days_past"] == 7
+    assert calendar_call.kwargs["metadata"]["days_future"] == 60
 
 
 @pytest.mark.asyncio
-async def test_microsoft_initial_sync_queue_success_skips_inline_fallback(monkeypatch):
+async def test_microsoft_initial_sync_marks_email_only_when_calendar_disabled(monkeypatch):
     from api.services import auth
-    import lib.queue as queue_module
+    import lib.supabase_client as supabase_client_module
+    from api.services.syncs import sync_dispatcher
 
-    enqueue_mock = MagicMock(return_value=True)
-    monkeypatch.setattr(
-        queue_module,
-        "queue_client",
-        SimpleNamespace(enqueue_sync_for_connection=enqueue_mock),
-    )
-
-    to_thread_mock = AsyncMock(return_value=None)
-    monkeypatch.setattr(auth.asyncio, "to_thread", to_thread_mock)
+    mark_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(sync_dispatcher, "mark_stream_dirty", mark_mock)
+    monkeypatch.setattr(supabase_client_module, "get_service_role_client", lambda: _FakeSupabase())
 
     await auth._enqueue_or_fallback_microsoft_initial_sync(
         connection_id="conn-1",
@@ -80,9 +76,10 @@ async def test_microsoft_initial_sync_queue_success_skips_inline_fallback(monkey
         include_calendar=False,
     )
 
-    assert enqueue_mock.call_count == 1
-    only_call = enqueue_mock.call_args_list[0]
-    assert only_call.args[1] == "sync-outlook"
-    assert only_call.kwargs["dedup_id"] == "initial-sync-outlook-conn-1"
-    to_thread_mock.assert_not_awaited()
-
+    assert mark_mock.call_count == 1
+    only_call = mark_mock.call_args_list[0]
+    assert only_call.args[1] == "conn-1"
+    assert only_call.args[2] == "microsoft"
+    assert only_call.args[3] == "email"
+    assert only_call.kwargs["metadata"]["initial_sync"] is True
+    assert only_call.kwargs["metadata"]["days_back"] == 20

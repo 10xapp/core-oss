@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Any
 
 from api.services.syncs.google_error_utils import is_permanent_google_oauth_error
+from lib.google_retry import refresh_credentials
 from lib.token_encryption import (
     decrypt_ext_connection_tokens,
     encrypt_token_fields,
@@ -46,10 +47,10 @@ def get_google_services_for_connection(
             .select('id, user_id, access_token, refresh_token, token_expires_at, metadata')\
             .eq('id', connection_id)\
             .eq('is_active', True)\
-            .single()\
+            .maybe_single()\
             .execute()
 
-        if not connection_result.data:
+        if not connection_result or not connection_result.data:
             return None, None, None
 
         connection_data = decrypt_ext_connection_tokens(connection_result.data)
@@ -103,7 +104,7 @@ def get_google_services_for_connection(
         # Refresh and persist token if needed
         if needs_refresh:
             try:
-                credentials.refresh(Request())
+                refresh_credentials(credentials, Request(), context=connection_id[:8])
 
                 # Use actual expiry from Google credentials (make timezone-aware if needed)
                 if credentials.expiry:
@@ -140,6 +141,28 @@ def get_google_services_for_connection(
                         f"(user {user_id[:8]}...): {e} — deactivating connection"
                     )
                     try:
+                        # Guard against concurrent refresh race: re-read the row
+                        # and skip deactivation if another process just refreshed
+                        # successfully (token_expires_at well into the future).
+                        fresh = service_supabase.table('ext_connections')\
+                            .select('token_expires_at')\
+                            .eq('id', connection_id)\
+                            .maybe_single()\
+                            .execute()
+                        if fresh and fresh.data:
+                            fresh_expiry = fresh.data.get('token_expires_at')
+                            if fresh_expiry:
+                                try:
+                                    exp = datetime.fromisoformat(fresh_expiry.replace('Z', '+00:00'))
+                                    if exp > datetime.now(timezone.utc) + timedelta(minutes=10):
+                                        logger.info(
+                                            f"⏭️ Skipping deactivation for {connection_id[:8]}... "
+                                            f"— token was refreshed by another process (expires {fresh_expiry})"
+                                        )
+                                        return None, None, None
+                                except (ValueError, TypeError):
+                                    pass  # Can't parse — proceed with deactivation
+
                         service_supabase.table('ext_connections')\
                             .update({
                                 'is_active': False,

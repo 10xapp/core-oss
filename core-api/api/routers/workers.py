@@ -9,6 +9,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, field_validator, model_validator
@@ -17,6 +18,19 @@ from qstash.errors import SignatureError
 
 from api.config import settings
 from api.routers.cron import verify_cron_auth
+from api.services.syncs.failure_policy import maybe_quarantine_failed_connection
+from api.services.syncs.sync_state_store import (
+    CLAIM_MODE_DIRTY_ONLY,
+    SYNC_KIND_CALENDAR,
+    SYNC_KIND_EMAIL,
+    claim_connection_sync_lease,
+    complete_connection_sync_lease,
+    fail_connection_sync_lease,
+    get_connection_sync_state,
+    get_failure_retry_seconds,
+    start_connection_sync_lease_heartbeat,
+    stop_connection_sync_lease_heartbeat,
+)
 from lib.queue import queue_client
 from lib.supabase_client import get_service_role_client
 from lib.token_encryption import decrypt_ext_connection_tokens
@@ -230,7 +244,7 @@ def _run_batch(
         try:
             result = processor(connection_id)
             status_value = result.get("status", "ok")
-            if status_value == "ok":
+            if status_value in {"ok", "quarantined"}:
                 processed += 1
             elif status_value == "skipped":
                 skipped += 1
@@ -331,6 +345,110 @@ def _run_batch_endpoint(
     return continued_result
 
 
+def _extract_result_cursor(result: Dict[str, Any]) -> Optional[str]:
+    for key in ("new_history_id", "recovered_history_id", "new_sync_token", "new_delta_link"):
+        value = result.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _run_with_stream_lease(
+    connection_id: str,
+    sync_kind: str,
+    processor: Callable[[], Dict[str, Any]],
+) -> Dict[str, Any]:
+    service_supabase = get_service_role_client()
+    worker_id = f"sync-worker:{sync_kind}:{uuid4().hex}"
+    lease = claim_connection_sync_lease(
+        service_supabase,
+        worker_id,
+        lease_seconds=BATCH_TIME_BUDGET_SECONDS + 60,
+        sync_kind=sync_kind,
+        connection_id=connection_id,
+        claim_mode=CLAIM_MODE_DIRTY_ONLY,
+    )
+
+    if not lease:
+        logger.info(
+            f"[Worker] skipping {sync_kind} sync for {connection_id[:8]}... "
+            "because the stream is already clean or leased"
+        )
+        return {"status": "skipped", "message": "Already running or not dirty"}
+
+    heartbeat_stop, heartbeat_thread = start_connection_sync_lease_heartbeat(
+        service_supabase,
+        connection_id,
+        sync_kind,
+        worker_id,
+        lease_seconds=BATCH_TIME_BUDGET_SECONDS + 60,
+        logger=logger,
+    )
+
+    def _fail_with_backoff(error_message: str) -> Dict[str, Any]:
+        retry_count = None
+        try:
+            state = get_connection_sync_state(service_supabase, connection_id, sync_kind)
+            retry_count = (state or {}).get("retry_count")
+        except Exception as exc:
+            logger.warning(
+                f"[Worker] could not load retry state for {connection_id[:8]}.../{sync_kind}: {exc}"
+            )
+
+        try:
+            quarantine_result = maybe_quarantine_failed_connection(
+                service_supabase,
+                connection_id=connection_id,
+                sync_kind=sync_kind,
+                worker_id=worker_id,
+                provider=lease.get("provider"),
+                error=error_message,
+                retry_count=retry_count,
+            )
+            if quarantine_result is not None:
+                return quarantine_result
+        except Exception:
+            logger.exception(
+                "[Worker] failed to quarantine %s/%s after error",
+                connection_id[:8],
+                sync_kind,
+            )
+
+        fail_connection_sync_lease(
+            service_supabase,
+            connection_id,
+            sync_kind,
+            worker_id,
+            error_message,
+            retry_seconds=get_failure_retry_seconds(retry_count),
+        )
+        return {"status": "error", "message": error_message}
+
+    try:
+        result = processor()
+    except Exception as exc:
+        stop_connection_sync_lease_heartbeat(heartbeat_stop, heartbeat_thread)
+        failure_result = _fail_with_backoff(str(exc))
+        logger.error(f"[Worker] {sync_kind} leased run failed for {connection_id[:8]}...: {exc}")
+        return failure_result
+
+    stop_connection_sync_lease_heartbeat(heartbeat_stop, heartbeat_thread)
+
+    if result.get("status") == "error":
+        return _fail_with_backoff(str(result.get("message", "sync failed")))
+
+    result_cursor = _extract_result_cursor(result)
+    complete_connection_sync_lease(
+        service_supabase,
+        connection_id,
+        sync_kind,
+        worker_id,
+        last_synced_cursor=result_cursor,
+        latest_seen_cursor=result_cursor,
+    )
+    return result
+
+
 def _sync_single_gmail(
     connection_id: str,
     payload: SyncPayload,
@@ -338,8 +456,8 @@ def _sync_single_gmail(
     from api.services.syncs import sync_gmail_cron
     from api.services.syncs.google_error_utils import is_permanent_google_api_error
     from api.services.syncs.google_services import get_google_services_for_connection
-
     from api.services.syncs.sync_gmail import sync_gmail_for_connection
+    from api.services.webhooks import reconcile_gmail_connection
 
     service_supabase = get_service_role_client()
     gmail_service, _, user_id = get_google_services_for_connection(connection_id, service_supabase)
@@ -368,17 +486,26 @@ def _sync_single_gmail(
                 return {"status": "skipped", "message": str(error)}
             return {"status": "error", "message": str(error)}
 
-        result = sync_gmail_cron(
+        result = reconcile_gmail_connection(
+            connection_id,
+            supabase=service_supabase,
             gmail_service=gmail_service,
-            connection_id=connection_id,
             user_id=user_id,
-            service_supabase=service_supabase,
-            days_back=payload.days_back or 7,
         )
+        if result.get("status") == "skipped" and result.get("message") == "No active Gmail subscription":
+            logger.info(
+                f"[Worker] no active Gmail subscription for {connection_id[:8]}..., "
+                "falling back to time-window sync"
+            )
+            result = sync_gmail_cron(
+                gmail_service=gmail_service,
+                connection_id=connection_id,
+                user_id=user_id,
+                service_supabase=service_supabase,
+                days_back=payload.days_back or 7,
+            )
 
-        # sync_gmail_cron manages last_synced internally
-        # (skips update on batch errors / error_count > 0)
-        if result.get("status") == "success":
+        if result.get("status") in {"ok", "success"}:
             return {**result, "status": "ok"}
 
         error = result.get("error", "unknown")
@@ -579,8 +706,16 @@ def _process_calendar_webhook(payload: SyncPayload) -> Dict[str, Any]:
     )
     status_value = result.get("status")
     if status_value in {"ok", "success"}:
-        service_supabase = get_service_role_client()
-        _touch_last_synced(service_supabase, payload.connection_id)
+        message = str(result.get("message", ""))
+        no_sync_outcome = (
+            payload.resource_state == "sync"
+            or message == "Sync verified"
+            or message == "No active subscription"
+            or message.startswith("Unhandled state:")
+        )
+        if not no_sync_outcome:
+            service_supabase = get_service_role_client()
+            _touch_last_synced(service_supabase, payload.connection_id)
         return {**result, "status": "ok"}
 
     return {
@@ -605,15 +740,23 @@ def worker_sync_gmail(
         return _run_batch_endpoint(
             "sync-gmail",
             payload,
-            lambda cid: _sync_single_gmail(cid, payload),
+            lambda cid: _run_with_stream_lease(cid, SYNC_KIND_EMAIL, lambda: _sync_single_gmail(cid, payload)),
         )
 
     if payload.history_id or payload.email_address:
-        result = _process_gmail_webhook(payload)
+        result = _run_with_stream_lease(
+            payload.connection_id,
+            SYNC_KIND_EMAIL,
+            lambda: _process_gmail_webhook(payload),
+        )
     else:
         if not payload.connection_id:
             raise HTTPException(status_code=400, detail="connection_id is required")
-        result = _sync_single_gmail(payload.connection_id, payload)
+        result = _run_with_stream_lease(
+            payload.connection_id,
+            SYNC_KIND_EMAIL,
+            lambda: _sync_single_gmail(payload.connection_id, payload),
+        )
 
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=str(result.get("message", "unknown")))
@@ -632,15 +775,23 @@ def worker_sync_calendar(
         return _run_batch_endpoint(
             "sync-calendar",
             payload,
-            lambda cid: _sync_single_calendar(cid, payload),
+            lambda cid: _run_with_stream_lease(cid, SYNC_KIND_CALENDAR, lambda: _sync_single_calendar(cid, payload)),
         )
 
     if payload.channel_id or payload.resource_state or payload.message_number:
-        result = _process_calendar_webhook(payload)
+        result = _run_with_stream_lease(
+            payload.connection_id,
+            SYNC_KIND_CALENDAR,
+            lambda: _process_calendar_webhook(payload),
+        )
     else:
         if not payload.connection_id:
             raise HTTPException(status_code=400, detail="connection_id is required")
-        result = _sync_single_calendar(payload.connection_id, payload)
+        result = _run_with_stream_lease(
+            payload.connection_id,
+            SYNC_KIND_CALENDAR,
+            lambda: _sync_single_calendar(payload.connection_id, payload),
+        )
 
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=str(result.get("message", "unknown")))
@@ -659,12 +810,16 @@ def worker_sync_outlook(
         return _run_batch_endpoint(
             "sync-outlook",
             payload,
-            lambda cid: _sync_single_outlook(cid, payload),
+            lambda cid: _run_with_stream_lease(cid, SYNC_KIND_EMAIL, lambda: _sync_single_outlook(cid, payload)),
         )
 
     if not payload.connection_id:
         raise HTTPException(status_code=400, detail="connection_id is required")
-    result = _sync_single_outlook(payload.connection_id, payload)
+    result = _run_with_stream_lease(
+        payload.connection_id,
+        SYNC_KIND_EMAIL,
+        lambda: _sync_single_outlook(payload.connection_id, payload),
+    )
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=str(result.get("message", "unknown")))
     return result
@@ -681,12 +836,16 @@ def worker_sync_outlook_calendar(
         return _run_batch_endpoint(
             "sync-outlook-calendar",
             payload,
-            lambda cid: _sync_single_outlook_calendar(cid, payload),
+            lambda cid: _run_with_stream_lease(cid, SYNC_KIND_CALENDAR, lambda: _sync_single_outlook_calendar(cid, payload)),
         )
 
     if not payload.connection_id:
         raise HTTPException(status_code=400, detail="connection_id is required")
-    result = _sync_single_outlook_calendar(payload.connection_id, payload)
+    result = _run_with_stream_lease(
+        payload.connection_id,
+        SYNC_KIND_CALENDAR,
+        lambda: _sync_single_outlook_calendar(payload.connection_id, payload),
+    )
     if result.get("status") == "error":
         raise HTTPException(status_code=500, detail=str(result.get("message", "unknown")))
     return result

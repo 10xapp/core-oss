@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from cryptography.fernet import Fernet
 
 # Prevent module import failures from lib.supabase_client singleton init.
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
@@ -12,6 +13,8 @@ os.environ.setdefault(
     "testsignature",
 )
 
+TEST_KEY = Fernet.generate_key().decode()
+
 
 def _make_query_builder(execute_side_effect):
     """Create a chainable Supabase query mock."""
@@ -19,6 +22,7 @@ def _make_query_builder(execute_side_effect):
     query.select.return_value = query
     query.eq.return_value = query
     query.single.return_value = query
+    query.maybe_single.return_value = query
     query.update.return_value = query
     query.execute.side_effect = execute_side_effect
     return query
@@ -62,6 +66,8 @@ def test_permanent_google_refresh_failure_deactivates_connection_and_subscriptio
                 with patch("api.config.settings", SimpleNamespace(
                     google_client_id="test-client-id",
                     google_client_secret="test-client-secret",
+                    token_encryption_key="",
+                    token_encryption_key_previous="",
                 )):
                     gmail_service, calendar_service, returned_user_id = get_google_services_for_connection(
                         connection_id,
@@ -111,6 +117,8 @@ def test_transient_google_refresh_failure_continues_with_existing_credentials():
                 with patch("api.config.settings", SimpleNamespace(
                     google_client_id="test-client-id",
                     google_client_secret="test-client-secret",
+                    token_encryption_key="",
+                    token_encryption_key_previous="",
                 )):
                     gmail_service, calendar_service, returned_user_id = get_google_services_for_connection(
                         connection_id,
@@ -125,3 +133,73 @@ def test_transient_google_refresh_failure_continues_with_existing_credentials():
     # Transient branch should not deactivate push subscriptions.
     table_calls = [c.args[0] for c in supabase.table.call_args_list]
     assert "push_subscriptions" not in table_calls
+
+
+def test_successful_google_refresh_reencrypts_tokens_before_persisting():
+    """
+    Successful cron refreshes must decrypt stored tokens for Google auth,
+    then re-encrypt refreshed tokens before writing them back.
+    """
+    from api.routers.cron import get_google_services_for_connection
+    from lib.token_encryption import decrypt_token, encrypt_token, is_encrypted
+
+    connection_id = "connection-success-123"
+    user_id = "user-success-456"
+    expires_at = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+    with patch("api.config.settings", SimpleNamespace(
+        google_client_id="test-client-id",
+        google_client_secret="test-client-secret",
+        token_encryption_key=TEST_KEY,
+        token_encryption_key_previous="",
+    )):
+        encrypted_connection = {
+            "id": connection_id,
+            "user_id": user_id,
+            "access_token": encrypt_token("stale-access-token"),
+            "refresh_token": encrypt_token("stale-refresh-token"),
+            "token_expires_at": expires_at,
+            "metadata": {},
+        }
+
+        query = _make_query_builder([
+            SimpleNamespace(data=encrypted_connection),  # initial select
+            SimpleNamespace(data=[]),  # ext_connections refresh update
+        ])
+        supabase = MagicMock()
+        supabase.table.return_value = query
+
+        refreshed_credentials = MagicMock()
+        refreshed_credentials.token = "new-access-token"
+        refreshed_credentials.refresh_token = "new-refresh-token"
+        refreshed_credentials.expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        gmail_mock = MagicMock(name="gmail_service")
+        calendar_mock = MagicMock(name="calendar_service")
+
+        with patch("google.oauth2.credentials.Credentials", return_value=refreshed_credentials) as credentials_ctor:
+            with patch("google.auth.transport.requests.Request"):
+                with patch("api.services.syncs.google_services.refresh_credentials") as refresh_mock:
+                    with patch("googleapiclient.discovery.build", side_effect=[gmail_mock, calendar_mock]):
+                        gmail_service, calendar_service, returned_user_id = get_google_services_for_connection(
+                            connection_id,
+                            supabase,
+                        )
+
+        assert gmail_service is gmail_mock
+        assert calendar_service is calendar_mock
+        assert returned_user_id == user_id
+        refresh_mock.assert_called_once()
+        credentials_ctor.assert_called_once_with(
+            token="stale-access-token",
+            refresh_token="stale-refresh-token",
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="test-client-id",
+            client_secret="test-client-secret",
+        )
+
+        update_payload = query.update.call_args.args[0]
+        assert is_encrypted(update_payload["access_token"])
+        assert is_encrypted(update_payload["refresh_token"])
+        assert decrypt_token(update_payload["access_token"]) == "new-access-token"
+        assert decrypt_token(update_payload["refresh_token"]) == "new-refresh-token"

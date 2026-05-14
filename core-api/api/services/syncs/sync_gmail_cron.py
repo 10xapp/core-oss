@@ -12,6 +12,7 @@ from api.services.syncs.connection_state import (
     deactivate_connection_with_subscriptions,
 )
 from api.services.syncs.google_error_utils import is_permanent_google_api_error
+from lib.google_retry import GOOGLE_API_NUM_RETRIES
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def sync_gmail_cron(
                 maxResults=100,
                 q=query,
                 pageToken=page_token
-            ).execute()
+            ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
             messages = messages_result.get('messages', [])
 
@@ -102,7 +103,7 @@ def sync_gmail_cron(
                         userId='me',
                         id=msg['id'],
                         format='full'
-                    ).execute()
+                    ).execute(num_retries=GOOGLE_API_NUM_RETRIES)
 
                     email_data = _parse_email_message(
                         full_msg, user_id, connection_id,
