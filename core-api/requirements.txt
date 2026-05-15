@@ -9,10 +9,10 @@ google-api-python-client==2.147.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 pyjwt>=2.10.1
-cryptography>=42.0.0
+cryptography==46.0.6
 groq==0.11.0
 boto3==1.41.3
-python-multipart==0.0.20
+python-multipart==0.0.22
 openai>=1.0.0
 anthropic>=0.39.0
 e2b>=1.2.0
